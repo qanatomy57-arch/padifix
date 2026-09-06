@@ -99,5 +99,10 @@ CREATE POLICY "Allow append-only contact event insert"
     AND status = 'new'
   );
 
--- 7. TABLE GRANTS
-GRANT SELECT, INSERT, UPDATE ON public.contact_events TO anon, authenticated, service_role;
+-- 7. TABLE & COLUMN GRANTS (RESTRICTIVE MUTATION SURFACE)
+GRANT SELECT, INSERT ON public.contact_events TO anon, authenticated;
+GRANT ALL PRIVILEGES ON public.contact_events TO service_role;
+
+-- Restrict UPDATE privileges: authenticated providers can ONLY mutate workflow fields
+REVOKE UPDATE ON public.contact_events FROM anon, authenticated;
+GRANT UPDATE (status, notes, updated_at) ON public.contact_events TO authenticated;

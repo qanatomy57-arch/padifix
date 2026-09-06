@@ -61,7 +61,7 @@ async function runDatabaseVerification() {
       'apikey': SUPABASE_ANON_KEY,
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
+      'Prefer': 'return=minimal'
     },
     body: JSON.stringify({
       provider_id: 8,
@@ -73,35 +73,16 @@ async function runDatabaseVerification() {
       notes: 'Initial operational inquiry'
     })
   });
-  const validInsertBody = await validInsertRes.json().catch(() => []);
-  const insertedRow = Array.isArray(validInsertBody) ? validInsertBody[0] : validInsertBody;
-  check('2.1 Append-only valid contact event inserted successfully', validInsertRes.status === 201 || validInsertRes.status === 200, `HTTP ${validInsertRes.status}, ID: ${insertedRow?.id}`);
+  check('2.1 Append-only valid contact event inserted successfully (Policy C)', validInsertRes.status === 201 || validInsertRes.status === 200, `HTTP ${validInsertRes.status}`);
 
-  // 2.2 Status vocabulary constraint check
-  const badStatusRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events`, {
-    method: 'POST',
-    headers: {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      provider_id: 8,
-      channel: 'whatsapp',
-      idempotency_key: `test_bad_status_${Date.now()}`,
-      status: 'prohibited_status'
-    })
-  });
-  const badStatusBody = await badStatusRes.json().catch(() => ({}));
-  check('2.2 Invalid status rejected by PostgreSQL check constraint (chk_contact_events_status)', badStatusRes.status === 400, `HTTP ${badStatusRes.status}, code: ${badStatusBody?.code}, message: ${badStatusBody?.message}`);
-
-  // 2.3 Notes length constraint check (> 500 chars)
+  // 2.2 Notes length constraint check (> 500 chars)
   const badNotesRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events`, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_ANON_KEY,
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
     },
     body: JSON.stringify({
       provider_id: 8,
@@ -112,12 +93,28 @@ async function runDatabaseVerification() {
     })
   });
   const badNotesBody = await badNotesRes.json().catch(() => ({}));
-  check('2.3 Notes > 500 chars rejected by PostgreSQL check constraint (chk_contact_events_notes_length)', badNotesRes.status === 400, `HTTP ${badNotesRes.status}, code: ${badNotesBody?.code}, message: ${badNotesBody?.message}`);
+  check('2.2 Notes > 500 chars rejected by PostgreSQL check constraint (chk_contact_events_notes_length)', badNotesRes.status === 400, `HTTP ${badNotesRes.status}, code: ${badNotesBody?.code}, message: ${badNotesBody?.message}`);
 
   // 3. Database-Level Multi-Tenant RLS Isolation (Directive 4)
   console.log('\n--- 3. DATABASE-LEVEL RLS TENANT ISOLATION (DIRECTIVE 4) ---');
   const tokenA = await authProvider('ad.padifix@outlook.com', 'TemporaryAdminPassword2026!#');
   const tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', 'TemporaryNonAdminPassword2026!#');
+
+  // 2.3 Status vocabulary check on UPDATE via authenticated provider
+  const badStatusRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.8&limit=1`, {
+    method: 'PATCH',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${tokenA.access_token}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify({
+      status: 'prohibited_status'
+    })
+  });
+  const badStatusBody = await badStatusRes.json().catch(() => ({}));
+  check('2.3 Invalid status rejected by PostgreSQL check constraint (chk_contact_events_status)', badStatusRes.status === 400, `HTTP ${badStatusRes.status}, code: ${badStatusBody?.code}, message: ${badStatusBody?.message}`);
 
   // 3.1 Provider A selects own records
   const selectOwnRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.8`, {
@@ -139,7 +136,17 @@ async function runDatabaseVerification() {
   const selectCrossData = await selectCrossRes.json().catch(() => []);
   check('3.2 Provider A CANNOT view Provider B contact events (RLS yields 0 rows)', selectCrossRes.status === 200 && selectCrossData.length === 0, `HTTP ${selectCrossRes.status}, Returned: ${selectCrossData.length} rows`);
 
-  // 3.3 Provider B selects Provider 8 records
+  // 3.3 Provider B selects own records
+  const selectOwnBRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.101`, {
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${tokenB.access_token}`
+    }
+  });
+  const selectOwnBData = await selectOwnBRes.json().catch(() => []);
+  check('3.3 Provider B can SELECT own contact events via PostgREST', selectOwnBRes.status === 200 && selectOwnBData.length > 0, `HTTP ${selectOwnBRes.status}, Found: ${selectOwnBData.length} records`);
+
+  // 3.4 Provider B selects Provider 8 records
   const selectCrossBRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.8`, {
     headers: {
       'apikey': SUPABASE_ANON_KEY,
@@ -147,11 +154,12 @@ async function runDatabaseVerification() {
     }
   });
   const selectCrossBData = await selectCrossBRes.json().catch(() => []);
-  check('3.3 Provider B CANNOT view Provider 8 contact events (RLS yields 0 rows)', selectCrossBRes.status === 200 && selectCrossBData.length === 0, `HTTP ${selectCrossBRes.status}, Returned: ${selectCrossBData.length} rows`);
+  check('3.4 Provider B CANNOT view Provider 8 contact events (RLS yields 0 rows)', selectCrossBRes.status === 200 && selectCrossBData.length === 0, `HTTP ${selectCrossBRes.status}, Returned: ${selectCrossBData.length} rows`);
 
-  // 3.4 Provider A updates own contact event
-  if (insertedRow?.id) {
-    const updateOwnRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${insertedRow.id}`, {
+  // 3.5 Provider A updates own contact event
+  const rowToUpdate = selectOwnData[0];
+  if (rowToUpdate?.id) {
+    const updateOwnRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${rowToUpdate.id}`, {
       method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -165,10 +173,10 @@ async function runDatabaseVerification() {
       })
     });
     const updateOwnData = await updateOwnRes.json().catch(() => []);
-    check('3.4 Provider A can UPDATE own contact event (status -> in_discussion)', updateOwnRes.status === 200 && updateOwnData[0]?.status === 'in_discussion', `HTTP ${updateOwnRes.status}, New status: ${updateOwnData[0]?.status}`);
+    check('3.5 Provider A can UPDATE own contact event (status -> in_discussion)', updateOwnRes.status === 200 && updateOwnData[0]?.status === 'in_discussion', `HTTP ${updateOwnRes.status}, New status: ${updateOwnData[0]?.status}`);
 
-    // 3.5 Provider B attempts to update Provider A's contact event
-    const updateCrossRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${insertedRow.id}`, {
+    // 3.6 Provider B attempts to update Provider A's contact event
+    const updateCrossRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${rowToUpdate.id}`, {
       method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -182,7 +190,7 @@ async function runDatabaseVerification() {
       })
     });
     const updateCrossData = await updateCrossRes.json().catch(() => []);
-    check('3.5 Provider B CANNOT update Provider A contact event (RLS blocks mutation, 0 rows modified)', updateCrossRes.status === 200 && updateCrossData.length === 0, `HTTP ${updateCrossRes.status}, Rows modified: ${updateCrossData.length}`);
+    check('3.6 Provider B CANNOT update Provider A contact event (RLS blocks mutation, 0 rows modified)', updateCrossRes.status === 200 && updateCrossData.length === 0, `HTTP ${updateCrossRes.status}, Rows modified: ${updateCrossData.length}`);
   }
 
   console.log('\n================================================================================');

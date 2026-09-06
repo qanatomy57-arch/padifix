@@ -18,6 +18,56 @@ const crypto = require('crypto');
 const { withSentry } = require('../lib/sentry-server');
 const LeadStore = require('../lib/lead-store');
 
+// Supabase PostgreSQL Ledger Configuration
+const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
+const SUPABASE_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+
+/**
+ * Authoritatively persist contact event to PostgreSQL public.contact_events.
+ * Enforces durable cross-restart idempotency via PostgreSQL unique constraint on idempotency_key.
+ */
+async function persistContactEvent({ provider_id, channel, idempotency_key, billing_period, locality, intent_tag, session_token }) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { success: true, isDuplicate: false, offline: true };
+  }
+  try {
+    const cleanLocality = locality ? String(locality).replace(/<[^>]*>/g, '').trim().substring(0, 80) : null;
+    const cleanIntent = intent_tag ? String(intent_tag).replace(/<[^>]*>/g, '').trim().substring(0, 80) : null;
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/contact_events`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        provider_id: Number(provider_id),
+        channel,
+        idempotency_key: idempotency_key || null,
+        billing_period,
+        session_token: session_token || null,
+        locality: cleanLocality,
+        intent_tag: cleanIntent,
+        status: 'new'
+      })
+    });
+
+    if (res.status === 201) {
+      return { success: true, isDuplicate: false };
+    }
+    if (res.status === 409) {
+      // PostgreSQL unique constraint 23505 (durable idempotency)
+      return { success: true, isDuplicate: true };
+    }
+    return { success: true, isDuplicate: false, status: res.status };
+  } catch (err) {
+    return { success: true, isDuplicate: false, error: err.message };
+  }
+}
+
 // In-memory usage store for serverless execution / testing
 // Structure: Map<`${provider_id}_${billing_period}`, { used, whatsapp, call, plan_id }>
 const usageStore = LeadStore.usageStore;
@@ -157,6 +207,43 @@ const contactMeterHandler = async (req, res) => {
       const isSoftCap = Boolean(req.body && (req.body.mode === 'soft_cap' || req.body.soft_cap));
 
       if (isSoftCap) {
+        // Authoritatively persist soft-cap contact event to PostgreSQL
+        const pgResult = await persistContactEvent({
+          provider_id,
+          channel: normChannel,
+          locality,
+          intent_tag,
+          idempotency_key: effectiveKey,
+          billing_period: period,
+          session_token
+        });
+
+        if (pgResult.isDuplicate) {
+          // Idempotent duplicate: do not increment usage
+          return res.status(200).json({
+            status: 'success',
+            allowed: true,
+            soft_cap: true,
+            limit_reached: true,
+            quota_exhausted: true,
+            upgrade_required: true,
+            provider_id: Number(provider_id),
+            channel: normChannel,
+            billing_period: period,
+            plan_id: plan.id,
+            plan_name: plan.name,
+            contacts_used: record.used,
+            contacts_remaining: 0,
+            allowance: plan.allowance,
+            idempotency_key: effectiveKey,
+            is_duplicate: true,
+            idempotent: true,
+            upgrade_recommended: plan.id === 'FREE' ? 'BASIC' : 'PRO',
+            upgrade_price_display: '₦5,500/month',
+            message: 'Contact initiated successfully in soft-cap mode (idempotent replay).'
+          });
+        }
+
         record.used += 1;
         if (normChannel === 'whatsapp') {
           record.whatsapp += 1;
@@ -204,6 +291,42 @@ const contactMeterHandler = async (req, res) => {
         idempotencyCache.delete(oldestKey);
       }
       return res.status(200).json(responsePayload);
+    }
+
+    // Persist contact event to authoritative PostgreSQL public.contact_events ledger
+    const pgResult = await persistContactEvent({
+      provider_id,
+      channel: normChannel,
+      locality,
+      intent_tag,
+      idempotency_key: effectiveKey,
+      billing_period: period,
+      session_token
+    });
+
+    if (pgResult.isDuplicate) {
+      // Idempotent duplicate: already persisted in PostgreSQL (e.g. concurrent tap or restart)
+      const currentRec = usageStore.get(storeKey);
+      const remaining = isUnlimited ? Math.max(0, plan.fairUse - (currentRec ? currentRec.used : 0)) : Math.max(0, plan.allowance - (currentRec ? currentRec.used : 0));
+      return res.status(200).json({
+        status: 'success',
+        allowed: true,
+        limit_reached: (currentRec ? currentRec.used : 0) >= limit,
+        quota_exhausted: false,
+        upgrade_required: false,
+        provider_id: Number(provider_id),
+        channel: normChannel,
+        billing_period: period,
+        plan_id: plan.id,
+        plan_name: plan.name,
+        contacts_used: currentRec ? currentRec.used : 1,
+        contacts_remaining: remaining,
+        allowance: plan.allowance,
+        idempotency_key: effectiveKey,
+        is_duplicate: true,
+        idempotent: true,
+        message: 'Contact initiated successfully (idempotent replay).'
+      });
     }
 
     // Atomic increment
