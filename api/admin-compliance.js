@@ -246,6 +246,15 @@ function authenticateRequest(req) {
     };
   }
 
+  // Explicit check for revoked or expired administrative session tokens (Sections 11 & 19)
+  if (typeof credential === 'string' && credential.startsWith('adm_sess_')) {
+    return {
+      authenticated: false,
+      statusCode: 401,
+      error: 'Unauthorized: Compliance Desk session has expired or was revoked.'
+    };
+  }
+
   // 3. Supabase JWT Authentication & ADMIN_EMAILS Authorization (Section 9)
   if (bearerToken && bearerToken.includes('.')) {
     const parts = bearerToken.split('.');
