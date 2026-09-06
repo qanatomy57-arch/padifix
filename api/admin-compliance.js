@@ -376,12 +376,6 @@ const adminComplianceHandler = async (req, res) => {
     '127.0.0.1'
   ).split(',')[0].trim();
 
-  // Approved Test Reset Mechanism (Section 12 & 19)
-  if (req.headers['x-compliance-test-reset'] === 'padifix_compliance_reset_approved') {
-    authFailureTracker.delete(clientIp);
-    inMemoryStore = createSeedStore();
-  }
-
   // Rate Limiting Check
   const rateLimitStatus = checkRateLimit(clientIp);
   if (!rateLimitStatus.allowed) {
@@ -395,7 +389,7 @@ const adminComplianceHandler = async (req, res) => {
   const auth = authenticateRequest(req);
   if (!auth.authenticated) {
     const hasAttemptedCredential = Boolean(req.headers['x-admin-key'] || req.headers['authorization']);
-    if (hasAttemptedCredential) {
+    if (hasAttemptedCredential && auth.statusCode === 401) {
       recordAuthFailure(clientIp);
     }
     return res.status(auth.statusCode || 401).json({ error: auth.error });

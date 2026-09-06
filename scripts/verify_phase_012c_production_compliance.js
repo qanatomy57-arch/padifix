@@ -40,12 +40,6 @@ function generateMockJwt({ email, role = 'authenticated', exp = Math.floor(Date.
   return `${header}.${payload}.${signature}`;
 }
 
-async function resetLockout() {
-  await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
-    headers: { 'x-compliance-test-reset': 'padifix_compliance_reset_approved', 'Cache-Control': 'no-cache' }
-  }).catch(() => {});
-}
-
 async function runTest(testName, fn) {
   process.stdout.write(`  ⏳ Testing: ${testName}... `);
   try {
@@ -64,9 +58,6 @@ async function runProductionComplianceSuite() {
   console.log('🛡️  PADIFIX PHASE 012C: PRODUCTION COMPLIANCE DESK EMPIRICAL AUDIT');
   console.log(`🌐  Target: ${PROD_URL}`);
   console.log('='.repeat(80));
-
-  // Reset rate limit state for clean testing session (Section 12)
-  await resetLockout();
 
   // -------------------------------------------------------------
   // 1. PRODUCTION ROUTING & SECURITY GATE MODAL
@@ -137,9 +128,6 @@ async function runProductionComplianceSuite() {
     assert.notStrictEqual(res.status, 200, 'Dev fallback key MUST NEVER authenticate in Production');
   });
 
-  // Clear failure count before user role boundary tests
-  await resetLockout();
-
   // -------------------------------------------------------------
   // 4. NON-ADMIN SUPABASE USER TEST (Section 9)
   // -------------------------------------------------------------
@@ -209,9 +197,6 @@ async function runProductionComplianceSuite() {
     });
     assert.strictEqual(res.status, 403, `Expected 403 Forbidden on dispute, got ${res.status}`);
   });
-
-  // Clear failure count before authorized admin tests
-  await resetLockout();
 
   // -------------------------------------------------------------
   // 5. AUTHORIZED ADMIN ACCESS & DATA MINIMIZATION (Section 10)
@@ -505,14 +490,44 @@ async function runProductionComplianceSuite() {
   // -------------------------------------------------------------
   console.log('\n--- 9. AUDIT IMMUTABILITY & SUPABASE RLS (SECTION 20) ---');
 
-  await runTest('9.1 verification_audits RLS policy disallows client insert/update/delete', () => {
+  await runTest('9.1 Supabase RLS empirically blocks unauthorized client mutations', async () => {
     const migrationFile = path.join(__dirname, '../supabase/migrations/032_padifix_provider_verification_and_trust_audit.sql');
     const sql = fs.readFileSync(migrationFile, 'utf8');
 
-    assert.ok(sql.includes('ALTER TABLE public.verification_audits ENABLE ROW LEVEL SECURITY;'), 'RLS must be enabled');
+    assert.ok(sql.includes('ALTER TABLE public.verification_audits ENABLE ROW LEVEL SECURITY;'), 'RLS must be enabled in schema');
     assert.ok(!sql.includes('CREATE POLICY "Providers can insert verification audits"'), 'Must not have provider insert policy');
     assert.ok(!sql.includes('CREATE POLICY "Providers can update verification audits"'), 'Must not have provider update policy');
     assert.ok(!sql.includes('CREATE POLICY "Providers can delete verification audits"'), 'Must not have provider delete policy');
+
+    // Empirical live check against Supabase REST
+    const SUPABASE_URL = 'https://hvxosxhnxauiqrhpyuur.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+
+    const insRes = await fetch(`${SUPABASE_URL}/rest/v1/verification_requests`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify({ provider_id: 8, verification_type: 'vnin' })
+    });
+    const insData = await insRes.json();
+    assert.ok(insData.code === '42501' || insRes.status === 400 || insRes.status === 403, 'PostgreSQL RLS must reject unprivileged insert');
+
+    const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/providers?id=eq.8`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify({ is_verified: true, nin_verified: true })
+    });
+    const patchData = await patchRes.json();
+    assert.ok(Array.isArray(patchData) && patchData.length === 0, 'RLS must prevent updating unowned provider records');
   });
 
   // -------------------------------------------------------------
@@ -559,15 +574,21 @@ async function runProductionComplianceSuite() {
     assert.ok(retryAfterHeader, 'Expected Retry-After header to be present on HTTP 429');
   });
 
-  await runTest('11.2 Approved test reset mechanism restores legitimate access', async () => {
-    await resetLockout();
+  await runTest('11.2 Rate-limited response enforces lockout duration and zero secret leakage', async () => {
     const res = await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
       headers: {
         'Cache-Control': 'no-cache',
-        'Authorization': `Bearer ${adminJwt}`
+        'x-admin-key': 'locked_out_probe'
       }
     });
-    assert.strictEqual(res.status, 200, `Expected 200 after reset, got ${res.status}`);
+    assert.strictEqual(res.status, 429, 'Locked out client must receive HTTP 429');
+    const retryAfter = res.headers.get('retry-after');
+    assert.ok(retryAfter && parseInt(retryAfter, 10) > 0, 'Must include positive numeric Retry-After');
+    const data = await res.json();
+    assert.ok(data.error && data.error.includes('Too Many Requests'), 'Must return standard 429 JSON message');
+    const rawText = JSON.stringify(data);
+    assert.ok(!rawText.includes('service_role'), 'Must not leak secrets');
+    assert.ok(!rawText.includes('PADIFIX_ADMIN_KEY'), 'Must not leak secrets');
   });
 
   // -------------------------------------------------------------
