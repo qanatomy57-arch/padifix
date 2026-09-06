@@ -16,10 +16,11 @@
 
 const crypto = require('crypto');
 const { withSentry } = require('../lib/sentry-server');
+const LeadStore = require('../lib/lead-store');
 
 // In-memory usage store for serverless execution / testing
 // Structure: Map<`${provider_id}_${billing_period}`, { used, whatsapp, call, plan_id }>
-const usageStore = new Map();
+const usageStore = LeadStore.usageStore;
 
 // Idempotency cache: Map<idempotency_key, { timestamp, response }>
 const idempotencyCache = new Map();
@@ -89,7 +90,7 @@ const contactMeterHandler = async (req, res) => {
   }
 
   try {
-    const { provider_id, channel, idempotency_key, session_token, plan_id, reset_period } = req.body || {};
+    const { provider_id, channel, idempotency_key, session_token, plan_id, reset_period, locality, intent_tag } = req.body || {};
 
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
@@ -110,6 +111,7 @@ const contactMeterHandler = async (req, res) => {
         return res.status(403).json({ error: 'Forbidden: Reset simulation hook is strictly disabled in production.' });
       }
       usageStore.set(storeKey, { used: 0, whatsapp: 0, call: 0, plan_id: plan_id || 'FREE' });
+      LeadStore.resetUsageForTest(provider_id, plan_id || 'FREE', 0);
       return res.status(200).json({ status: 'success', message: `Usage reset for ${storeKey}` });
     }
 
@@ -161,6 +163,15 @@ const contactMeterHandler = async (req, res) => {
         } else {
           record.call += 1;
         }
+        LeadStore.logContactLead({
+          provider_id,
+          channel: normChannel,
+          locality,
+          intent_tag,
+          idempotency_key: effectiveKey,
+          billing_period: period,
+          session_token
+        });
       }
 
       const responsePayload = {
@@ -202,6 +213,16 @@ const contactMeterHandler = async (req, res) => {
     } else {
       record.call += 1;
     }
+
+    LeadStore.logContactLead({
+      provider_id,
+      channel: normChannel,
+      locality,
+      intent_tag,
+      idempotency_key: effectiveKey,
+      billing_period: period,
+      session_token
+    });
 
     const remaining = isUnlimited ? Math.max(0, plan.fairUse - record.used) : Math.max(0, plan.allowance - record.used);
 

@@ -245,6 +245,55 @@
           </div>
         </div>
 
+        <!-- PHASE 015: MONTHLY CUSTOMER CONTACT QUOTA & SOFT-CAP GAUGE -->
+        <div class="dash-card-section dash-section-spaced" id="dash-quota-gauge-card" style="border-left: 4px solid #00A859; margin-bottom: 24px;">
+          <div class="dash-section-header" style="margin-bottom: 12px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <h2 style="margin: 0; font-size: 1.1rem;">Monthly Customer Contact Quota</h2>
+                <span id="quota-plan-badge" style="background: rgba(0, 168, 89, 0.18); color: #34D399; font-weight: 800; padding: 2px 10px; border-radius: 9999px; font-size: 0.8rem;">FREE (5/mo)</span>
+                <span id="quota-softcap-badge" style="display: none; background: rgba(245, 158, 11, 0.2); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.4); font-weight: 800; padding: 2px 10px; border-radius: 9999px; font-size: 0.78rem;">⚡ SOFT-CAP ACTIVE</span>
+              </div>
+              <p id="quota-status-subtitle" style="margin: 4px 0 0; font-size: 0.85rem; color: #94A3B8;">Track direct WhatsApp and phone connections from verified local clients.</p>
+            </div>
+            <div style="text-align: right;">
+              <span id="quota-counts-display" style="font-size: 1.3rem; font-weight: 800; color: var(--dash-text);">0 / 5</span>
+              <span id="quota-remaining-label" style="display: block; font-size: 0.78rem; color: #34D399; font-weight: 600;">5 contacts remaining</span>
+            </div>
+          </div>
+
+          <!-- Progress Bar Track -->
+          <div class="quota-bar-track" style="background: rgba(255,255,255,0.08); height: 10px; border-radius: 9999px; overflow: hidden; margin-bottom: 12px; position: relative;">
+            <div class="quota-bar-fill" id="dash-quota-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00A859, #34D399); transition: width 0.4s ease, background 0.3s ease;"></div>
+          </div>
+
+          <!-- Soft-Cap Advisory Callout Banner -->
+          <div id="quota-softcap-callout" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <strong style="color: #FBBF24; font-size: 0.9rem; display: block;">⚡ Soft-Cap Active — Consumer WhatsApp Access Never Blocked</strong>
+                <span style="color: #CBD5E1; font-size: 0.82rem;">You have exceeded your monthly free contact allowance, but clients can still reach you. Upgrade to Basic (30 contacts/month) for priority visibility.</span>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-quota-upgrade-basic" onclick="switchTab('subscription')" style="font-weight: 700; white-space: nowrap; background: #00A859; border-color: #00A859;">
+                Upgrade to Basic (₦5,500/mo) ⚡
+              </button>
+            </div>
+          </div>
+
+          <!-- Channel Distribution Summary -->
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.82rem; color: #94A3B8;">
+            <div style="background: rgba(255,255,255,0.04); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+              💬 WhatsApp: <strong id="quota-count-wa" style="color: #34D399;">0</strong>
+            </div>
+            <div style="background: rgba(255,255,255,0.04); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+              📞 Phone Calls: <strong id="quota-count-call" style="color: #38BDF8;">0</strong>
+            </div>
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 0.78rem;">
+              🔒 <em>Privacy Protected: Customer phone numbers and chat content are never stored.</em>
+            </div>
+          </div>
+        </div>
+
         <!-- Recent Leads Section -->
         <div class="dash-card-section dash-section-spaced">
           <div class="dash-section-header">
@@ -252,9 +301,10 @@
               <h2>Recent Leads</h2>
               <p>Direct customer inquiries from your local area</p>
             </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <button type="button" class="btn btn-outline" id="btn-refresh-leads" title="Refresh leads list and quota">🔄 Refresh</button>
               <button type="button" class="btn btn-outline" id="btn-export-leads-csv" title="Export privacy-safe lead history as CSV">📥 Export CSV</button>
-              <button type="button" class="btn btn-outline btn-view-all-revs" onclick="switchTab('reviews')">View All Leads</button>
+              <button type="button" class="btn btn-outline btn-view-all-revs" onclick="switchTab('reviews')">View Reviews →</button>
             </div>
           </div>
           <div class="dash-leads-list" id="recent-leads-list">
@@ -835,7 +885,7 @@
                     <li>✓ Basic analytics</li>
                   </ul>
                 </div>
-                <button type="button" class="btn btn-primary btn-sm btn-select-plan" data-plan="BASIC" style="width: 100%; font-size: 12px; padding: 8px; background: #0284C7; border-color: #0284C7;">
+                <button type="button" class="btn btn-primary btn-sm btn-select-plan" id="btn-upgrade-basic" data-plan="BASIC" style="width: 100%; font-size: 12px; padding: 8px; background: #0284C7; border-color: #0284C7;">
                   Upgrade to Basic
                 </button>
               </div>

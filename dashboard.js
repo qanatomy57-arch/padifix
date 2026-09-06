@@ -186,6 +186,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.dash-tab-panel').forEach(panel => {
       panel.classList.toggle('active', panel.id === `tab-${tabKey}`);
     });
+    if (tabKey === 'overview') {
+      loadProviderLeadsAndQuota();
+    }
     if (tabKey === 'reviews') {
       renderDashboardReviews();
     }
@@ -219,98 +222,409 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 5. Render Recent Leads List on Dashboard Home
-  function renderRecentLeads() {
-    const leadsContainer = document.getElementById('recent-leads-list');
-    if (!leadsContainer) return;
+  // 5. PHASE 015: REAL-TIME OPERATIONAL LEAD INTELLIGENCE & QUOTA ENGINE
+  let cachedLeads = [];
+  let isLeadsLoading = false;
 
-    const sampleLeads = [
-      {
-        name: 'Emeka Johnson',
-        service: currentProvider.trade ? `${currentProvider.trade.split('&')[0].trim()} Service` : 'Plumbing Service',
-        location: currentProvider.area || 'Surulere, Lagos',
-        time: '2m ago',
-        avatarBg: 'linear-gradient(135deg, #0284C7, #0369A1)',
-        initials: 'EJ'
-      },
-      {
-        name: 'Adaeze Okafor',
-        service: currentProvider.skills && currentProvider.skills[1] ? currentProvider.skills[1] : 'Bathroom Fitting',
-        location: currentProvider.city ? `${currentProvider.city}, Lagos` : 'Yaba, Lagos',
-        time: '15m ago',
-        avatarBg: 'linear-gradient(135deg, #D97706, #B45309)',
-        initials: 'AO'
-      },
-      {
-        name: 'Tunde Bakare',
-        service: 'Emergency Inspection Call',
-        location: currentProvider.area || 'Ikeja, Lagos',
-        time: '1h ago',
-        avatarBg: 'linear-gradient(135deg, #059669, #047857)',
-        initials: 'TB'
+  async function loadProviderLeadsAndQuota() {
+    if (!currentProvider || !currentProvider.id) return;
+    if (isLeadsLoading) return;
+    isLeadsLoading = true;
+
+    const providerId = currentProvider.id;
+
+    // Retrieve Supabase JWT session token
+    let token = null;
+    try {
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getSession === 'function') {
+        const sessionRes = await LokatorDB.auth.getSession();
+        token = sessionRes?.data?.session?.access_token;
       }
-    ];
+    } catch (e) {
+      console.warn('Session retrieval notice:', e.message);
+    }
 
-    leadsContainer.innerHTML = sampleLeads.map(lead => `
-      <div class="dash-lead-item">
-        <div class="dash-lead-left">
-          <div class="dash-lead-avatar" style="background: ${lead.avatarBg};">
-            ${escapeHtml(lead.initials)}
-          </div>
-          <div>
-            <div class="dash-lead-name">${escapeHtml(lead.name)}</div>
-            <div class="dash-lead-service">📍 ${escapeHtml(lead.service)}</div>
-            <div class="dash-lead-location">${escapeHtml(lead.location)}</div>
-          </div>
-        </div>
-        <div class="dash-lead-right">
-          <span class="dash-lead-badge">New</span>
-          <span class="dash-lead-time">${escapeHtml(lead.time)}</span>
-        </div>
-      </div>
-    `).join('');
+    if (!token && typeof localStorage !== 'undefined') {
+      try {
+        const rawSession = localStorage.getItem('lokator_supabase_auth_session') || localStorage.getItem('lokator_auth_session');
+        if (rawSession) {
+          const parsed = JSON.parse(rawSession);
+          token = parsed.access_token || parsed.token || null;
+        }
+      } catch (e) {}
+    }
 
-    const exportBtn = document.getElementById('btn-export-leads-csv');
-    if (exportBtn && !exportBtn.dataset.bound) {
-      exportBtn.dataset.bound = 'true';
-      exportBtn.addEventListener('click', () => exportLeadsCsv(sampleLeads));
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const res = await fetch(`/api/provider-leads?provider_id=${encodeURIComponent(providerId)}`, {
+        method: 'GET',
+        headers
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        renderQuotaGauge(data);
+        cachedLeads = data.leads || [];
+        renderLeadsInbox(cachedLeads);
+      } else {
+        renderFallbackLeadsAndQuota();
+      }
+    } catch (err) {
+      renderFallbackLeadsAndQuota();
+    } finally {
+      isLeadsLoading = false;
     }
   }
 
-  // 5.0 Privacy-Safe Lead History CSV Export (RFC 4180 with PII Masking)
+  function renderQuotaGauge(data) {
+    if (!data) return;
+    const used = data.contacts_used || 0;
+    const allowance = data.allowance || 5;
+    const remaining = data.contacts_remaining ?? Math.max(0, allowance - used);
+    const planName = data.plan_name || data.plan_id || 'FREE';
+    const isSoftCap = Boolean(data.soft_cap || used > allowance);
+
+    const badgePlan = document.getElementById('quota-plan-badge');
+    if (badgePlan) {
+      badgePlan.textContent = `${planName.toUpperCase()} (${allowance >= 500 ? 'Fair-Use' : allowance + '/mo'})`;
+    }
+
+    const badgeSoftcap = document.getElementById('quota-softcap-badge');
+    if (badgeSoftcap) {
+      badgeSoftcap.style.display = isSoftCap ? 'inline-block' : 'none';
+    }
+
+    const calloutSoftcap = document.getElementById('quota-softcap-callout');
+    if (calloutSoftcap) {
+      calloutSoftcap.style.display = isSoftCap ? 'block' : 'none';
+    }
+
+    const countsDisplay = document.getElementById('quota-counts-display');
+    if (countsDisplay) {
+      countsDisplay.textContent = `${used} / ${allowance >= 500 ? '∞' : allowance}`;
+    }
+
+    const remLabel = document.getElementById('quota-remaining-label');
+    if (remLabel) {
+      remLabel.textContent = isSoftCap
+        ? `${used - allowance} contacts over quota (Soft-cap active)`
+        : `${remaining} contacts remaining`;
+      remLabel.style.color = isSoftCap ? '#F59E0B' : (remaining > 0 ? '#34D399' : '#EF4444');
+    }
+
+    const barFill = document.getElementById('dash-quota-bar-fill');
+    if (barFill) {
+      const pct = Math.min(100, Math.round((used / (allowance || 1)) * 100));
+      barFill.style.width = `${pct}%`;
+      if (isSoftCap) {
+        barFill.style.background = 'linear-gradient(90deg, #F59E0B, #D97706)';
+      } else if (pct >= 80) {
+        barFill.style.background = '#F59E0B';
+      } else {
+        barFill.style.background = 'linear-gradient(90deg, #00A859, #34D399)';
+      }
+    }
+
+    const countWa = document.getElementById('quota-count-wa');
+    if (countWa) countWa.textContent = data.whatsapp_contacts ?? 0;
+
+    const countCall = document.getElementById('quota-count-call');
+    if (countCall) countCall.textContent = data.phone_contacts ?? 0;
+
+    // Overview Ribbon KPI synchronization
+    const kpiLeads = document.getElementById('kpi-leads');
+    if (kpiLeads) {
+      kpiLeads.textContent = data.pagination?.total ?? (data.leads ? data.leads.length : 0);
+    }
+    const kpiPlan = document.getElementById('kpi-sub-plan');
+    if (kpiPlan) kpiPlan.textContent = (data.plan_id || 'FREE').toUpperCase();
+    const kpiRem = document.getElementById('kpi-sub-remaining');
+    if (kpiRem) {
+      kpiRem.textContent = isSoftCap ? 'Soft-cap active' : (allowance >= 500 ? 'Unlimited' : `${remaining} contacts left`);
+      kpiRem.style.color = isSoftCap ? '#F59E0B' : (remaining > 0 ? '#34D399' : '#EF4444');
+    }
+  }
+
+  function renderLeadsInbox(leads) {
+    const leadsContainer = document.getElementById('recent-leads-list');
+    if (!leadsContainer) return;
+
+    if (!Array.isArray(leads) || leads.length === 0) {
+      leadsContainer.innerHTML = `
+        <div style="padding: 28px 16px; text-align: center; color: var(--dash-muted); font-size: 13.5px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px dashed var(--dash-border);">
+          <div style="font-size: 1.8rem; margin-bottom: 6px;">📭</div>
+          <strong style="color: var(--dash-text); font-size: 0.95rem; display: block; margin-bottom: 4px;">No customer leads yet this billing period</strong>
+          <span>Share your verified profile link to receive direct customer inquiries on WhatsApp.</span>
+        </div>
+      `;
+      bindLeadControls();
+      return;
+    }
+
+    leadsContainer.innerHTML = leads.map(lead => {
+      const isWa = lead.channel === 'whatsapp';
+      const channelIcon = isWa ? '💬' : '📞';
+      const channelClass = isWa ? 'whatsapp' : 'call';
+      const locality = escapeHtml(lead.locality || 'Local Area');
+      const intent = escapeHtml(lead.intent_tag || 'Direct Customer Inquiry');
+      const time = escapeHtml(lead.relative_time || 'Recently');
+      const notes = lead.notes ? escapeHtml(lead.notes) : '';
+      const status = lead.status || 'new';
+
+      return `
+        <div class="dash-lead-item" id="lead-card-${escapeHtml(lead.id)}" data-lead-id="${escapeHtml(lead.id)}">
+          <div class="dash-lead-left">
+            <div class="dash-lead-channel-icon ${channelClass}" title="${isWa ? 'WhatsApp Inquiry' : 'Phone Call'}">
+              ${channelIcon}
+            </div>
+            <div style="min-width: 0;">
+              <div class="dash-lead-name dash-lead-locality">📍 ${locality}</div>
+              <div class="dash-lead-service dash-lead-intent">${intent}</div>
+              ${notes ? `<div class="dash-lead-notes-drawer" id="notes-text-${escapeHtml(lead.id)}">📝 ${notes}</div>` : `<div id="notes-text-${escapeHtml(lead.id)}" style="display:none;"></div>`}
+            </div>
+          </div>
+          <div class="dash-lead-right">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <select class="dash-lead-status-select status-${status}" data-lead-id="${escapeHtml(lead.id)}" title="Update Lead Status">
+                <option value="new" ${status === 'new' ? 'selected' : ''}>New</option>
+                <option value="in_discussion" ${status === 'in_discussion' ? 'selected' : ''}>In Discussion</option>
+                <option value="quote_sent" ${status === 'quote_sent' ? 'selected' : ''}>Quote Sent</option>
+                <option value="job_won" ${status === 'job_won' ? 'selected' : ''}>Job Won</option>
+              </select>
+              <button type="button" class="dash-lead-notes-btn" data-lead-id="${escapeHtml(lead.id)}" title="Add or edit private note">✏️</button>
+            </div>
+            <span class="dash-lead-time">${time}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    bindLeadControls();
+  }
+
+  function bindLeadControls() {
+    // Status Select listeners
+    document.querySelectorAll('.dash-lead-status-select').forEach(select => {
+      if (select.dataset.bound) return;
+      select.dataset.bound = 'true';
+      select.addEventListener('change', async (e) => {
+        const leadId = select.dataset.leadId;
+        const newStatus = e.target.value;
+        await handleLeadStatusChange(leadId, newStatus, select);
+      });
+    });
+
+    // Notes Button listeners
+    document.querySelectorAll('.dash-lead-notes-btn').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', async () => {
+        const leadId = btn.dataset.leadId;
+        await handleLeadNotesPrompt(leadId);
+      });
+    });
+
+    // Export CSV button
+    const exportBtn = document.getElementById('btn-export-leads-csv');
+    if (exportBtn && !exportBtn.dataset.bound) {
+      exportBtn.dataset.bound = 'true';
+      exportBtn.addEventListener('click', () => exportLeadsCsv(cachedLeads));
+    }
+
+    // Refresh button
+    const refreshBtn = document.getElementById('btn-refresh-leads');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+      refreshBtn.dataset.bound = 'true';
+      refreshBtn.addEventListener('click', () => {
+        showToast('Refreshing leads...');
+        loadProviderLeadsAndQuota();
+      });
+    }
+  }
+
+  async function handleLeadStatusChange(leadId, newStatus, selectEl) {
+    const oldStatusClass = Array.from(selectEl.classList).find(c => c.startsWith('status-')) || 'status-new';
+    selectEl.className = `dash-lead-status-select status-${newStatus}`;
+
+    let token = null;
+    try {
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getSession === 'function') {
+        const sessionRes = await LokatorDB.auth.getSession();
+        token = sessionRes?.data?.session?.access_token;
+      }
+    } catch (e) {}
+
+    if (!token && typeof localStorage !== 'undefined') {
+      try {
+        const rawSession = localStorage.getItem('lokator_supabase_auth_session') || localStorage.getItem('lokator_auth_session');
+        if (rawSession) {
+          const parsed = JSON.parse(rawSession);
+          token = parsed.access_token || parsed.token || null;
+        }
+      } catch (e) {}
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const res = await fetch('/api/provider-leads', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          lead_id: leadId,
+          status: newStatus,
+          provider_id: currentProvider ? currentProvider.id : undefined
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const lead = cachedLeads.find(l => l.id === leadId);
+      if (lead) lead.status = newStatus;
+
+      const displayStatus = newStatus.replace('_', ' ').toUpperCase();
+      showToast(`Lead status updated: ${displayStatus}`);
+    } catch (err) {
+      selectEl.className = `dash-lead-status-select ${oldStatusClass}`;
+      showToast(`Failed to update status: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleLeadNotesPrompt(leadId) {
+    const lead = cachedLeads.find(l => l.id === leadId);
+    const existingNotes = lead ? (lead.notes || '') : '';
+    const input = prompt('Enter private notes for this lead (max 500 characters):', existingNotes);
+    if (input === null) return;
+
+    if (input.length > 500) {
+      showToast('Notes cannot exceed 500 characters.', 'error');
+      return;
+    }
+
+    let token = null;
+    try {
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getSession === 'function') {
+        const sessionRes = await LokatorDB.auth.getSession();
+        token = sessionRes?.data?.session?.access_token;
+      }
+    } catch (e) {}
+
+    if (!token && typeof localStorage !== 'undefined') {
+      try {
+        const rawSession = localStorage.getItem('lokator_supabase_auth_session') || localStorage.getItem('lokator_auth_session');
+        if (rawSession) {
+          const parsed = JSON.parse(rawSession);
+          token = parsed.access_token || parsed.token || null;
+        }
+      } catch (e) {}
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const res = await fetch('/api/provider-leads', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          lead_id: leadId,
+          notes: input.trim(),
+          provider_id: currentProvider ? currentProvider.id : undefined
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      if (lead) lead.notes = input.trim();
+      const notesEl = document.getElementById(`notes-text-${leadId}`);
+      if (notesEl) {
+        if (input.trim()) {
+          notesEl.className = 'dash-lead-notes-drawer';
+          notesEl.style.display = 'block';
+          notesEl.textContent = `📝 ${input.trim()}`;
+        } else {
+          notesEl.style.display = 'none';
+          notesEl.textContent = '';
+        }
+      }
+      showToast('Private notes saved.', 'success');
+    } catch (err) {
+      showToast(`Failed to save notes: ${err.message}`, 'error');
+    }
+  }
+
+  function renderFallbackLeadsAndQuota() {
+    renderQuotaGauge({
+      plan_id: 'FREE',
+      plan_name: 'Free Starter',
+      allowance: 5,
+      contacts_used: 0,
+      whatsapp_contacts: 0,
+      phone_contacts: 0,
+      contacts_remaining: 5,
+      soft_cap: false
+    });
+    renderLeadsInbox(cachedLeads);
+  }
+
+  // Backward-compatible alias
+  function renderRecentLeads() {
+    loadProviderLeadsAndQuota();
+  }
+
+  // 5.0 Privacy-Safe Lead History CSV Export (RFC 4180 with Formula Injection Defense)
   function exportLeadsCsv(leads) {
     if (!Array.isArray(leads) || leads.length === 0) {
       showToast('No lead records available to export.', 'info');
       return;
     }
 
-    const headers = ['Lead Reference', 'Customer (Privacy-Masked)', 'Requested Service', 'Location / Area', 'Inquiry Channel', 'Commission Rate', 'Status', 'Date / Time'];
-    const rows = leads.map((l, idx) => {
-      const nameParts = (l.name || 'Customer').trim().split(/\s+/);
-      const maskedName = nameParts.length > 1 ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.` : nameParts[0];
-      const leadRef = `PFX-LEAD-${new Date().getFullYear()}-${String(idx + 1).padStart(4, '0')}`;
-      const service = l.service || 'Artisan Service';
-      const loc = l.location || 'Local Area';
-      const channel = 'WhatsApp / Phone Direct';
-      const commission = '0% (PadiFix Invariant)';
-      const status = 'Direct Lead';
-      const time = l.time || 'Recent';
+    const sanitizeCsvCell = (val) => {
+      let str = String(val ?? '').trim();
+      // Neutralize dangerous spreadsheet formula injection prefixes (=, +, -, @)
+      if (/^[=+\-@]/.test(str)) {
+        str = "'" + str;
+      }
+      return `"${str.replace(/"/g, '""')}"`;
+    };
 
-      return [leadRef, maskedName, service, loc, channel, commission, status, time].map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
+    const headers = ['Date', 'Channel', 'Locality', 'Status'].join(',');
+    const rows = leads.map(l => {
+      const dateVal = l.created_at ? new Date(l.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const channelVal = l.channel === 'whatsapp' ? 'WhatsApp' : 'Phone Call';
+      const localityVal = l.locality || 'Local Area';
+      const statusVal = (l.status || 'new').replace('_', ' ').toUpperCase();
+
+      return [dateVal, channelVal, localityVal, statusVal].map(sanitizeCsvCell).join(',');
     });
 
-    const csvContent = [headers.join(','), ...rows].join('\r\n');
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const filename = `padifix_leads_${yearMonth}.csv`;
+
+    const csvContent = [headers, ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `padifix_leads_history_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    showToast('Lead history exported successfully (privacy-safe format).', 'success');
+    showToast(`Lead history exported (${leads.length} records).`, 'success');
   }
 
   // 5.1 Load & Render Metrics for Overview
@@ -1600,6 +1914,11 @@ document.addEventListener('DOMContentLoaded', async () => {
               });
               if (res.ok) {
                 initRes = await res.json();
+                if (initRes && initRes.authorization_url) {
+                  // Hosted Checkout Redirect (PadiFix Canonical Flow)
+                  window.location.href = initRes.authorization_url;
+                  return;
+                }
               }
             } catch (netErr) {
               console.warn('API init fetch notice, using local test simulator:', netErr.message);
@@ -2412,6 +2731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 12. Run Initial Render Pipeline
   await loadMetrics();
+  await loadProviderLeadsAndQuota();
   populateProfileForm();
   renderSkillsChips();
   renderPricingRows();

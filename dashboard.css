@@ -1134,6 +1134,88 @@ input:checked + .slider:before {
   border-radius: var(--radius-full);
 }
 
+/* PHASE 015: LEAD INTELLIGENCE STATUS & NOTES STYLING */
+.dash-lead-channel-icon {
+  font-size: 1.15rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dash-lead-channel-icon.whatsapp {
+  background: rgba(37, 211, 102, 0.15);
+  border: 1px solid rgba(37, 211, 102, 0.3);
+}
+.dash-lead-channel-icon.call {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.dash-lead-status-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 4px 24px 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 9999px;
+  cursor: pointer;
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%2394A3B8' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  transition: all 0.2s ease;
+}
+.dash-lead-status-select.status-new {
+  background-color: rgba(0, 168, 89, 0.15);
+  color: #34D399;
+  border: 1px solid rgba(0, 168, 89, 0.35);
+}
+.dash-lead-status-select.status-in_discussion {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38BDF8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+.dash-lead-status-select.status-quote_sent {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #F59E0B;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.dash-lead-status-select.status-job_won {
+  background-color: rgba(16, 185, 129, 0.25);
+  color: #10B981;
+  border: 1px solid #10B981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+}
+
+.dash-lead-notes-btn {
+  background: transparent;
+  border: none;
+  color: var(--dash-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+.dash-lead-notes-btn:hover {
+  color: #34D399;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dash-lead-notes-drawer {
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border-left: 3px solid #00A859;
+  font-size: 12px;
+  color: var(--dash-text);
+  line-height: 1.4;
+}
+
 /* EDIT PROFILE AVATAR UPLOAD */
 .edit-avatar-section {
   display: flex;
