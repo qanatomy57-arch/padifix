@@ -29,8 +29,27 @@
  */
 
 const crypto = require('crypto');
+const { jwtVerify, createRemoteJWKSet, decodeProtectedHeader } = require('jose');
 const ResendEmailService = require('../lib/resend-email-service');
 const { withSentry } = require('../lib/sentry-server');
+
+// -------------------------------------------------------------
+// Supabase Public JWKS Key Set Configuration (ES256 / RS256)
+// -------------------------------------------------------------
+const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
+const TARGET_DEFAULT_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
+const TARGET_DEFAULT_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+
+let remoteJWKS = null;
+function getRemoteJWKS() {
+  if (!remoteJWKS) {
+    const jwksUrl = new URL(`${TARGET_DEFAULT_URL}/auth/v1/.well-known/jwks.json`);
+    remoteJWKS = createRemoteJWKSet(jwksUrl, {
+      headers: { apikey: TARGET_DEFAULT_ANON_KEY }
+    });
+  }
+  return remoteJWKS;
+}
 
 // -------------------------------------------------------------
 // Rate Limiting & Brute-Force Throttling
@@ -219,7 +238,136 @@ function timingSafeMatch(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-function authenticateRequest(req) {
+/**
+ * Cryptographically verifies a Supabase JWT using:
+ * 1. Supabase public JWKS endpoint (ES256 / RS256)
+ * 2. Supabase JWT secret (HS256) if configured
+ * 3. Authoritative Supabase Auth API (/auth/v1/user)
+ */
+async function verifySupabaseJwt(token, isProd) {
+  if (typeof token !== 'string' || !token.trim()) {
+    return { valid: false, statusCode: 401, error: 'Unauthorized: Missing token.' };
+  }
+
+  const rawParts = token.trim().split('.');
+  if (rawParts.length !== 3) {
+    return { valid: false, statusCode: 401, error: 'Unauthorized: Malformed JWT token structure.' };
+  }
+
+  // Normalize base64 to RFC 7515 base64url (handles both standard base64 and base64url inputs)
+  const normalizedParts = rawParts.map(p => p.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+  const normalizedToken = normalizedParts.join('.');
+
+  let protectedHeader = null;
+  try {
+    protectedHeader = decodeProtectedHeader(normalizedToken);
+  } catch (e) {
+    return { valid: false, statusCode: 401, error: 'Unauthorized: Malformed JWT header.' };
+  }
+
+  if (!protectedHeader || !protectedHeader.alg || protectedHeader.alg === 'none') {
+    return { valid: false, statusCode: 401, error: 'Unauthorized: Insecure or unsupported JWT algorithm.' };
+  }
+
+  // 1. Asymmetric JWKS Verification (ES256 / RS256 via Supabase project JWKS)
+  if (protectedHeader.alg === 'ES256' || protectedHeader.alg === 'RS256') {
+    try {
+      const jwks = getRemoteJWKS();
+      const { payload } = await jwtVerify(normalizedToken, jwks, {
+        algorithms: ['ES256', 'RS256']
+      });
+
+      const email = (
+        payload.email ||
+        (payload.user_metadata && payload.user_metadata.email) ||
+        ''
+      ).toLowerCase().trim();
+
+      if (!email) {
+        return { valid: false, statusCode: 401, error: 'Unauthorized: JWT missing authenticated email identity.' };
+      }
+
+      return { valid: true, payload: { ...payload, email } };
+    } catch (jwksErr) {
+      if (jwksErr.code === 'ERR_JWT_EXPIRED') {
+        return { valid: false, statusCode: 401, error: 'Unauthorized: Admin session has expired.' };
+      }
+      return { valid: false, statusCode: 401, error: 'Unauthorized: Cryptographic JWT signature verification failed.' };
+    }
+  }
+
+  // 2. Symmetric HS256 Verification (Supported if SUPABASE_JWT_SECRET is configured, or in dev test mode)
+  if (protectedHeader.alg === 'HS256') {
+    const jwtSecret = process.env.SUPABASE_JWT_SECRET || (!isProd ? 'mock_jwt_secret' : null);
+    if (jwtSecret && jwtSecret.length > 0) {
+      // Direct timing-safe HMAC-SHA256 signature verification over raw header.payload
+      const expectedSigBase64 = crypto.createHmac('sha256', jwtSecret).update(`${rawParts[0]}.${rawParts[1]}`).digest('base64');
+      const expectedSigBase64Url = crypto.createHmac('sha256', jwtSecret).update(`${rawParts[0]}.${rawParts[1]}`).digest('base64url');
+      const providedSig = rawParts[2];
+
+      const matches = timingSafeMatch(providedSig, expectedSigBase64) ||
+                      timingSafeMatch(providedSig, expectedSigBase64Url) ||
+                      timingSafeMatch(providedSig.replace(/=+$/, ''), expectedSigBase64Url);
+
+      if (matches) {
+        try {
+          const payloadStr = Buffer.from(rawParts[1], 'base64').toString('utf8');
+          const payload = JSON.parse(payloadStr);
+
+          if (payload.exp && Date.now() >= payload.exp * 1000) {
+            return { valid: false, statusCode: 401, error: 'Unauthorized: Admin session has expired.' };
+          }
+
+          const email = (
+            payload.email ||
+            (payload.user_metadata && payload.user_metadata.email) ||
+            ''
+          ).toLowerCase().trim();
+
+          if (!email) {
+            return { valid: false, statusCode: 401, error: 'Unauthorized: JWT missing authenticated email identity.' };
+          }
+
+          return { valid: true, payload: { ...payload, email } };
+        } catch (parseErr) {
+          return { valid: false, statusCode: 401, error: 'Unauthorized: Malformed JWT payload.' };
+        }
+      }
+      return { valid: false, statusCode: 401, error: 'Unauthorized: Cryptographic JWT signature verification failed.' };
+    }
+  }
+
+  // 3. Authoritative Supabase Auth API Fallback (/auth/v1/user)
+  try {
+    const userRes = await fetch(`${TARGET_DEFAULT_URL}/auth/v1/user`, {
+      headers: {
+        apikey: TARGET_DEFAULT_ANON_KEY,
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    if (userRes.ok) {
+      const userData = await userRes.json();
+      const email = (
+        userData.email ||
+        (userData.user_metadata && userData.user_metadata.email) ||
+        ''
+      ).toLowerCase().trim();
+
+      if (!email) {
+        return { valid: false, statusCode: 401, error: 'Unauthorized: User account missing email identity.' };
+      }
+
+      return { valid: true, payload: { ...userData, email } };
+    } else {
+      return { valid: false, statusCode: 401, error: 'Unauthorized: Cryptographic JWT signature verification failed.' };
+    }
+  } catch (fetchErr) {
+    return { valid: false, statusCode: 401, error: 'Unauthorized: Cryptographic JWT signature verification failed.' };
+  }
+}
+
+async function authenticateRequest(req) {
   const isProd = isProductionEnvironment();
   const configuredKey = process.env.PADIFIX_ADMIN_KEY;
 
@@ -259,60 +407,60 @@ function authenticateRequest(req) {
     };
   }
 
-  // 3. Supabase JWT Authentication & ADMIN_EMAILS Authorization (Section 9)
+  // 3. Supabase JWT Authentication & Cryptographic Verification
   if (bearerToken && bearerToken.includes('.')) {
-    const parts = bearerToken.split('.');
-    if (parts.length === 3) {
-      try {
-        const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
-        const payload = JSON.parse(payloadStr);
-
-        const email = (
-          payload.email ||
-          (payload.user_metadata && payload.user_metadata.email) ||
-          ''
-        ).toLowerCase();
-
-        const role = (payload.app_metadata && payload.app_metadata.role) || payload.role;
-
-        // Check ADMIN_EMAILS allowlist
-        const adminEmails = (process.env.ADMIN_EMAILS || 'admin@padifix.ng,compliance@padifix.ng')
-          .split(',')
-          .map(e => e.trim().toLowerCase());
-
-        // Check if token has expired
-        if (payload.exp && Date.now() >= payload.exp * 1000) {
-          return { authenticated: false, statusCode: 401, error: 'Unauthorized: Admin session has expired.' };
-        }
-
-        if (email && adminEmails.includes(email)) {
-          return {
-            authenticated: true,
-            officerId: email,
-            role: 'compliance_officer',
-            user: payload
-          };
-        }
-
-        if (role === 'admin' || role === 'compliance_officer') {
-          return {
-            authenticated: true,
-            officerId: email || 'authorized_compliance_admin',
-            role: 'compliance_officer',
-            user: payload
-          };
-        }
-
-        // Authenticated user exists but is NOT in admin allowlist (e.g. normal provider)
-        return {
-          authenticated: false,
-          statusCode: 403,
-          error: 'Forbidden: Authenticated user is not an authorized compliance officer.'
-        };
-      } catch (parseErr) {
-        // Fall through to credential checks
-      }
+    // Validate that ADMIN_EMAILS is configured (FAIL CLOSED in production if missing)
+    const rawAdminEmails = process.env.ADMIN_EMAILS;
+    if (isProd && (!rawAdminEmails || !rawAdminEmails.trim())) {
+      return {
+        authenticated: false,
+        statusCode: 500,
+        error: 'Server Configuration Error: Missing or empty ADMIN_EMAILS in production.'
+      };
     }
+
+    // In production, NEVER fall back to hardcoded emails. Only use explicitly configured ADMIN_EMAILS.
+    // In dev/test, fallback is strictly scoped to local testing.
+    const adminEmails = (rawAdminEmails || (isProd ? '' : 'ad.padifix@outlook.com,admin@padifix.ng,compliance@padifix.ng'))
+      .split(',')
+      .map(e => e.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (adminEmails.length === 0) {
+      return {
+        authenticated: false,
+        statusCode: 500,
+        error: 'Server Configuration Error: No authorized administrator emails configured.'
+      };
+    }
+
+    // Cryptographic JWT Signature & Claims Verification MUST precede identity trust
+    const jwtResult = await verifySupabaseJwt(bearerToken, isProd);
+    if (!jwtResult.valid) {
+      return {
+        authenticated: false,
+        statusCode: jwtResult.statusCode || 401,
+        error: jwtResult.error || 'Unauthorized: Cryptographic JWT signature verification failed.'
+      };
+    }
+
+    // Claims & Authorization Check
+    const authenticatedEmail = jwtResult.payload.email;
+    if (adminEmails.includes(authenticatedEmail)) {
+      return {
+        authenticated: true,
+        officerId: authenticatedEmail,
+        role: 'compliance_officer',
+        user: jwtResult.payload
+      };
+    }
+
+    // Authenticated user exists but is NOT in admin allowlist
+    return {
+      authenticated: false,
+      statusCode: 403,
+      error: 'Forbidden: Authenticated user is not an authorized compliance officer.'
+    };
   }
 
   // 4. Strict Fail-Closed in Production if PADIFIX_ADMIN_KEY is unconfigured or insecure (Section 3)
@@ -386,7 +534,8 @@ const adminComplianceHandler = async (req, res) => {
   }
 
   // Authenticate Request
-  const auth = authenticateRequest(req);
+  const auth = await authenticateRequest(req);
+
   if (!auth.authenticated) {
     const hasAttemptedCredential = Boolean(req.headers['x-admin-key'] || req.headers['authorization']);
     if (hasAttemptedCredential && (auth.statusCode === 401 || auth.statusCode === 500)) {
