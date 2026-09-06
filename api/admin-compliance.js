@@ -375,7 +375,7 @@ const adminComplianceHandler = async (req, res) => {
   // Authenticate Request
   const auth = authenticateRequest(req);
   if (!auth.authenticated) {
-    if (auth.statusCode === 401) {
+    if (auth.statusCode === 401 || auth.statusCode === 500) {
       recordAuthFailure(clientIp);
     }
     return res.status(auth.statusCode || 401).json({ error: auth.error });
