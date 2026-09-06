@@ -29,7 +29,6 @@
  */
 
 const crypto = require('crypto');
-const { jwtVerify, createRemoteJWKSet, decodeProtectedHeader } = require('jose');
 const ResendEmailService = require('../lib/resend-email-service');
 const { withSentry } = require('../lib/sentry-server');
 
@@ -40,15 +39,30 @@ const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhp
 const TARGET_DEFAULT_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
 const TARGET_DEFAULT_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
 
-let remoteJWKS = null;
-function getRemoteJWKS() {
-  if (!remoteJWKS) {
-    const jwksUrl = new URL(`${TARGET_DEFAULT_URL}/auth/v1/.well-known/jwks.json`);
-    remoteJWKS = createRemoteJWKSet(jwksUrl, {
+let jwksCache = null;
+let jwksCachedAt = 0;
+const JWKS_CACHE_TTL_MS = 3600 * 1000; // 1 hour
+
+async function getSupabasePublicKeys() {
+  const now = Date.now();
+  if (jwksCache && (now - jwksCachedAt < JWKS_CACHE_TTL_MS)) {
+    return jwksCache;
+  }
+  try {
+    const res = await fetch(`${TARGET_DEFAULT_URL}/auth/v1/.well-known/jwks.json`, {
       headers: { apikey: TARGET_DEFAULT_ANON_KEY }
     });
+    if (!res.ok) return jwksCache || [];
+    const data = await res.json();
+    if (data && Array.isArray(data.keys)) {
+      jwksCache = data.keys;
+      jwksCachedAt = now;
+      return jwksCache;
+    }
+  } catch (e) {
+    // Return stale cache if available
   }
-  return remoteJWKS;
+  return jwksCache || [];
 }
 
 // -------------------------------------------------------------
@@ -260,7 +274,8 @@ async function verifySupabaseJwt(token, isProd) {
 
   let protectedHeader = null;
   try {
-    protectedHeader = decodeProtectedHeader(normalizedToken);
+    const headerJson = Buffer.from(normalizedParts[0], 'base64url').toString('utf8');
+    protectedHeader = JSON.parse(headerJson);
   } catch (e) {
     return { valid: false, statusCode: 401, error: 'Unauthorized: Malformed JWT header.' };
   }
@@ -272,26 +287,40 @@ async function verifySupabaseJwt(token, isProd) {
   // 1. Asymmetric JWKS Verification (ES256 / RS256 via Supabase project JWKS)
   if (protectedHeader.alg === 'ES256' || protectedHeader.alg === 'RS256') {
     try {
-      const jwks = getRemoteJWKS();
-      const { payload } = await jwtVerify(normalizedToken, jwks, {
-        algorithms: ['ES256', 'RS256']
-      });
+      const keys = await getSupabasePublicKeys();
+      const matchingKey = protectedHeader.kid ? keys.find(k => k.kid === protectedHeader.kid) : keys[0];
+      if (matchingKey) {
+        const pubKey = crypto.createPublicKey({ key: matchingKey, format: 'jwk' });
+        const algorithm = protectedHeader.alg === 'ES256' ? 'sha256' : (protectedHeader.alg === 'RS256' ? 'RSA-SHA256' : 'sha256');
+        const dsaEncoding = protectedHeader.alg === 'ES256' ? 'ieee-p1363' : undefined;
 
-      const email = (
-        payload.email ||
-        (payload.user_metadata && payload.user_metadata.email) ||
-        ''
-      ).toLowerCase().trim();
+        const signedData = Buffer.from(`${rawParts[0]}.${rawParts[1]}`);
+        const sigBuf = Buffer.from(normalizedParts[2], 'base64url');
 
-      if (!email) {
-        return { valid: false, statusCode: 401, error: 'Unauthorized: JWT missing authenticated email identity.' };
+        const verified = crypto.verify(algorithm, signedData, { key: pubKey, dsaEncoding }, sigBuf);
+        if (verified) {
+          const payloadStr = Buffer.from(rawParts[1], 'base64').toString('utf8');
+          const payload = JSON.parse(payloadStr);
+
+          if (payload.exp && Date.now() >= payload.exp * 1000) {
+            return { valid: false, statusCode: 401, error: 'Unauthorized: Admin session has expired.' };
+          }
+
+          const email = (
+            payload.email ||
+            (payload.user_metadata && payload.user_metadata.email) ||
+            ''
+          ).toLowerCase().trim();
+
+          if (!email) {
+            return { valid: false, statusCode: 401, error: 'Unauthorized: JWT missing authenticated email identity.' };
+          }
+
+          return { valid: true, payload: { ...payload, email } };
+        }
       }
-
-      return { valid: true, payload: { ...payload, email } };
+      return { valid: false, statusCode: 401, error: 'Unauthorized: Cryptographic JWT signature verification failed.' };
     } catch (jwksErr) {
-      if (jwksErr.code === 'ERR_JWT_EXPIRED') {
-        return { valid: false, statusCode: 401, error: 'Unauthorized: Admin session has expired.' };
-      }
       return { valid: false, statusCode: 401, error: 'Unauthorized: Cryptographic JWT signature verification failed.' };
     }
   }
