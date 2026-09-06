@@ -301,10 +301,76 @@ document.addEventListener('DOMContentLoaded', async () => {
   const providerLocation = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || 'your area';
   
   const heroTelUrl = PhoneEngine ? PhoneEngine.buildTelUrl(provider) : (provider.phone ? `tel:${provider.phone}` : '');
-  const heroWaUrl = PhoneEngine ? PhoneEngine.buildWhatsAppUrl(provider, { service: provider.trade, location: providerLocation }) : '';
+  const heroWaUrl = PhoneEngine 
+    ? (PhoneEngine.buildSmartWhatsAppUrl 
+        ? PhoneEngine.buildSmartWhatsAppUrl(provider, { service: provider.trade, lga: provider.lga, state: provider.state })
+        : PhoneEngine.buildWhatsAppUrl(provider, { service: provider.trade, location: providerLocation })) 
+    : '';
 
-  // Phase 010: Server-side contact metering with idempotency and Free limit guard
+  // Phase 010 / Phase 014: Server-side contact metering with idempotency, soft-cap, and PWA outbox
   function checkOrMeterContact(channel, e) {
+    if (channel === 'whatsapp') {
+      // Phase 014 Product Invariant — Zero-Friction Consumer Guarantee:
+      // CONSUMERS MUST NEVER BE BLOCKED FROM CONTACTING AN ARTISAN ON WHATSAPP.
+
+      // 1. Record minimal recent contact locally for 24-48h review follow-up
+      try {
+        const rawContacts = localStorage.getItem('padifix_recent_contacts') || '[]';
+        let recentList = JSON.parse(rawContacts);
+        recentList = recentList.filter(c => String(c.provider_id) !== String(provider.id));
+        recentList.unshift({
+          provider_id: provider.id,
+          provider_name: provider.name || '',
+          trade: provider.trade || '',
+          contacted_at: Date.now()
+        });
+        localStorage.setItem('padifix_recent_contacts', JSON.stringify(recentList.slice(0, 20)));
+      } catch (err) {}
+
+      // 2. Asynchronous non-blocking lead metering / offline queueing
+      // Phase 014: Cryptographic attempt UUID with 30s duplicate-tap debounce
+      if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
+      const attemptCacheKey = `${provider.id}_whatsapp`;
+      const nowTime = Date.now();
+      let idemKey;
+      const cachedAttempt = window._padifixContactAttempts.get(attemptCacheKey);
+      if (cachedAttempt && (nowTime - cachedAttempt.time) < 30000) {
+        idemKey = cachedAttempt.key;
+      } else {
+        const evtId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
+        idemKey = `idem_${provider.id}_whatsapp_${evtId}`;
+        window._padifixContactAttempts.set(attemptCacheKey, { key: idemKey, time: nowTime });
+      }
+
+      if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
+        PadiFixPWA.dispatchContactLead({
+          provider_id: provider.id,
+          channel: 'whatsapp',
+          idempotency_key: idemKey
+        }).catch(() => {});
+      } else if (typeof LokatorDB !== 'undefined' && LokatorDB.contactMeter) {
+        let visitorSession = sessionStorage.getItem('padifix_visitor_session');
+        if (!visitorSession) {
+          visitorSession = 'vis_' + Math.random().toString(36).substring(2, 9);
+          sessionStorage.setItem('padifix_visitor_session', visitorSession);
+        }
+        try {
+          LokatorDB.contactMeter.meterContact(provider.id, 'whatsapp', {
+            session_token: visitorSession,
+            mode: 'soft_cap',
+            soft_cap: true,
+            idempotency_key: idemKey
+          });
+        } catch (mErr) {}
+      }
+
+      // Consumer is NEVER blocked on WhatsApp
+      return true;
+    }
+
+    // Direct phone call or other channels retain standard flow
     if (typeof LokatorDB !== 'undefined' && LokatorDB.contactMeter) {
       let visitorSession = sessionStorage.getItem('padifix_visitor_session');
       if (!visitorSession) {
@@ -1233,6 +1299,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeModalHandler();
         showProfileToast('🎉 Thank you! Your verified review has been published.');
 
+        // Phase 014: Mark review completed in padifix_recent_contacts to prevent follow-up prompt
+        try {
+          const rawContacts = localStorage.getItem('padifix_recent_contacts');
+          if (rawContacts) {
+            let contactsList = JSON.parse(rawContacts);
+            let updated = false;
+            contactsList = contactsList.map(c => {
+              if (String(c.provider_id) === String(provider.id)) {
+                updated = true;
+                return { ...c, review_completed: true, reviewed_at: Date.now() };
+              }
+              return c;
+            });
+            if (updated) {
+              localStorage.setItem('padifix_recent_contacts', JSON.stringify(contactsList));
+            }
+          }
+          const activeBanner = document.getElementById('review-followup-banner');
+          if (activeBanner) activeBanner.remove();
+        } catch (e) {}
+
       } catch (err) {
         showProfileToast('Could not submit review: ' + err.message, 'error');
       } finally {
@@ -1246,6 +1333,90 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
+
+  // 10.75 Phase 014: Lightweight 24-48h Review Follow-up Experience
+  function checkReviewFollowup() {
+    try {
+      const raw = localStorage.getItem('padifix_recent_contacts');
+      if (!raw) return;
+      const contacts = JSON.parse(raw);
+      if (!Array.isArray(contacts)) return;
+      const entry = contacts.find(c => String(c.provider_id) === String(provider.id));
+      if (!entry) return;
+
+      // Anti-spam checks:
+      if (entry.review_completed) return;
+      if (entry.dismissed_at) return;
+      if (entry.prompted_at) return;
+
+      // Check 24-hour threshold (or ?test_followup=1 for test automation)
+      const now = Date.now();
+      const elapsed = now - (entry.contacted_at || 0);
+      const isTest = params.get('test_followup') === '1';
+      const hours24 = 24 * 60 * 60 * 1000;
+
+      if (elapsed < hours24 && !isTest) return;
+
+      // Render subtle non-intrusive follow-up prompt
+      const banner = document.createElement('div');
+      banner.id = 'review-followup-banner';
+      banner.setAttribute('role', 'region');
+      banner.setAttribute('aria-label', 'Review reminder');
+      banner.style.cssText = 'margin: 16px 0 24px; padding: 14px 18px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 78, 59, 0.25)); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);';
+      
+      banner.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; color: #F1F5F9; font-size: 0.95rem;">
+          <span style="font-size: 1.3rem;">💬</span>
+          <span>Did you connect with <strong>${escapeHtml(entry.provider_name || provider.name)}</strong>? Rate their service on PadiFix.</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" id="btn-followup-rate" class="btn btn-sm btn-gold" style="font-weight: 700; padding: 6px 14px; font-size: 0.85rem;">Rate Service</button>
+          <button type="button" id="btn-followup-dismiss" class="btn btn-sm btn-outline" style="padding: 6px 10px; color: #94A3B8; border-color: rgba(255,255,255,0.15); font-size: 0.85rem;" aria-label="Dismiss">✕</button>
+        </div>
+      `;
+
+      // Insert into hero or profile container
+      const targetContainer = document.querySelector('.profile-hero-content') || document.querySelector('.profile-page-main .container') || document.body;
+      targetContainer.insertBefore(banner, targetContainer.firstChild);
+
+      const rateBtn = banner.querySelector('#btn-followup-rate');
+      const dismissBtn = banner.querySelector('#btn-followup-dismiss');
+
+      if (rateBtn) {
+        rateBtn.addEventListener('click', () => {
+          entry.prompted_at = Date.now();
+          try {
+            localStorage.setItem('padifix_recent_contacts', JSON.stringify(contacts));
+          } catch (e) {}
+          banner.remove();
+          if (typeof openModalHandler === 'function') {
+            openModalHandler();
+          } else {
+            const rModal = document.getElementById('review-modal');
+            if (rModal) {
+              rModal.classList.add('active');
+              rModal.setAttribute('aria-hidden', 'false');
+            }
+          }
+        });
+      }
+
+      if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+          entry.dismissed_at = Date.now();
+          try {
+            localStorage.setItem('padifix_recent_contacts', JSON.stringify(contacts));
+          } catch (e) {}
+          banner.remove();
+        });
+      }
+    } catch (err) {
+      console.warn('Review followup prompt error:', err);
+    }
+  }
+
+  // Check for follow-up review opportunity on subsequent visits
+  checkReviewFollowup();
 
   // 10.8 Report Provider Modal & Handling
   const reportModal = document.getElementById('report-modal');

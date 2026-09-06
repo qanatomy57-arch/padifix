@@ -103,23 +103,33 @@ const contactMeterHandler = async (req, res) => {
     const period = getLagosBillingPeriod();
     const storeKey = `${provider_id}_${period}`;
 
-    // Admin / Test simulation: Reset period usage if requested in test mode
+    // Admin / Test simulation: Reset period usage if requested in non-production test mode
     if (reset_period) {
+      const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+      if (isProd) {
+        return res.status(403).json({ error: 'Forbidden: Reset simulation hook is strictly disabled in production.' });
+      }
       usageStore.set(storeKey, { used: 0, whatsapp: 0, call: 0, plan_id: plan_id || 'FREE' });
       return res.status(200).json({ status: 'success', message: `Usage reset for ${storeKey}` });
     }
 
     // Resolve or generate idempotency key
+    // Requirement A: duplicate tap suppression (same key -> cached deduplication)
+    // Requirement B: independent contact preservation (distinct event UUIDs -> distinct metering)
     const clientHeaderKey = req.headers && req.headers['x-idempotency-key'];
     const timeBucket15m = Math.floor(Date.now() / (15 * 60 * 1000));
     const effectiveKey = idempotency_key || clientHeaderKey || 
-      `idem_${provider_id}_${normChannel}_${session_token || 'visitor'}_${timeBucket15m}`;
+      (session_token 
+        ? `idem_${provider_id}_${normChannel}_${session_token}_${timeBucket15m}` 
+        : `idem_${provider_id}_${normChannel}_${crypto.randomUUID()}`);
 
     // Check idempotency cache (Prevents double clicks, browser refreshes, network retries)
     if (idempotencyCache.has(effectiveKey)) {
       const cached = idempotencyCache.get(effectiveKey);
+      const currentRec = usageStore.get(storeKey);
       return res.status(200).json({
         ...cached,
+        contacts_used: currentRec ? currentRec.used : cached.contacts_used,
         is_duplicate: true,
         idempotent: true
       });
@@ -142,10 +152,24 @@ const contactMeterHandler = async (req, res) => {
 
     // Enforcement: Check if monthly limit reached
     if (record.used >= limit) {
-      const deniedResponse = {
-        status: 'limit_reached',
-        allowed: false,
+      const isSoftCap = Boolean(req.body && (req.body.mode === 'soft_cap' || req.body.soft_cap));
+
+      if (isSoftCap) {
+        record.used += 1;
+        if (normChannel === 'whatsapp') {
+          record.whatsapp += 1;
+        } else {
+          record.call += 1;
+        }
+      }
+
+      const responsePayload = {
+        status: isSoftCap ? 'success' : 'limit_reached',
+        allowed: isSoftCap ? true : false,
+        soft_cap: isSoftCap,
         limit_reached: true,
+        quota_exhausted: true,
+        upgrade_required: true,
         provider_id: Number(provider_id),
         channel: normChannel,
         billing_period: period,
@@ -154,6 +178,7 @@ const contactMeterHandler = async (req, res) => {
         contacts_used: record.used,
         contacts_remaining: 0,
         allowance: plan.allowance,
+        idempotency_key: effectiveKey,
         upgrade_recommended: plan.id === 'FREE' ? 'BASIC' : 'PRO',
         upgrade_price_display: '₦5,500/month',
         message: plan.id === 'FREE'
@@ -161,9 +186,13 @@ const contactMeterHandler = async (req, res) => {
           : `Monthly contact limit of ${limit} reached for ${plan.name} plan.`
       };
 
-      // Cache denied response for idempotency
-      idempotencyCache.set(effectiveKey, deniedResponse);
-      return res.status(200).json(deniedResponse);
+      // Cache response for idempotency
+      idempotencyCache.set(effectiveKey, responsePayload);
+      if (idempotencyCache.size > 2000) {
+        const oldestKey = idempotencyCache.keys().next().value;
+        idempotencyCache.delete(oldestKey);
+      }
+      return res.status(200).json(responsePayload);
     }
 
     // Atomic increment
@@ -180,6 +209,8 @@ const contactMeterHandler = async (req, res) => {
       status: 'success',
       allowed: true,
       limit_reached: record.used >= limit,
+      quota_exhausted: false,
+      upgrade_required: false,
       provider_id: Number(provider_id),
       channel: normChannel,
       billing_period: period,

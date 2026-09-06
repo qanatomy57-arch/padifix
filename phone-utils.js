@@ -183,8 +183,19 @@
      */
     buildContextualMessage(context = {}) {
       const name = (context.providerName || context.name || '').trim();
-      const service = (context.service || context.trade || context.category || '').trim();
-      const location = (context.location || context.area || context.lga || context.state || '').trim();
+      const trade = (context.service || context.trade || context.category || '').trim();
+      let location = (context.location || context.area || '').trim();
+      if (!location) {
+        if (context.lga && context.state) {
+          location = `${context.lga}, ${context.state}`;
+        } else if (context.lga) {
+          location = context.lga;
+        } else if (context.state) {
+          location = context.state;
+        } else if (context.city) {
+          location = context.city;
+        }
+      }
       const customMessage = (context.customMessage || context.message || '').trim();
 
       if (customMessage) {
@@ -192,15 +203,15 @@
       }
 
       const greetingName = name ? `Hello ${name}` : 'Hello';
-      const cleanService = service || 'your services';
+      const profilePhrase = trade ? `saw your ${trade} profile on PadiFix` : 'saw your profile on PadiFix';
 
       // Clean location: omit if placeholder or empty
       const hasValidLocation = location && !/^(undefined|null|all|your area|nigeria)$/i.test(location);
 
       if (hasValidLocation) {
-        return `${greetingName}, I found your verified profile on PadiFix. Are you available for ${cleanService} around ${location}?`;
+        return `${greetingName}, I ${profilePhrase}. I need service in ${location}. Can you provide a quote?`;
       } else {
-        return `${greetingName}, I found your verified profile on PadiFix. Are you available for ${cleanService}?`;
+        return `${greetingName}, I ${profilePhrase}. Can you provide a quote?`;
       }
     },
 
@@ -223,7 +234,17 @@
         rawPhone = phoneOrProvider.whatsappNumber || phoneOrProvider.phone || phoneOrProvider.whatsapp;
         providerName = phoneOrProvider.name || phoneOrProvider.firstName || `${phoneOrProvider.first_name || ''} ${phoneOrProvider.last_name || ''}`.trim();
         service = phoneOrProvider.trade || phoneOrProvider.service || phoneOrProvider.category || '';
-        location = phoneOrProvider.area || phoneOrProvider.locality || (phoneOrProvider.lga && phoneOrProvider.state ? `${phoneOrProvider.lga}, ${phoneOrProvider.state}` : phoneOrProvider.city) || '';
+        if (phoneOrProvider.area || phoneOrProvider.locality) {
+          location = phoneOrProvider.area || phoneOrProvider.locality;
+        } else if (phoneOrProvider.lga && phoneOrProvider.state) {
+          location = `${phoneOrProvider.lga}, ${phoneOrProvider.state}`;
+        } else if (phoneOrProvider.lga) {
+          location = phoneOrProvider.lga;
+        } else if (phoneOrProvider.state) {
+          location = phoneOrProvider.state;
+        } else if (phoneOrProvider.city) {
+          location = phoneOrProvider.city;
+        }
       } else {
         rawPhone = phoneOrProvider;
       }
@@ -235,25 +256,41 @@
 
       // Merge context options
       const mergedContext = {
-        providerName: contextOptions.providerName || providerName,
-        service: contextOptions.service || service,
+        providerName: contextOptions.providerName || contextOptions.name || providerName,
+        service: contextOptions.service || contextOptions.trade || contextOptions.category || service,
         location: contextOptions.location || location,
+        lga: contextOptions.lga || (phoneOrProvider && phoneOrProvider.lga) || '',
+        state: contextOptions.state || (phoneOrProvider && phoneOrProvider.state) || '',
+        city: contextOptions.city || (phoneOrProvider && phoneOrProvider.city) || '',
         customMessage: contextOptions.customMessage || contextOptions.message || ''
       };
 
       const messageText = this.buildContextualMessage(mergedContext);
       return `https://wa.me/${norm.canonical}?text=${encodeURIComponent(messageText)}`;
+    },
+
+    /**
+     * Smart Quote WhatsApp Deep Link Generator
+     * Generates a context-aware 1-tap quote inquiry URL
+     * @param {string|object} phoneOrProvider
+     * @param {object} [contextOptions]
+     * @returns {string}
+     */
+    buildSmartWhatsAppUrl(phoneOrProvider, contextOptions = {}) {
+      return this.buildWhatsAppUrl(phoneOrProvider, { ...contextOptions, smartQuote: true });
     }
   };
 
   // Expose globally to window / worker / node / globalThis
   global.NigeriaPhone = NigeriaPhone;
+  global.PhoneEngine = NigeriaPhone;
   if (typeof globalThis !== 'undefined') {
     globalThis.NigeriaPhone = NigeriaPhone;
+    globalThis.PhoneEngine = NigeriaPhone;
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { NigeriaPhone };
+    module.exports = { NigeriaPhone, PhoneEngine };
   }
 
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : this)));

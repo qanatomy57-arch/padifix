@@ -365,6 +365,7 @@
         if (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') {
           if (navigator.onLine) {
             document.body.classList.remove('is-offline');
+            this.replayOfflineLeads();
           } else {
             document.body.classList.add('is-offline');
           }
@@ -602,6 +603,220 @@
             worker.postMessage({ action: 'skipWaiting' });
           }
         };
+      }
+    },
+
+    /**
+     * Open or initialize the IndexedDB Outbox database for offline contact leads
+     * Database: padifix_offline_leads
+     * Object Store: leads
+     */
+    _getOutboxDB() {
+      return new Promise((resolve) => {
+        if (typeof indexedDB === 'undefined') {
+          return resolve(null);
+        }
+        try {
+          const req = indexedDB.open('padifix_offline_leads', 1);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('leads')) {
+              db.createObjectStore('leads', { keyPath: 'id', autoIncrement: true });
+            }
+          };
+          req.onsuccess = (e) => resolve(e.target.result);
+          req.onerror = () => resolve(null);
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    },
+
+    /**
+     * Queue a contact lead in the offline outbox
+     * Stores minimal immutable payload: { provider_id, channel, timestamp, idempotency_key }
+     */
+    async queueOfflineLead(leadData) {
+      try {
+        const eventId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
+        const cleanPayload = {
+          provider_id: Number(leadData.provider_id),
+          channel: leadData.channel || 'whatsapp',
+          timestamp: leadData.timestamp || Date.now(),
+          idempotency_key: leadData.idempotency_key || `idem_${leadData.provider_id}_${leadData.channel || 'whatsapp'}_${eventId}`
+        };
+
+        const db = await this._getOutboxDB();
+        if (!db) {
+          const raw = this._getStorage('padifix_offline_leads_fallback') || '[]';
+          let list = [];
+          try { list = JSON.parse(raw); } catch (e) { list = []; }
+          list.push(cleanPayload);
+          this._setStorage('padifix_offline_leads_fallback', JSON.stringify(list));
+          return true;
+        }
+        return new Promise((resolve) => {
+          const tx = db.transaction('leads', 'readwrite');
+          const store = tx.objectStore('leads');
+          store.add(cleanPayload);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (err) {
+        return false;
+      }
+    },
+
+    /**
+     * Replay queued leads to /api/contact-meter once online
+     * Uses mutex to prevent race conditions during concurrent online events
+     */
+    async replayOfflineLeads() {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return { replayed: 0, pending: 0 };
+      }
+      if (this._isReplaying) {
+        return { replayed: 0, status: 'locked' };
+      }
+      this._isReplaying = true;
+
+      let replayedCount = 0;
+      try {
+        const db = await this._getOutboxDB();
+        if (db) {
+          const items = await new Promise((resolve) => {
+            const tx = db.transaction('leads', 'readonly');
+            const store = tx.objectStore('leads');
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => resolve([]);
+          });
+
+          for (const item of items) {
+            let shouldDelete = false;
+            try {
+              const res = await fetch('/api/contact-meter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  provider_id: item.provider_id,
+                  channel: item.channel || 'whatsapp',
+                  mode: 'soft_cap',
+                  idempotency_key: item.idempotency_key
+                })
+              });
+              if (res.ok) {
+                shouldDelete = true;
+                replayedCount++;
+              } else if (res.status >= 400 && res.status < 500) {
+                // Non-retryable client error (e.g. invalid payload) — delete to prevent poison pill loop
+                shouldDelete = true;
+              } else {
+                // 5xx Server temporary error — retain item and abort batch
+                break;
+              }
+            } catch (networkErr) {
+              // Network failed again — retain and break
+              break;
+            }
+
+            if (shouldDelete) {
+              await new Promise((resDel) => {
+                const delTx = db.transaction('leads', 'readwrite');
+                delTx.objectStore('leads').delete(item.id);
+                delTx.oncomplete = resDel;
+                delTx.onerror = resDel;
+              });
+            }
+          }
+        }
+
+        const rawFallback = this._getStorage('padifix_offline_leads_fallback');
+        if (rawFallback) {
+          let list = [];
+          try { list = JSON.parse(rawFallback); } catch (e) { list = []; }
+          const remaining = [];
+          for (const item of list) {
+            try {
+              const res = await fetch('/api/contact-meter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  provider_id: item.provider_id,
+                  channel: item.channel || 'whatsapp',
+                  mode: 'soft_cap',
+                  idempotency_key: item.idempotency_key
+                })
+              });
+              if (res.ok) {
+                replayedCount++;
+              } else if (res.status >= 400 && res.status < 500) {
+                // Drop non-retryable 4xx
+              } else {
+                remaining.push(item);
+                break;
+              }
+            } catch (e) {
+              remaining.push(item);
+              break;
+            }
+          }
+          if (remaining.length === 0) {
+            this._removeStorage('padifix_offline_leads_fallback');
+          } else {
+            this._setStorage('padifix_offline_leads_fallback', JSON.stringify(remaining));
+          }
+        }
+      } catch (err) {
+      } finally {
+        this._isReplaying = false;
+      }
+      return { replayed: replayedCount };
+    },
+
+    /**
+     * Unified contact dispatcher: sends to /api/contact-meter, queues in outbox if offline or network error
+     */
+    async dispatchContactLead(leadData) {
+      const eventId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
+      const cleanData = {
+        provider_id: Number(leadData.provider_id),
+        channel: leadData.channel || 'whatsapp',
+        timestamp: leadData.timestamp || Date.now(),
+        idempotency_key: leadData.idempotency_key || `idem_${leadData.provider_id}_${leadData.channel || 'whatsapp'}_${eventId}`
+      };
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await this.queueOfflineLead(cleanData);
+        return { queued: true, offline: true };
+      }
+      try {
+        const res = await fetch('/api/contact-meter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...cleanData,
+            mode: 'soft_cap'
+          })
+        });
+        if (!res.ok) {
+          // If client error 4xx, do not treat as offline
+          if (res.status >= 400 && res.status < 500) {
+            return { queued: false, error: `Client error: ${res.status}` };
+          }
+          // Server 5xx error: queue for retry
+          await this.queueOfflineLead(cleanData);
+          return { queued: true, error: `Server error: ${res.status}` };
+        }
+        return await res.json();
+      } catch (networkErr) {
+        // Genuine network exception (TypeError, connection refused, offline)
+        await this.queueOfflineLead(cleanData);
+        return { queued: true, offline: true };
       }
     }
   };

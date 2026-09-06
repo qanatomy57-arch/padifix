@@ -995,7 +995,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const PhoneEngine = (typeof NigeriaPhone !== 'undefined' ? NigeriaPhone : null) || (typeof window !== 'undefined' ? window.NigeriaPhone : null);
         const telUrl = PhoneEngine ? PhoneEngine.buildTelUrl(provider) : (provider.phone ? `tel:${provider.phone}` : '');
         const waUrl = PhoneEngine 
-          ? PhoneEngine.buildWhatsAppUrl(provider, { service: serviceCtx, location: locationCtx })
+          ? (PhoneEngine.buildSmartWhatsAppUrl ? PhoneEngine.buildSmartWhatsAppUrl(provider, { service: serviceCtx, location: locationCtx }) : PhoneEngine.buildWhatsAppUrl(provider, { service: serviceCtx, location: locationCtx }))
           : '';
 
         // Distance format: Orerokpe, Okpe (2.4 km)
@@ -1132,6 +1132,47 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
           } else if (e.target.closest('.message-btn')) {
+            const card = e.target.closest('.provider-item-card');
+            const provName = card ? (card.querySelector('.provider-title-name')?.textContent || '').trim() : '';
+            // Phase 014: Cryptographic attempt UUID with 30s duplicate-tap debounce
+            if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
+            const attemptCacheKey = `${providerId}_whatsapp`;
+            const nowTime = Date.now();
+            let idemKey;
+            const cachedAttempt = window._padifixContactAttempts.get(attemptCacheKey);
+            if (cachedAttempt && (nowTime - cachedAttempt.time) < 30000) {
+              idemKey = cachedAttempt.key;
+            } else {
+              const evtId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
+              idemKey = `idem_${providerId}_whatsapp_${evtId}`;
+              window._padifixContactAttempts.set(attemptCacheKey, { key: idemKey, time: nowTime });
+            }
+
+            // Phase 014: Dispatch contact meter asynchronously via PWA outbox dispatcher
+            if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
+              PadiFixPWA.dispatchContactLead({
+                provider_id: providerId,
+                channel: 'whatsapp',
+                idempotency_key: idemKey
+              }).catch(() => {});
+            }
+
+            // Phase 014: Record recent contact for 24-48h review follow-up
+            try {
+              const recentRaw = localStorage.getItem('padifix_recent_contacts') || '[]';
+              let recentList = JSON.parse(recentRaw);
+              recentList = recentList.filter(c => c.provider_id !== providerId);
+              recentList.push({
+                provider_id: providerId,
+                provider_name: provName,
+                trade: trade || '',
+                contacted_at: Date.now()
+              });
+              localStorage.setItem('padifix_recent_contacts', JSON.stringify(recentList.slice(-20)));
+            } catch (err) {}
+
             if (typeof LokatorTelemetry !== 'undefined') {
               LokatorTelemetry.trackEvent('whatsapp_clicked', {
                 providerId,
