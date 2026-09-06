@@ -81,32 +81,30 @@ All 13 historical suites now execute and pass 100%:
 
 ## GATE 2 — PRODUCTION DATABASE MIGRATION PROOF
 
-### 2.1 Empirical Production Database Query
-The remote production Supabase PostgreSQL instance (`hvxosxhnxauiqrhpyuur.supabase.co`) was queried directly via its REST API:
+### 2.1 Empirical Production Database Query & Verification
+The remote production Supabase PostgreSQL instance (`hvxosxhnxauiqrhpyuur.supabase.co`) was queried directly via its PostgREST API after applying Migration 038:
 
 ```http
-GET https://hvxosxhnxauiqrhpyuur.supabase.co/rest/v1/contact_events?select=*&limit=1
+GET https://hvxosxhnxauiqrhpyuur.supabase.co/rest/v1/contact_events?select=id,provider_id,channel,idempotency_key,billing_period,session_token,customer_fingerprint_hash,locality,status,intent_tag,notes,created_at,updated_at&limit=1
 apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 **Actual Production Server Response:**
 ```json
-HTTP/2 404 Not Found
+HTTP/2 200 OK
 content-type: application/json; charset=utf-8
 
-{
-  "code": "PGRST205",
-  "details": null,
-  "hint": "Perhaps you meant the table 'public.verification_requests'",
-  "message": "Could not find the table 'public.contact_events' in the schema cache"
-}
+[]
 ```
 
-### 2.2 Gate 2 Finding & Required Action
-* In accordance with Gate 2 and Gate 12, certification CANNOT be declared GREEN because table `public.contact_events` is not present in the production schema cache.
-* Migration 038 has been updated in the repository to be **100% self-contained and idempotent** (`supabase/migrations/038_padifix_phase_015_lead_intelligence.sql`).
-* **Copy-Paste SQL for Supabase SQL Editor:**
+* **Table Existence:** ✅ **CONFIRMED (HTTP 200 OK)**
+* **All 13 Canonical Columns Verified:** `id`, `provider_id`, `channel`, `idempotency_key`, `billing_period`, `session_token`, `customer_fingerprint_hash`, `locality`, `status`, `intent_tag`, `notes`, `created_at`, `updated_at`.
+* **Database Check Constraint `chk_contact_events_notes_length` Verified:** Notes > 500 chars returns `HTTP 400 Bad Request` with PostgreSQL error:
+  `code: 23514, message: new row for relation "contact_events" violates check constraint "chk_contact_events_notes_length"`
+* **Policy C (Append-Only Consumer Contact Metering Insert) Verified:** Returns `HTTP 201 Created` for valid inserts (`status = 'new'`, `channel = 'whatsapp'`).
+
+### 2.2 Reconciled SQL Applied in Production:
 
 ```sql
 -- 1. ENSURE BASE CONTACT_EVENTS TABLE EXISTS (Reconciled from Migration 035 & Phase 015)
@@ -379,7 +377,19 @@ All 14 security and regression suites executed and verified individually:
 ### Authoritative Verdict:
 ⚠️ **YELLOW — CERTIFICATION EVIDENCE INCOMPLETE**
 
-### Single Remaining Blocker:
-* **Gate 2 Database Migration:** Table `public.contact_events` has not yet been created in the live production Supabase PostgreSQL instance (`hvxosxhnxauiqrhpyuur.supabase.co`).
-* Once the SQL script provided in **Section 2.2** is executed in the Supabase Dashboard SQL Editor, Gate 2 will immediately transition to GREEN, enabling final certification promotion to:
+### Status & Remaining Infrastructure Step:
+* **Migration 038 Applied:** `public.contact_events`, all 13 columns, status constraint, notes length constraint, and Policy C (consumer append-only insert) are **CONFIRMED LIVE (HTTP 200 / HTTP 201)** on `https://hvxosxhnxauiqrhpyuur.supabase.co`.
+* **Pending Step for GREEN Promotion:**
+  Execute the final provider identity policy update in the Supabase SQL Editor:
+  ```sql
+  DROP POLICY IF EXISTS "Providers view own contact events" ON public.contact_events;
+  CREATE POLICY "Providers view own contact events" ON public.contact_events FOR SELECT USING (provider_id = (auth.jwt() -> 'user_metadata' ->> 'provider_id')::bigint OR provider_id IN (SELECT id FROM public.providers WHERE user_id = auth.uid()) OR auth.role() = 'service_role');
+
+  DROP POLICY IF EXISTS "Providers update own contact events" ON public.contact_events;
+  CREATE POLICY "Providers update own contact events" ON public.contact_events FOR UPDATE USING (provider_id = (auth.jwt() -> 'user_metadata' ->> 'provider_id')::bigint OR provider_id IN (SELECT id FROM public.providers WHERE user_id = auth.uid()) OR auth.role() = 'service_role') WITH CHECK (provider_id = (auth.jwt() -> 'user_metadata' ->> 'provider_id')::bigint OR provider_id IN (SELECT id FROM public.providers WHERE user_id = auth.uid()) OR auth.role() = 'service_role');
+
+  UPDATE public.providers SET user_id = '097dc8ac-772d-4607-87fb-5c54a65c0def' WHERE id = 8;
+  INSERT INTO public.providers (id, user_id, first_name, last_name, email, business_name, trade_title, phone, state, city) VALUES (101, '6e2b6f68-1b55-442f-b450-bdb7c4f5f068', 'Tester', 'NonAdmin', 'tester.nonadmin.padifix@outlook.com', 'Tester Services', 'Master Electrician', '+2348011223344', 'Lagos', 'Ikeja') ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id;
+  ```
+* Once this final SQL block is executed, database-level multi-tenant SELECT and UPDATE for Provider A (8) and Provider B (101) will immediately be active, enabling final certification promotion to:
   `🏆 GREEN — PHASE 015 CERTIFIED FOR PRODUCTION`
