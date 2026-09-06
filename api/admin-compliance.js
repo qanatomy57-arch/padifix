@@ -219,23 +219,14 @@ function authenticateRequest(req) {
   const isProd = isProductionEnvironment();
   const configuredKey = process.env.PADIFIX_ADMIN_KEY;
 
-  // Strict Fail-Closed in Production
-  if (isProd) {
-    if (!configuredKey || configuredKey.length < 16) {
-      return {
-        authenticated: false,
-        statusCode: 500,
-        error: 'Server Configuration Error: Missing or insecure PADIFIX_ADMIN_KEY in production.'
-      };
-    }
-  }
-
   // Extract raw credentials
   const headerAdminKey = req.headers['x-admin-key'];
   const authHeader = req.headers['authorization'] || '';
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
   const credential = headerAdminKey || bearerToken;
 
+  // 1. Unauthenticated requests always fail immediately with 401 (Section 7)
+  // This prevents leaking server configuration details to unauthenticated requests
   if (!credential) {
     return {
       authenticated: false,
@@ -244,7 +235,7 @@ function authenticateRequest(req) {
     };
   }
 
-  // 1. Check Short-Lived Active Session Token
+  // 2. Check Short-Lived Active Session Token
   const activeSess = validateAdminSessionToken(credential);
   if (activeSess) {
     return {
@@ -255,30 +246,7 @@ function authenticateRequest(req) {
     };
   }
 
-  // 2. Check Master Secret Key (Strict Production vs Dev)
-  if (configuredKey) {
-    if (timingSafeMatch(credential, configuredKey)) {
-      return {
-        authenticated: true,
-        officerId: 'compliance_master_admin',
-        role: 'admin'
-      };
-    }
-  }
-
-  // 3. Development Fallback (Permitted ONLY in explicit non-production)
-  if (!isProd) {
-    const devFallbackKey = 'padifix_dev_compliance_2026';
-    if (timingSafeMatch(credential, devFallbackKey)) {
-      return {
-        authenticated: true,
-        officerId: 'dev_compliance_officer',
-        role: 'compliance_officer'
-      };
-    }
-  }
-
-  // 4. Supabase JWT Authentication & ADMIN_EMAILS Authorization
+  // 3. Supabase JWT Authentication & ADMIN_EMAILS Authorization (Section 9)
   if (bearerToken && bearerToken.includes('.')) {
     const parts = bearerToken.split('.');
     if (parts.length === 3) {
@@ -329,8 +297,42 @@ function authenticateRequest(req) {
           error: 'Forbidden: Authenticated user is not an authorized compliance officer.'
         };
       } catch (parseErr) {
-        // Fall through to 401
+        // Fall through to credential checks
       }
+    }
+  }
+
+  // 4. Strict Fail-Closed in Production if PADIFIX_ADMIN_KEY is unconfigured or insecure (Section 3)
+  if (isProd) {
+    if (!configuredKey || configuredKey.length < 16) {
+      return {
+        authenticated: false,
+        statusCode: 500,
+        error: 'Server Configuration Error: Missing or insecure PADIFIX_ADMIN_KEY in production.'
+      };
+    }
+  }
+
+  // 5. Check Master Secret Key (Strict Production vs Dev)
+  if (configuredKey) {
+    if (timingSafeMatch(credential, configuredKey)) {
+      return {
+        authenticated: true,
+        officerId: 'compliance_master_admin',
+        role: 'admin'
+      };
+    }
+  }
+
+  // 6. Development Fallback (Permitted ONLY in explicit non-production)
+  if (!isProd) {
+    const devFallbackKey = 'padifix_dev_compliance_2026';
+    if (timingSafeMatch(credential, devFallbackKey)) {
+      return {
+        authenticated: true,
+        officerId: 'dev_compliance_officer',
+        role: 'compliance_officer'
+      };
     }
   }
 
