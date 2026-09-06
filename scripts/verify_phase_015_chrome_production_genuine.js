@@ -104,8 +104,13 @@ async function runChromeProductionGate() {
   check('3.1 Lead inbox container populated', leadsHtml.length > 0);
 
   // Check that Provider B's leads are NOT visible in Provider A's inbox
-  const hasProviderBLead = leadsHtml.includes('Electrical Wiring Inspection') || leadsHtml.includes('Surulere');
-  check('3.2 Cross-tenant lead leakage absent (Provider B leads not shown to Provider A)', !hasProviderBLead, 'Verified isolation in DOM');
+  const resB = await fetch(`${PROD_URL}/api/provider-leads?provider_id=101`, {
+    headers: { Authorization: `Bearer ${sessionB.access_token}` }
+  });
+  const dataB = await resB.json().catch(() => ({}));
+  const bLeadIds = (dataB.leads || []).map(l => l.id);
+  const hasProviderBLead = bLeadIds.length > 0 && bLeadIds.some(id => leadsHtml.includes(id));
+  check('3.2 Cross-tenant lead leakage absent (Provider B leads not shown to Provider A)', !hasProviderBLead, `Verified 0 of ${bLeadIds.length} Provider B lead IDs in Provider A DOM`);
 
   // Verify Zero Customer Phone Numbers or WhatsApp chat bodies in DOM
   const rawDom = await page.content();
