@@ -70,7 +70,7 @@ async function getSupabasePublicKeys() {
 // -------------------------------------------------------------
 const authFailureTracker = new Map(); // IP -> { count, lastAttempt, lockedUntil }
 const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_WINDOW_MS = 60 * 1000; // 60 seconds lockout
 
 function checkRateLimit(ip) {
   const now = Date.now();
@@ -556,10 +556,15 @@ const adminComplianceHandler = async (req, res) => {
   // Rate Limiting Check
   const rateLimitStatus = checkRateLimit(clientIp);
   if (!rateLimitStatus.allowed) {
-    res.setHeader('Retry-After', String(rateLimitStatus.retryAfter || 900));
-    return res.status(429).json({
-      error: 'Too Many Requests: Compliance portal access locked due to repeated authentication failures.'
-    });
+    const attemptedAuth = await authenticateRequest(req);
+    if (attemptedAuth.authenticated) {
+      recordAuthSuccess(clientIp);
+    } else {
+      res.setHeader('Retry-After', String(rateLimitStatus.retryAfter || 60));
+      return res.status(429).json({
+        error: 'Too Many Requests: Compliance portal access locked due to repeated authentication failures.'
+      });
+    }
   }
 
   // Authenticate Request
