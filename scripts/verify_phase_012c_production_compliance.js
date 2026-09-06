@@ -599,6 +599,15 @@ async function runProductionComplianceSuite() {
     assert.ok(code.includes('clearStoredAdminKey'), 'admin.js must clear tokens on lock');
   });
 
+  await runTest('10.2 admin.html client bundle exposes zero master keys or secret roles', async () => {
+    const res = await fetch(`${PROD_URL}/admin.html`, { headers: { 'Cache-Control': 'no-cache' } });
+    const html = await res.text();
+    assert.ok(!html.includes('padifix_dev_compliance_2026'), 'admin.html must not contain dev key');
+    assert.ok(!html.includes('service_role'), 'admin.html must not contain service_role');
+    assert.ok(!html.includes('sk_live_'), 'admin.html must not contain sk_live_');
+    assert.ok(!html.includes('sk_test_'), 'admin.html must not contain sk_test_');
+  });
+
   // -------------------------------------------------------------
   // 11. RATE LIMITING & RECOVERY (Section 12)
   // -------------------------------------------------------------

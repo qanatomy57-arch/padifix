@@ -3,7 +3,24 @@
 -- Migration: 038_padifix_phase_015_lead_intelligence.sql
 -- ============================================================================
 
--- 1. UPGRADE CONTACT_EVENTS TABLE WITH OPERATIONAL METADATA
+-- 1. ENSURE BASE CONTACT_EVENTS TABLE EXISTS
+CREATE TABLE IF NOT EXISTS public.contact_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_id BIGINT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'whatsapp', -- 'whatsapp' or 'call'
+  idempotency_key TEXT UNIQUE,
+  billing_period TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'Africa/Lagos', 'YYYY-MM'),
+  session_token TEXT,
+  customer_fingerprint_hash TEXT,
+  locality TEXT,
+  status TEXT NOT NULL DEFAULT 'new',
+  intent_tag TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. UPGRADE CONTACT_EVENTS TABLE WITH OPERATIONAL METADATA (Idempotent for pre-existing tables)
 ALTER TABLE public.contact_events 
   ADD COLUMN IF NOT EXISTS locality TEXT,
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new',
