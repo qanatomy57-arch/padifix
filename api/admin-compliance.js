@@ -389,7 +389,7 @@ const adminComplianceHandler = async (req, res) => {
   const auth = authenticateRequest(req);
   if (!auth.authenticated) {
     const hasAttemptedCredential = Boolean(req.headers['x-admin-key'] || req.headers['authorization']);
-    if (hasAttemptedCredential && auth.statusCode === 401) {
+    if (hasAttemptedCredential && (auth.statusCode === 401 || auth.statusCode === 500)) {
       recordAuthFailure(clientIp);
     }
     return res.status(auth.statusCode || 401).json({ error: auth.error });

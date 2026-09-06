@@ -552,6 +552,8 @@ async function runProductionComplianceSuite() {
   // -------------------------------------------------------------
   console.log('\n--- 11. RATE LIMITING & RECOVERY (SECTION 12) ---');
 
+  const rateLimitProbeIp = `198.51.100.${Math.floor(Math.random() * 200) + 10}`;
+
   await runTest('11.1 5 consecutive failed authentication attempts trigger HTTP 429 lockout', async () => {
     let triggered429 = false;
     let retryAfterHeader = null;
@@ -560,6 +562,7 @@ async function runProductionComplianceSuite() {
       const res = await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
         headers: {
           'Cache-Control': 'no-cache',
+          'x-forwarded-for': rateLimitProbeIp,
           'x-admin-key': `brute_force_invalid_attempt_${i}`
         }
       });
@@ -578,6 +581,7 @@ async function runProductionComplianceSuite() {
     const res = await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
       headers: {
         'Cache-Control': 'no-cache',
+        'x-forwarded-for': rateLimitProbeIp,
         'x-admin-key': 'locked_out_probe'
       }
     });
