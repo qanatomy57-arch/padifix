@@ -235,10 +235,10 @@ CREATE POLICY "Paid providers can submit own verification request"
     provider_id IN (
       SELECT p.id FROM public.providers p
       LEFT JOIN public.provider_subscriptions ps ON ps.provider_id = p.id
-      WHERE (p.user_id = auth.uid() OR p.auth_user_id = auth.uid()::text)
+      WHERE p.user_id = auth.uid()
         AND (
-          (ps.status = 'active' AND ps.plan_id IN ('BASIC', 'PRO', 'PREMIUM'))
-          OR (p.subscription_plan IN ('BASIC', 'PRO', 'PREMIUM'))
+          (ps.status = 'active' AND UPPER(ps.plan_id) IN ('BASIC', 'PRO', 'PREMIUM'))
+          OR (UPPER(p.subscription_plan) IN ('BASIC', 'PRO', 'PREMIUM'))
         )
     )
     OR auth.role() = 'service_role'
