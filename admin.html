@@ -91,9 +91,33 @@
           <span class="theme-label">Light</span>
         </button>
         <span class="status-tag status-good admin-compliance-tag">🛡️ Compliance Desk</span>
+        <button type="button" id="btn-lock-desk" class="btn btn-outline" style="display: none; padding: 6px 12px; font-size: 11.5px; border-color: var(--border); font-weight: 700; cursor: pointer;">
+          🔒 Lock Desk
+        </button>
       </nav>
     </div>
   </header>
+
+  <!-- Compliance Desk Security Gate Modal -->
+  <div id="admin-auth-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center; padding: 16px;">
+    <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; max-width: 440px; width: 100%; padding: 32px 24px; box-shadow: var(--shadow-lg); text-align: center;">
+      <div style="font-size: 38px; margin-bottom: 12px;">🛡️</div>
+      <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px; color: var(--fg);">Trust & Safety Compliance Desk</h2>
+      <p style="font-size: 13px; color: var(--fg-muted); margin: 0 0 20px; line-height: 1.5;">
+        Air-gapped compliance operations portal. Enter your Compliance Passkey or Admin Token to authenticate.
+      </p>
+      <form id="admin-auth-form">
+        <div style="margin-bottom: 16px; text-align: left;">
+          <label for="admin-passkey-input" style="display: block; font-size: 12px; font-weight: 700; color: var(--fg-muted); margin-bottom: 6px;">Compliance Passkey / Token</label>
+          <input type="password" id="admin-passkey-input" placeholder="Enter administrative key..." required style="width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-size: 14px;" />
+        </div>
+        <div id="admin-auth-error" style="display: none; color: #EF4444; font-size: 12px; margin-bottom: 14px; font-weight: 600;"></div>
+        <button type="submit" id="btn-submit-auth" class="btn btn-primary" style="width: 100%; padding: 12px; font-weight: 700; font-size: 14px; border-radius: 8px; cursor: pointer;">
+          Unlock Compliance Desk
+        </button>
+      </form>
+    </div>
+  </div>
 
   <main class="admin-container">
     <div class="admin-header">
