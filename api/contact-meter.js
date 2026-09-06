@@ -155,9 +155,9 @@ const contactMeterHandler = async (req, res) => {
         contacts_remaining: 0,
         allowance: plan.allowance,
         upgrade_recommended: plan.id === 'FREE' ? 'BASIC' : 'PRO',
-        upgrade_price_display: '₦3,500/month',
+        upgrade_price_display: '₦5,500/month',
         message: plan.id === 'FREE'
-          ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦3,500/month."
+          ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
           : `Monthly contact limit of ${limit} reached for ${plan.name} plan.`
       };
 

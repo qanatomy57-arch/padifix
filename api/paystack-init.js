@@ -58,12 +58,39 @@ function postJson(urlStr, data, headers = {}) {
   });
 }
 
-// Canonical Provider Subscription Plans (Phase 011 Canonical Pricing)
+// Canonical Provider Subscription Plans (Phase 012 Launch Subscription Pricing)
 const CANONICAL_PLANS = {
   FREE: { id: 'FREE', name: 'Free', amount_kobo: 0, amount_display: '₦0', contacts: 5, paystack_plan_code: null },
-  BASIC: { id: 'BASIC', name: 'Basic', amount_kobo: 350000, amount_display: '₦3,500', contacts: 30, paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6' },
-  PRO: { id: 'PRO', name: 'Pro', amount_kobo: 800000, amount_display: '₦8,000', contacts: 100, paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1' },
-  PREMIUM: { id: 'PREMIUM', name: 'Premium', amount_kobo: 1500000, amount_display: '₦15,000', contacts: 'unlimited', paystack_plan_code: 'PLN_e3nu8i62af9ypve' }
+  BASIC: {
+    id: 'BASIC',
+    name: 'Basic',
+    amount_kobo: 550000,
+    amount_display: '₦5,500',
+    annual_amount_kobo: 5500000,
+    annual_amount_display: '₦55,000',
+    contacts: 30,
+    paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6'
+  },
+  PRO: {
+    id: 'PRO',
+    name: 'Pro',
+    amount_kobo: 1100000,
+    amount_display: '₦11,000',
+    annual_amount_kobo: 11000000,
+    annual_amount_display: '₦110,000',
+    contacts: 100,
+    paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1'
+  },
+  PREMIUM: {
+    id: 'PREMIUM',
+    name: 'Premium',
+    amount_kobo: 2200000,
+    amount_display: '₦22,000',
+    annual_amount_kobo: 22000000,
+    annual_amount_display: '₦220,000',
+    contacts: 500,
+    paystack_plan_code: 'PLN_e3nu8i62af9ypve'
+  }
 };
 
 const paystackInitHandler = async (req, res) => {
@@ -81,7 +108,7 @@ const paystackInitHandler = async (req, res) => {
   }
 
   try {
-    const { provider_id, plan_id, product_id, email, category, state, lga } = req.body || {};
+    const { provider_id, plan_id, product_id, email, category, state, lga, interval, billing_interval } = req.body || {};
 
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
@@ -90,17 +117,21 @@ const paystackInitHandler = async (req, res) => {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     const isLiveMode = process.env.PAYMENT_LIVE_MODE === 'true';
 
-    // Environment consistency validation: Prevent test/live key mixing
-    if (secretKey) {
-      if (isLiveMode && secretKey.startsWith('sk_test_')) {
-        return res.status(500).json({ error: 'Environment Mismatch: Test secret key configured in Live Mode.' });
+    // Environment consistency validation: Prevent test/live key mixing and fail closed
+    if (isLiveMode) {
+      if (!secretKey) {
+        return res.status(500).json({ error: 'Server Configuration Error: Missing PAYSTACK_SECRET_KEY in Live Mode.' });
       }
-      if (!isLiveMode && secretKey.startsWith('sk_live_')) {
+      if (!secretKey.startsWith('sk_live_')) {
+        return res.status(500).json({ error: 'Environment Mismatch: Non-live secret key configured in Live Mode.' });
+      }
+    } else {
+      if (secretKey && secretKey.startsWith('sk_live_')) {
         return res.status(500).json({ error: 'Environment Mismatch: Live secret key configured in Test Mode.' });
       }
     }
 
-    // Branch A: Subscription Plan Initialization (Phase 010)
+    // Branch A: Subscription Plan Initialization (Phase 012 Launch Pricing)
     if (plan_id) {
       const normPlan = String(plan_id).toUpperCase();
       const targetPlan = CANONICAL_PLANS[normPlan];
@@ -121,6 +152,13 @@ const paystackInitHandler = async (req, res) => {
         });
       }
 
+      const normInterval = String(interval || billing_interval || '').toLowerCase();
+      const isAnnual = normInterval === 'annual' || normInterval === 'annually' || normInterval === 'yearly';
+      const amountKobo = isAnnual ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
+      const amountDisplay = isAnnual ? targetPlan.annual_amount_display : targetPlan.amount_display;
+      const durationDays = isAnnual ? 365 : 30;
+      const selectedInterval = isAnnual ? 'annual' : 'monthly';
+
       const timestamp = Date.now();
       const randSuffix = Math.random().toString(36).substring(2, 7);
       const reference = `lok_sub_${timestamp}_${randSuffix}`;
@@ -131,11 +169,11 @@ const paystackInitHandler = async (req, res) => {
         provider_id: Number(provider_id),
         plan_id: targetPlan.id,
         plan_name: targetPlan.name,
-        amount: targetPlan.amount_kobo,
-        amount_display: targetPlan.amount_display,
+        amount: amountKobo,
+        amount_display: amountDisplay,
         currency: 'NGN',
-        billing_interval: 'monthly',
-        duration_days: 30,
+        billing_interval: selectedInterval,
+        duration_days: durationDays,
         paystack_plan_code: targetPlan.paystack_plan_code,
         reference: reference,
         action: 'subscription_upgrade',
@@ -151,7 +189,7 @@ const paystackInitHandler = async (req, res) => {
       if (secretKey) {
         const initPayload = {
           email: providerEmail,
-          amount: targetPlan.amount_kobo,
+          amount: amountKobo,
           reference: reference,
           currency: 'NGN',
           callback_url: callbackUrl,
@@ -162,13 +200,13 @@ const paystackInitHandler = async (req, res) => {
             plan_name: targetPlan.name,
             paystack_plan_code: targetPlan.paystack_plan_code,
             action: 'subscription_upgrade',
-            billing_interval: 'monthly',
-            duration_days: 30
+            billing_interval: selectedInterval,
+            duration_days: durationDays
           }
         };
 
-        // Attach Paystack Recurring Plan Code if applicable
-        if (targetPlan.paystack_plan_code) {
+        // Attach Paystack Recurring Plan Code if applicable (only monthly currently has plan code)
+        if (targetPlan.paystack_plan_code && !isAnnual) {
           initPayload.plan = targetPlan.paystack_plan_code;
         }
 
@@ -192,6 +230,11 @@ const paystackInitHandler = async (req, res) => {
             details: paystackRes.data ? paystackRes.data.message : 'Unknown gateway error'
           });
         }
+      }
+
+      // Fail-closed in live mode: never allow sandbox mock in live mode
+      if (isLiveMode) {
+        return res.status(500).json({ error: 'Server Configuration Error: Live mode requires active secret key.' });
       }
 
       // Test sandbox mode fallback

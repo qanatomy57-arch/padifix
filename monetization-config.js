@@ -167,6 +167,9 @@
       isFeatured: false,
       featured_badge: false,
       prioritySupport: false,
+      verificationEligible: false,
+      canRequestVerification: false,
+      can_request_verification: false,
       entitlements: [
         'Basic provider profile',
         'Standard search visibility',
@@ -182,10 +185,13 @@
       id: 'BASIC',
       name: 'Basic',
       displayName: 'Basic',
-      priceAmount: 3500,
-      price_ngn: 3500,
-      priceKobo: 350000,
-      priceDisplay: '₦3,500/month',
+      priceAmount: 5500,
+      price_ngn: 5500,
+      priceKobo: 550000,
+      priceDisplay: '₦5,500/month',
+      annualPriceAmount: 55000,
+      annualPriceKobo: 5500000,
+      annualPriceDisplay: '₦55,000/year',
       billingInterval: 'monthly',
       paystackPlanCode: 'PLN_yf4tb6fpw2u8zj6',
       paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6',
@@ -205,14 +211,18 @@
       isFeatured: false,
       featured_badge: false,
       prioritySupport: false,
+      verificationEligible: true,
+      canRequestVerification: true,
+      can_request_verification: true,
       entitlements: [
         'Everything in Free',
         'Up to 10 skills/services',
         'Up to 15 photos',
         '1 provider video',
-        'Provider verification/trust presentation where eligible',
+        'Verified Trust Assurance included',
+        'Verification-document submission unlocked',
         'Availability status',
-        'Improved search visibility',
+        'Improved search visibility (+5%)',
         'Lead/contact history',
         'Basic analytics',
         '30 customer contacts/month'
@@ -223,10 +233,13 @@
       id: 'PRO',
       name: 'Pro',
       displayName: 'Pro',
-      priceAmount: 8000,
-      price_ngn: 8000,
-      priceKobo: 800000,
-      priceDisplay: '₦8,000/month',
+      priceAmount: 11000,
+      price_ngn: 11000,
+      priceKobo: 1100000,
+      priceDisplay: '₦11,000/month',
+      annualPriceAmount: 110000,
+      annualPriceKobo: 11000000,
+      annualPriceDisplay: '₦110,000/year',
       billingInterval: 'monthly',
       paystackPlanCode: 'PLN_pqm1fg3b1o0wwf1',
       paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1',
@@ -247,12 +260,17 @@
       isFeatured: true,
       featured_badge: true,
       prioritySupport: true,
+      verificationEligible: true,
+      canRequestVerification: true,
+      can_request_verification: true,
       entitlements: [
         'Everything in Basic',
         'Up to 25 skills/services',
         'Up to 30 photos',
         'Up to 3 provider videos',
-        'Priority search visibility',
+        'Verified Trust Assurance included',
+        'Verification-document submission unlocked',
+        'Priority search visibility (+15%)',
         'Featured provider profile',
         'Advanced lead analytics',
         'Contact history',
@@ -265,15 +283,18 @@
       id: 'PREMIUM',
       name: 'Premium',
       displayName: 'Premium',
-      priceAmount: 15000,
-      price_ngn: 15000,
-      priceKobo: 1500000,
-      priceDisplay: '₦15,000/month',
+      priceAmount: 22000,
+      price_ngn: 22000,
+      priceKobo: 2200000,
+      priceDisplay: '₦22,000/month',
+      annualPriceAmount: 220000,
+      annualPriceKobo: 22000000,
+      annualPriceDisplay: '₦220,000/year',
       billingInterval: 'monthly',
       paystackPlanCode: 'PLN_e3nu8i62af9ypve',
       paystack_plan_code: 'PLN_e3nu8i62af9ypve',
-      contactAllowance: 'unlimited',
-      contact_allowance: Infinity,
+      contactAllowance: 500,
+      contact_allowance: 500,
       fairUseLimit: 500, // Anti-abuse soft-cap to protect infrastructure
       fair_use_soft_cap: 500,
       maxSkills: 999, // Unlimited
@@ -291,17 +312,22 @@
       featured_badge: true,
       prioritySupport: true,
       promotionalOpportunities: true,
+      verificationEligible: true,
+      canRequestVerification: true,
+      can_request_verification: true,
       entitlements: [
         'Everything in Pro',
         'Unlimited skills/services',
         'Unlimited photos',
         'Up to 5 provider videos',
-        'Highest search visibility',
+        'Verified Trust Assurance included',
+        'Verification-document submission unlocked',
+        'Highest search visibility (+25%)',
         'Featured placement',
         'Advanced analytics',
         'Promotional opportunities',
-        'Priority support',
-        'Unlimited customer contacts subject to fair-use policy'
+        'VIP support',
+        '500 customer contacts/month fair-use limit'
       ]
     }
   };
@@ -347,27 +373,55 @@
   const PAYSTACK_RECURRING = {
     DEFAULT_GRACE_PERIOD_DAYS: 3,
     CURRENCY: 'NGN',
+    LIVE_MODE: (typeof process !== 'undefined' && process.env && process.env.PAYMENT_LIVE_MODE === 'true'),
     PLANS: {
       BASIC: {
         plan_code: 'PLN_yf4tb6fpw2u8zj6',
         name: 'PadiFix Basic',
-        amount_kobo: 350000,
-        amount_ngn: 3500,
+        amount_kobo: 550000,
+        amount_ngn: 5500,
+        annual_amount_kobo: 5500000,
+        annual_amount_ngn: 55000,
         interval: 'monthly'
+      },
+      BASIC_ANNUAL: {
+        plan_code: 'PLN_yf4tb6fpw2u8zj6',
+        name: 'PadiFix Basic Annual',
+        amount_kobo: 5500000,
+        amount_ngn: 55000,
+        interval: 'annually'
       },
       PRO: {
         plan_code: 'PLN_pqm1fg3b1o0wwf1',
         name: 'PadiFix Pro',
-        amount_kobo: 800000,
-        amount_ngn: 8000,
+        amount_kobo: 1100000,
+        amount_ngn: 11000,
+        annual_amount_kobo: 11000000,
+        annual_amount_ngn: 110000,
         interval: 'monthly'
+      },
+      PRO_ANNUAL: {
+        plan_code: 'PLN_pqm1fg3b1o0wwf1',
+        name: 'PadiFix Pro Annual',
+        amount_kobo: 11000000,
+        amount_ngn: 110000,
+        interval: 'annually'
       },
       PREMIUM: {
         plan_code: 'PLN_e3nu8i62af9ypve',
         name: 'PadiFix Premium',
-        amount_kobo: 1500000,
-        amount_ngn: 15000,
+        amount_kobo: 2200000,
+        amount_ngn: 22000,
+        annual_amount_kobo: 22000000,
+        annual_amount_ngn: 220000,
         interval: 'monthly'
+      },
+      PREMIUM_ANNUAL: {
+        plan_code: 'PLN_e3nu8i62af9ypve',
+        name: 'PadiFix Premium Annual',
+        amount_kobo: 22000000,
+        amount_ngn: 220000,
+        interval: 'annually'
       }
     }
   };
@@ -586,6 +640,7 @@
 
   // 9. AUTHORITATIVE PROVIDER VERIFICATION LIFECYCLE & STATE RESOLVER
   const PROVIDER_VERIFICATION_STATES = {
+    NOT_ELIGIBLE: 'Requires Paid Subscription',
     UNVERIFIED: 'Self-Reported Profile',
     AVAILABLE: 'Verification Available',
     PENDING: 'Pending Compliance Review',
@@ -594,6 +649,20 @@
   };
 
   const VERIFICATION_STATE_DETAILS = {
+    NOT_ELIGIBLE: {
+      key: 'NOT_ELIGIBLE',
+      label: 'Requires Paid Subscription',
+      publicBadgeText: 'Self-Reported Profile',
+      badgeClass: 'profile-verified-pill unverified',
+      icon: '🔒',
+      color: '#94A3B8',
+      description: 'Verified Trust Assurance is an entitlement included with Basic, Pro, and Premium plans. Free tier accounts must upgrade to unlock document submission.',
+      isVerified: false,
+      isNinVerified: false,
+      isPending: false,
+      canRequestVerification: false,
+      upgradeRequired: true
+    },
     UNVERIFIED: {
       key: 'UNVERIFIED',
       label: 'Self-Reported Profile',
@@ -605,7 +674,7 @@
       isVerified: false,
       isNinVerified: false,
       isPending: false,
-      canRequestVerification: true
+      canRequestVerification: false
     },
     AVAILABLE: {
       key: 'AVAILABLE',
@@ -614,7 +683,7 @@
       badgeClass: 'profile-verified-pill unverified',
       icon: 'ℹ️',
       color: '#3B82F6',
-      description: 'Profile has met foundational completeness requirements (>= 80%) and is eligible to submit credentials for official verification.',
+      description: 'Profile has met foundational completeness requirements (>= 80%) and has an active paid subscription eligible to submit credentials for official verification.',
       isVerified: false,
       isNinVerified: false,
       isPending: false,
@@ -664,10 +733,11 @@
   /**
    * Centrally resolves the authoritative verification state for any provider.
    * Eliminates ad-hoc or contradictory verification logic across pages.
+   * Free providers are strictly NOT_ELIGIBLE to submit verification documents.
    */
   function resolveVerificationState(provider) {
     if (!provider || typeof provider !== 'object') {
-      return Object.assign({}, VERIFICATION_STATE_DETAILS.UNVERIFIED);
+      return Object.assign({}, VERIFICATION_STATE_DETAILS.NOT_ELIGIBLE);
     }
 
     const isNin = Boolean(
@@ -698,12 +768,23 @@
       return Object.assign({}, VERIFICATION_STATE_DETAILS.PENDING);
     }
 
+    // Phase 012 Rule: Paid subscription unlocks verification eligibility
+    const rawPlan = String(provider.subscription_plan || provider.plan_id || provider.plan || 'FREE').toUpperCase();
+    const isPaidSubscriber = ['BASIC', 'PRO', 'PREMIUM'].includes(rawPlan);
+
+    if (!isPaidSubscriber) {
+      return Object.assign({}, VERIFICATION_STATE_DETAILS.NOT_ELIGIBLE);
+    }
+
     const completeness = calculateProfileCompleteness(provider);
     if (completeness.isComplete || completeness.score >= 80) {
       return Object.assign({}, VERIFICATION_STATE_DETAILS.AVAILABLE);
     }
 
-    return Object.assign({}, VERIFICATION_STATE_DETAILS.UNVERIFIED);
+    // Paid subscriber but profile incomplete
+    const unverifiedState = Object.assign({}, VERIFICATION_STATE_DETAILS.UNVERIFIED);
+    unverifiedState.canRequestVerification = true;
+    return unverifiedState;
   }
 
   /**
@@ -940,9 +1021,9 @@
       is_unlimited: isUnlimited,
       upgradeRecommended: limitReached && plan.id === 'FREE' ? 'BASIC' : null,
       upgradeMessage: limitReached && plan.id === 'FREE'
-        ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦3,500/month."
+        ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
         : null,
-      upgrade_prompt: "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦3,500/month."
+      upgrade_prompt: "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
     };
   }
 

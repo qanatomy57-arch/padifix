@@ -42,9 +42,39 @@ function getJson(urlStr, headers = {}) {
 }
 
 const CANONICAL_PLANS = {
-  BASIC: { id: 'BASIC', name: 'Basic', amount_kobo: 350000, amount_display: '₦3,500', contacts: 30, search_boost: 5, paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6' },
-  PRO: { id: 'PRO', name: 'Pro', amount_kobo: 800000, amount_display: '₦8,000', contacts: 100, search_boost: 15, paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1' },
-  PREMIUM: { id: 'PREMIUM', name: 'Premium', amount_kobo: 1500000, amount_display: '₦15,000', contacts: 'unlimited', search_boost: 25, paystack_plan_code: 'PLN_e3nu8i62af9ypve' }
+  BASIC: {
+    id: 'BASIC',
+    name: 'Basic',
+    amount_kobo: 550000,
+    amount_display: '₦5,500',
+    annual_amount_kobo: 5500000,
+    annual_amount_display: '₦55,000',
+    contacts: 30,
+    search_boost: 5,
+    paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6'
+  },
+  PRO: {
+    id: 'PRO',
+    name: 'Pro',
+    amount_kobo: 1100000,
+    amount_display: '₦11,000',
+    annual_amount_kobo: 11000000,
+    annual_amount_display: '₦110,000',
+    contacts: 100,
+    search_boost: 15,
+    paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1'
+  },
+  PREMIUM: {
+    id: 'PREMIUM',
+    name: 'Premium',
+    amount_kobo: 2200000,
+    amount_display: '₦22,000',
+    annual_amount_kobo: 22000000,
+    annual_amount_display: '₦220,000',
+    contacts: 500,
+    search_boost: 25,
+    paystack_plan_code: 'PLN_e3nu8i62af9ypve'
+  }
 };
 
 const paystackVerifyHandler = async (req, res) => {
@@ -62,7 +92,7 @@ const paystackVerifyHandler = async (req, res) => {
   }
 
   try {
-    const { reference, provider_id, plan_id } = req.body || {};
+    const { reference, provider_id, plan_id, interval } = req.body || {};
 
     if (!reference) {
       return res.status(400).json({ error: 'Missing required reference' });
@@ -71,18 +101,16 @@ const paystackVerifyHandler = async (req, res) => {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     const isLiveMode = process.env.PAYMENT_LIVE_MODE === 'true';
 
-    // Require secret key in production
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-    if (!secretKey && isProd) {
-      return res.status(500).json({ error: 'Server Configuration Error: Missing PAYSTACK_SECRET_KEY in production.' });
-    }
-
-    // Environment consistency validation: Prevent test/live key mixing
-    if (secretKey) {
-      if (isLiveMode && secretKey.startsWith('sk_test_')) {
-        return res.status(500).json({ error: 'Environment Mismatch: Test secret key configured in Live Mode.' });
+    // Environment consistency validation: Prevent test/live key mixing and fail closed
+    if (isLiveMode) {
+      if (!secretKey) {
+        return res.status(500).json({ error: 'Server Configuration Error: Missing PAYSTACK_SECRET_KEY in Live Mode.' });
       }
-      if (!isLiveMode && secretKey.startsWith('sk_live_')) {
+      if (!secretKey.startsWith('sk_live_')) {
+        return res.status(500).json({ error: 'Environment Mismatch: Non-live secret key configured in Live Mode.' });
+      }
+    } else {
+      if (secretKey && secretKey.startsWith('sk_live_')) {
         return res.status(500).json({ error: 'Environment Mismatch: Live secret key configured in Test Mode.' });
       }
     }
@@ -129,8 +157,8 @@ const paystackVerifyHandler = async (req, res) => {
         const resolvedPlanKey = String(meta.plan_id || plan_id || '').toUpperCase();
         let targetPlan = CANONICAL_PLANS[resolvedPlanKey];
         if (!targetPlan) {
-          // Fallback resolution by exact amount
-          targetPlan = Object.values(CANONICAL_PLANS).find(p => p.amount_kobo === tx.amount);
+          // Fallback resolution by exact amount (monthly or annual)
+          targetPlan = Object.values(CANONICAL_PLANS).find(p => p.amount_kobo === tx.amount || p.annual_amount_kobo === tx.amount);
         }
 
         if (!targetPlan) {
@@ -140,15 +168,21 @@ const paystackVerifyHandler = async (req, res) => {
           });
         }
 
+        const isAnnualTx = (tx.amount === targetPlan.annual_amount_kobo) || 
+                           (meta.billing_interval === 'annual') || 
+                           (String(interval).toLowerCase() === 'annual');
+        const expectedAmount = isAnnualTx ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
+
         // Authoritative amount validation
-        if (tx.amount !== targetPlan.amount_kobo) {
+        if (tx.amount !== expectedAmount) {
           return res.status(400).json({
             status: 'failed',
-            error: `Transaction amount mismatch: received ${tx.amount}, expected ${targetPlan.amount_kobo} kobo for ${targetPlan.name}`
+            error: `Transaction amount mismatch: received ${tx.amount}, expected ${expectedAmount} kobo for ${targetPlan.name}`
           });
         }
 
-        const subDurationMs = 30 * 24 * 60 * 60 * 1000;
+        const durationDays = isAnnualTx ? 365 : 30;
+        const subDurationMs = durationDays * 24 * 60 * 60 * 1000;
         const subExpiresAt = new Date(now + subDurationMs).toISOString();
 
         return res.status(200).json({
@@ -169,7 +203,8 @@ const paystackVerifyHandler = async (req, res) => {
             effective_until: subExpiresAt,
             contacts_allowance: targetPlan.contacts,
             search_boost_percent: targetPlan.search_boost,
-            duration_days: 30
+            billing_interval: isAnnualTx ? 'annual' : 'monthly',
+            duration_days: durationDays
           },
           message: `Payment verified successfully. ${targetPlan.name} subscription is active.`
         });
@@ -205,19 +240,27 @@ const paystackVerifyHandler = async (req, res) => {
       });
     }
 
+    // Fail-closed in live mode
+    if (isLiveMode) {
+      return res.status(500).json({ error: 'Server Configuration Error: Live mode requires active secret key.' });
+    }
+
     // Standard test sandbox verification response
     if (isSubscription) {
       const resolvedPlanKey = String(plan_id || 'PRO').toUpperCase();
       const targetPlan = CANONICAL_PLANS[resolvedPlanKey] || CANONICAL_PLANS.PRO;
-      const subDurationMs = 30 * 24 * 60 * 60 * 1000;
+      const isAnnualTx = String(interval).toLowerCase() === 'annual';
+      const durationDays = isAnnualTx ? 365 : 30;
+      const subDurationMs = durationDays * 24 * 60 * 60 * 1000;
       const subExpiresAt = new Date(now + subDurationMs).toISOString();
+      const amountKobo = isAnnualTx ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
 
       return res.status(200).json({
         status: 'success',
         mode: 'TEST_SANDBOX',
         verified: true,
         reference: reference,
-        amount: targetPlan.amount_kobo,
+        amount: amountKobo,
         currency: 'NGN',
         provider_id: provider_id,
         plan_id: targetPlan.id,
@@ -230,7 +273,8 @@ const paystackVerifyHandler = async (req, res) => {
           effective_until: subExpiresAt,
           contacts_allowance: targetPlan.contacts,
           search_boost_percent: targetPlan.search_boost,
-          duration_days: 30
+          billing_interval: isAnnualTx ? 'annual' : 'monthly',
+          duration_days: durationDays
         },
         message: `Test sandbox payment verified. ${targetPlan.name} subscription is active.`
       });

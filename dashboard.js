@@ -1309,9 +1309,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const Monetization = (typeof PadiFixMonetization !== 'undefined') ? PadiFixMonetization : null;
     const plans = Monetization && Monetization.PROVIDER_PLANS ? Monetization.PROVIDER_PLANS : {
       FREE: { id: 'FREE', name: 'Free', price_ngn: 0, contact_allowance: 5 },
-      BASIC: { id: 'BASIC', name: 'Basic', price_ngn: 3500, contact_allowance: 30 },
-      PRO: { id: 'PRO', name: 'Pro', price_ngn: 8000, contact_allowance: 100 },
-      PREMIUM: { id: 'PREMIUM', name: 'Premium', price_ngn: 15000, contact_allowance: Infinity }
+      BASIC: { id: 'BASIC', name: 'Basic', price_ngn: 5500, contact_allowance: 30 },
+      PRO: { id: 'PRO', name: 'Pro', price_ngn: 11000, contact_allowance: 100 },
+      PREMIUM: { id: 'PREMIUM', name: 'Premium', price_ngn: 22000, contact_allowance: 500 }
     };
 
     // Retrieve active subscription
@@ -1644,7 +1644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (history.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="padding: 16px 10px; text-align: center; color: var(--dash-muted);">No prior billing transactions on record.</td>
+            <td colspan="6" style="padding: 16px 10px; text-align: center; color: var(--dash-muted);">No prior billing transactions on record.</td>
           </tr>
         `;
       } else {
@@ -1656,16 +1656,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `<span style="color: #34D399; background: rgba(0, 168, 89, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 11px;">Success</span>`
             : `<span style="color: #F87171; background: rgba(239, 68, 68, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 11px;">${tx.status || 'Pending'}</span>`;
 
+          const receiptBtn = (isSuccess && tx.reference)
+            ? `<button type="button" class="btn btn-outline btn-xs btn-resend-receipt" data-ref="${escapeHtml(tx.reference)}" style="padding: 3px 8px; font-size: 11px; border-radius: 4px; border-color: var(--dash-border); color: var(--dash-text, #FFF); cursor: pointer;">Resend Receipt</button>`
+            : `<span style="color: var(--dash-muted); font-size: 11px;">—</span>`;
+
           return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">
-              <td style="padding: 10px 10px; color: #FFF;">${escapeHtml(dStr)}</td>
-              <td style="padding: 10px 10px; color: #CBD5E1;">${escapeHtml(tx.description || `${tx.plan_id || 'PRO'} Plan Subscription`)}</td>
+              <td style="padding: 10px 10px; color: var(--dash-text, #FFF);">${escapeHtml(dStr)}</td>
+              <td style="padding: 10px 10px; color: var(--dash-text-secondary, #CBD5E1);">${escapeHtml(tx.description || `${tx.plan_id || 'PRO'} Plan Subscription`)}</td>
               <td style="padding: 10px 10px; color: #34D399; font-weight: 600;">${amtStr}</td>
               <td style="padding: 10px 10px;">${statusBadge}</td>
-              <td style="padding: 10px 10px; font-family: monospace; font-size: 11px; color: #94A3B8;">${escapeHtml(tx.reference || '—')}</td>
+              <td style="padding: 10px 10px; font-family: monospace; font-size: 11px; color: var(--dash-muted, #94A3B8);">${escapeHtml(tx.reference || '—')}</td>
+              <td style="padding: 10px 10px;">${receiptBtn}</td>
             </tr>
           `;
         }).join('');
+
+        // Wire up Receipt Resend click handlers (Phase 012)
+        tbody.querySelectorAll('.btn-resend-receipt').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const ref = btn.getAttribute('data-ref');
+            if (!ref) return;
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            try {
+              const res = await fetch('/api/receipt-resend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider_id: providerId, reference: ref })
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error || 'Failed to resend receipt');
+              showToast('✅ Billing receipt resent to your email successfully!');
+              btn.textContent = 'Resent ✓';
+            } catch (err) {
+              showToast('Receipt resend failed: ' + err.message, 'error');
+              btn.disabled = false;
+              btn.textContent = 'Resend Receipt';
+            }
+          });
+        });
       }
     }
   }
@@ -1726,6 +1756,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       feedback.textContent = cnt > 0 ? `${cnt} Customer Reviews (★ ${rating})` : '0 Customer Reviews (★ New Listing)';
     }
 
+    const freeNotice = document.getElementById('dash-ver-free-tier-notice');
     const rejectedNotice = document.getElementById('dash-ver-rejected-notice');
     const unavailableNotice = document.getElementById('dash-ver-unavailable-notice');
     const rejectedText = document.getElementById('dash-ver-rejected-text');
@@ -1733,8 +1764,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Manage Status Notice Banners & Form Usability
     const isRejected = (verState.key === 'REJECTED' || currentProvider.verification_status === 'rejected' || currentProvider.verificationStatus === 'rejected');
-    
-    if (verState.isPending) {
+    const isFreeIneligible = (verState.key === 'NOT_ELIGIBLE' || verState.upgradeRequired || ((currentProvider.plan_id || currentProvider.plan || 'FREE').toUpperCase() === 'FREE'));
+
+    if (isFreeIneligible && !verState.isVerified) {
+      if (freeNotice) freeNotice.style.display = 'block';
+      if (pendingNotice) pendingNotice.style.display = 'none';
+      if (approvedNotice) approvedNotice.style.display = 'none';
+      if (rejectedNotice) rejectedNotice.style.display = 'none';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Upgrade Plan to Unlock Verification';
+      }
+      if (formReqVer) {
+        formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
+      }
+    } else if (verState.isPending) {
+      if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'block';
       if (approvedNotice) approvedNotice.style.display = 'none';
       if (rejectedNotice) rejectedNotice.style.display = 'none';
@@ -1746,6 +1791,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
       }
     } else if (verState.isVerified) {
+      if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'block';
       if (rejectedNotice) rejectedNotice.style.display = 'none';
@@ -1757,6 +1803,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
       }
     } else if (isRejected) {
+      if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'none';
       if (rejectedNotice) {
@@ -1779,6 +1826,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
       }
     } else {
+      if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'none';
       if (rejectedNotice) rejectedNotice.style.display = 'none';
@@ -1882,6 +1930,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (formReqVer) {
     formReqVer.addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      // Phase 012 Defense-in-depth: check if Free provider
+      const pPlan = (currentProvider.plan_id || currentProvider.plan || 'FREE').toUpperCase();
+      if (pPlan === 'FREE') {
+        showToast('🔒 Verification submission requires an active Basic, Pro, or Premium subscription. Please upgrade your plan.', 'error');
+        return;
+      }
+
       const docType = document.getElementById('ver-doc-type').value;
       const docRef = document.getElementById('ver-doc-ref').value.trim();
       const btn = document.getElementById('btn-submit-verification');
@@ -1920,7 +1976,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         formReqVer.reset();
         updatePreviewCode();
       } catch (err) {
-        showToast('Error requesting verification: ' + err.message, 'error');
+        if (err.message && err.message.includes('PLAN_UPGRADE_REQUIRED')) {
+          showToast('🔒 Plan upgrade required: Free accounts cannot submit verification requests.', 'error');
+        } else {
+          showToast('Error requesting verification: ' + err.message, 'error');
+        }
       } finally {
         if (btn && currentProvider.verification_status !== 'pending') {
           btn.disabled = false;

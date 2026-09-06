@@ -104,29 +104,29 @@ async function runTest(name, fn) {
     assert.strictEqual(free.paystackPlanCode, null);
   });
 
-  await runTest('Canonical Basic plan: ₦3,500/month, 30 contacts, PLN_yf4tb6fpw2u8zj6', () => {
+  await runTest('Canonical Basic plan: ₦5,500/month, 30 contacts, PLN_yf4tb6fpw2u8zj6', () => {
     const basic = PadiFixMonetization.PROVIDER_PLANS.BASIC;
-    assert.strictEqual(basic.priceAmount, 3500);
-    assert.strictEqual(basic.priceKobo, 350000);
+    assert.strictEqual(basic.priceAmount, 5500);
+    assert.strictEqual(basic.priceKobo, 550000);
     assert.strictEqual(basic.contactAllowance, 30);
     assert.strictEqual(basic.paystackPlanCode, 'PLN_yf4tb6fpw2u8zj6');
   });
 
-  await runTest('Canonical Pro plan: ₦8,000/month, 100 contacts, PLN_pqm1fg3b1o0wwf1, MOST POPULAR', () => {
+  await runTest('Canonical Pro plan: ₦11,000/month, 100 contacts, PLN_pqm1fg3b1o0wwf1, MOST POPULAR', () => {
     const pro = PadiFixMonetization.PROVIDER_PLANS.PRO;
-    assert.strictEqual(pro.priceAmount, 8000);
-    assert.strictEqual(pro.priceKobo, 800000);
+    assert.strictEqual(pro.priceAmount, 11000);
+    assert.strictEqual(pro.priceKobo, 1100000);
     assert.strictEqual(pro.contactAllowance, 100);
     assert.strictEqual(pro.paystackPlanCode, 'PLN_pqm1fg3b1o0wwf1');
     assert.strictEqual(pro.isPopular, true);
     assert.strictEqual(pro.badgeText, 'MOST POPULAR');
   });
 
-  await runTest('Canonical Premium plan: ₦15,000/month, fair-use unlimited (500 cap), PLN_e3nu8i62af9ypve', () => {
+  await runTest('Canonical Premium plan: ₦22,000/month, fair-use 500 contacts, PLN_e3nu8i62af9ypve', () => {
     const prem = PadiFixMonetization.PROVIDER_PLANS.PREMIUM;
-    assert.strictEqual(prem.priceAmount, 15000);
-    assert.strictEqual(prem.priceKobo, 1500000);
-    assert.strictEqual(prem.contactAllowance, 'unlimited');
+    assert.strictEqual(prem.priceAmount, 22000);
+    assert.strictEqual(prem.priceKobo, 2200000);
+    assert.strictEqual(prem.contactAllowance, 500);
     assert.strictEqual(prem.fairUseLimit, 500);
     assert.strictEqual(prem.paystackPlanCode, 'PLN_e3nu8i62af9ypve');
   });
@@ -136,7 +136,7 @@ async function runTest(name, fn) {
   // -------------------------------------------------------------
   console.log('\n--- 2. PAYSTACK TRANSACTION INITIALIZATION ---');
 
-  await runTest('paystack-init attaches Paystack plan code and 800,000 kobo for Pro', async () => {
+  await runTest('paystack-init attaches Paystack plan code and 1,100,000 kobo for Pro', async () => {
     const ctx = createMockContext({
       body: {
         provider_id: 101,
@@ -148,13 +148,13 @@ async function runTest(name, fn) {
     assert.strictEqual(ctx.getStatusCode(), 200);
     const data = ctx.getData();
     assert.strictEqual(data.status, 'success');
-    assert.strictEqual(data.order.amount, 800000);
+    assert.strictEqual(data.order.amount, 1100000);
     assert.strictEqual(data.paystack_plan_code, 'PLN_pqm1fg3b1o0wwf1');
     assert.strictEqual(data.order.paystack_plan_code, 'PLN_pqm1fg3b1o0wwf1');
     assert.ok(data.authorization_url);
   });
 
-  await runTest('paystack-init attaches Paystack plan code and 1,500,000 kobo for Premium', async () => {
+  await runTest('paystack-init attaches Paystack plan code and 2,200,000 kobo for Premium', async () => {
     const ctx = createMockContext({
       body: {
         provider_id: 102,
@@ -165,7 +165,7 @@ async function runTest(name, fn) {
     await paystackInitHandler(ctx.req, ctx.res);
     assert.strictEqual(ctx.getStatusCode(), 200);
     const data = ctx.getData();
-    assert.strictEqual(data.order.amount, 1500000);
+    assert.strictEqual(data.order.amount, 2200000);
     assert.strictEqual(data.paystack_plan_code, 'PLN_e3nu8i62af9ypve');
   });
 
@@ -275,14 +275,14 @@ async function runTest(name, fn) {
   // -------------------------------------------------------------
   console.log('\n--- 4. WEBHOOK SECURITY & RECURRING RENEWAL PROCESSING ---');
 
-  await runTest('Webhook handles recurring charge.success for Pro (₦8,000 / 800,000 kobo)', async () => {
+  await runTest('Webhook handles recurring charge.success for Pro (₦11,000 / 1,100,000 kobo)', async () => {
     const ctx = createMockContext({
       body: {
         event: 'charge.success',
         data: {
           id: 991101,
-          reference: 'sub_renew_800k_101',
-          amount: 800000,
+          reference: 'sub_renew_1100k_101',
+          amount: 1100000,
           currency: 'NGN',
           subscription_code: 'SUB_pro_renewal_101',
           customer: { email: 'artisan101@padifix.ng', first_name: 'Adebayo' },
@@ -299,14 +299,14 @@ async function runTest(name, fn) {
     assert.strictEqual(data.contacts_allowance, 100);
   });
 
-  await runTest('Webhook handles recurring charge.success for Premium (₦15,000 / 1,500,000 kobo)', async () => {
+  await runTest('Webhook handles recurring charge.success for Premium (₦22,000 / 2,200,000 kobo)', async () => {
     const ctx = createMockContext({
       body: {
         event: 'charge.success',
         data: {
           id: 991102,
-          reference: 'sub_renew_1500k_102',
-          amount: 1500000,
+          reference: 'sub_renew_2200k_102',
+          amount: 2200000,
           currency: 'NGN',
           subscription_code: 'SUB_prem_renewal_102',
           customer: { email: 'emeka@padifix.ng', first_name: 'Emeka' },
@@ -318,7 +318,7 @@ async function runTest(name, fn) {
     assert.strictEqual(ctx.getStatusCode(), 200);
     const data = ctx.getData();
     assert.strictEqual(data.plan_id, 'PREMIUM');
-    assert.strictEqual(data.contacts_allowance, 'unlimited');
+    assert.strictEqual(data.contacts_allowance, 500);
   });
 
   await runTest('Webhook handles invoice.payment_failed by entering 3-day grace period', async () => {

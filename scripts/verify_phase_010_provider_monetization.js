@@ -61,11 +61,11 @@ runTest('Canonical Free plan: ₦0/month, 5 contacts/month, standard entitlement
   assert.strictEqual(free.search_visibility, 'standard');
 });
 
-runTest('Canonical Basic plan: ₦3,500/month, 30 contacts/month, improved search', () => {
+runTest('Canonical Basic plan: ₦5,500/month, 30 contacts/month, improved search', () => {
   const basic = Monetization.PROVIDER_PLANS.BASIC;
   assert.strictEqual(basic.id, 'BASIC');
   assert.strictEqual(basic.name, 'Basic');
-  assert.strictEqual(basic.price_ngn, 3500);
+  assert.strictEqual(basic.price_ngn, 5500);
   assert.strictEqual(basic.contact_allowance, 30);
   assert.strictEqual(basic.max_skills, 10);
   assert.strictEqual(basic.max_photos, 15);
@@ -73,11 +73,11 @@ runTest('Canonical Basic plan: ₦3,500/month, 30 contacts/month, improved searc
   assert.strictEqual(basic.search_visibility, 'improved');
 });
 
-runTest('Canonical Pro plan: ₦8,000/month, 100 contacts/month, featured & marked MOST POPULAR', () => {
+runTest('Canonical Pro plan: ₦11,000/month, 100 contacts/month, featured & marked MOST POPULAR', () => {
   const pro = Monetization.PROVIDER_PLANS.PRO;
   assert.strictEqual(pro.id, 'PRO');
   assert.strictEqual(pro.name, 'Pro');
-  assert.ok([5000, 8000].includes(pro.price_ngn));
+  assert.strictEqual(pro.price_ngn, 11000);
   assert.strictEqual(pro.contact_allowance, 100);
   assert.strictEqual(pro.max_skills, 25);
   assert.strictEqual(pro.max_photos, 30);
@@ -87,12 +87,12 @@ runTest('Canonical Pro plan: ₦8,000/month, 100 contacts/month, featured & mark
   assert.strictEqual(pro.is_popular, true);
 });
 
-runTest('Canonical Premium plan: ₦15,000/month, fair-use unlimited contacts (capped at 500)', () => {
+runTest('Canonical Premium plan: ₦22,000/month, fair-use 500 customer contacts', () => {
   const premium = Monetization.PROVIDER_PLANS.PREMIUM;
   assert.strictEqual(premium.id, 'PREMIUM');
   assert.strictEqual(premium.name, 'Premium');
-  assert.ok([10000, 15000].includes(premium.price_ngn));
-  assert.strictEqual(premium.contact_allowance, Infinity);
+  assert.strictEqual(premium.price_ngn, 22000);
+  assert.strictEqual(premium.contact_allowance, 500);
   assert.strictEqual(premium.fair_use_soft_cap, 500);
   assert.strictEqual(premium.search_visibility, 'highest');
   assert.strictEqual(premium.max_skills, Infinity);
@@ -127,7 +127,7 @@ runTest('checkContactAllowance accurately identifies remaining vs exhausted quot
   assert.strictEqual(freeCheckLimit.allowed, false);
   assert.strictEqual(freeCheckLimit.remaining, 0);
   assert.strictEqual(freeCheckLimit.limit_reached, true);
-  assert.ok(freeCheckLimit.upgrade_prompt.includes('Upgrade to Basic — ₦3,500/month'));
+  assert.ok(freeCheckLimit.upgrade_prompt.includes('Upgrade to Basic — ₦5,500/month'));
 
   // Pro plan with 73 contacts used
   const proCheck = Monetization.checkContactAllowance('PRO', 73);
@@ -135,11 +135,10 @@ runTest('checkContactAllowance accurately identifies remaining vs exhausted quot
   assert.strictEqual(proCheck.remaining, 27);
   assert.strictEqual(proCheck.limit_reached, false);
 
-  // Premium plan unlimited
+  // Premium plan with 200 contacts used (500 cap)
   const premCheck = Monetization.checkContactAllowance('PREMIUM', 200);
   assert.strictEqual(premCheck.allowed, true);
-  assert.strictEqual(premCheck.remaining, Infinity);
-  assert.strictEqual(premCheck.is_unlimited, true);
+  assert.strictEqual(premCheck.remaining, 300);
 });
 
 runTest('Contact Metering API handles WhatsApp & Call atomic increments with idempotency', async () => {
@@ -248,7 +247,7 @@ runTest('Free provider hitting 5 contacts gets graceful contact block and canoni
   assert.strictEqual(blockBody.contact_allowance, 5);
   assert.strictEqual(blockBody.profile_visible, true); // Profile stays visible!
   assert.strictEqual(blockBody.provider_notification, "You've reached your 5 customer contact limit for this month.");
-  assert.strictEqual(blockBody.upgrade_prompt, "Upgrade to Basic — ₦3,500/month");
+  assert.strictEqual(blockBody.upgrade_prompt, "Upgrade to Basic — ₦5,500/month");
 });
 
 // -------------------------------------------------------------
@@ -390,7 +389,7 @@ runTest('paystack-webhook detects and rejects replay attack attempts with HTTP 4
     data: {
       id: 11223344,
       reference: fixedRef,
-      amount: 350000,
+      amount: 550000,
       currency: 'NGN',
       status: 'success',
       paid_at: new Date().toISOString(),

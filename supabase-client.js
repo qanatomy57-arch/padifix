@@ -2427,6 +2427,15 @@
         throw new Error('Provider not found');
       }
 
+      // Phase 012 Rule D: Free Provider Verification Restriction (Server-Side Authorization)
+      const currentPlan = String(p.subscription_plan || p.plan_id || p.plan || verificationData.plan || options.plan || 'FREE').toUpperCase();
+      if (currentPlan === 'FREE') {
+        const err = new Error('Verification document submission is an entitlement reserved for Basic, Pro, and Premium subscribers. Upgrade your plan to unlock verification.');
+        err.statusCode = 403;
+        err.code = 'PLAN_UPGRADE_REQUIRED';
+        throw err;
+      }
+
       const docType = (verificationData.docType || 'vnin').toLowerCase();
       const rawRef = String(verificationData.docRef || '').trim();
 
@@ -6032,10 +6041,10 @@
       complexity: 'Medium',
       risk: 'Low if transparently labeled; must not degrade organic relevance',
       evidence_level: 'High (Search result rate 84.5%, active demand across Delta & Lagos)',
-      pricing_placeholder: '₦3,500 / month (RESEARCH PLACEHOLDER)',
+      pricing_placeholder: '₦5,500 / month (RESEARCH PLACEHOLDER)',
       price_hypotheses: [
         { id: 'price_promo_low', label: '₦2,000 / month', amount: 2000, period: 'monthly' },
-        { id: 'price_promo_mid', label: '₦3,500 / month', amount: 3500, period: 'monthly', is_baseline: true },
+        { id: 'price_promo_mid', label: '₦5,500 / month', amount: 5500, period: 'monthly', is_baseline: true },
         { id: 'price_promo_high', label: '₦7,500 / month', amount: 7500, period: 'monthly' }
       ],
       rule: 'Sponsored listings must be clearly labeled as "Sponsored" without hiding organic providers.'
@@ -10409,8 +10418,8 @@
           contacts_remaining: 0,
           allowance: check.allowance,
           upgrade_recommended: check.upgradeRecommended || 'BASIC',
-          upgrade_price_display: '₦3,500/month',
-          message: check.upgradeMessage || "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦3,500/month."
+          upgrade_price_display: '₦5,500/month',
+          message: check.upgradeMessage || "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
         };
         idemStore[idempotencyKey] = deniedResult;
         setLocalStore('padifix_contact_idempotency_store', idemStore);

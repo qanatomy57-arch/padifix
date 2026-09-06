@@ -14,9 +14,9 @@ const { withSentry } = require('../lib/sentry-server');
 
 const CANONICAL_PLANS = {
   FREE: { id: 'FREE', name: 'Free', amount_ngn: 0, contacts: 5 },
-  BASIC: { id: 'BASIC', name: 'Basic', amount_ngn: 3500, contacts: 30, paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6' },
-  PRO: { id: 'PRO', name: 'Pro', amount_ngn: 8000, contacts: 100, paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1' },
-  PREMIUM: { id: 'PREMIUM', name: 'Premium', amount_ngn: 15000, contacts: 'unlimited', paystack_plan_code: 'PLN_e3nu8i62af9ypve' }
+  BASIC: { id: 'BASIC', name: 'Basic', amount_ngn: 5500, annual_amount_ngn: 55000, contacts: 30, paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6' },
+  PRO: { id: 'PRO', name: 'Pro', amount_ngn: 11000, annual_amount_ngn: 110000, contacts: 100, paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1' },
+  PREMIUM: { id: 'PREMIUM', name: 'Premium', amount_ngn: 22000, annual_amount_ngn: 220000, contacts: 500, paystack_plan_code: 'PLN_e3nu8i62af9ypve' }
 };
 
 // In-memory subscription store for serverless execution / testing

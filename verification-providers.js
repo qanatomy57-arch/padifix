@@ -1377,6 +1377,31 @@
       const numId = Number(providerId);
       if (!numId) throw new Error('Valid providerId is required.');
 
+      // Phase 012 Rule D: Free Provider Verification Restriction (Server-Side & Client-Side Authorization)
+      // Free providers are strictly barred from submitting verification documents.
+      const DB = (typeof LokatorDB !== 'undefined') ? LokatorDB : (typeof require !== 'undefined' ? require('./supabase-client.js') : null);
+      let providerRecord = null;
+      if (DB && typeof DB.getProviderById === 'function') {
+        providerRecord = await DB.getProviderById(numId);
+      }
+      const currentPlan = String(
+        (providerRecord && (providerRecord.subscription_plan || providerRecord.plan_id || providerRecord.plan)) || 
+        verificationData.plan || 
+        options.plan || 
+        'FREE'
+      ).toUpperCase();
+
+      if (currentPlan === 'FREE') {
+        return {
+          status: 'REMOTE_ERROR',
+          statusCode: 403,
+          success: false,
+          outcome: 'FAILED',
+          safeResultCode: 'PLAN_UPGRADE_REQUIRED',
+          error: 'Verification document submission is an entitlement reserved for Basic, Pro, and Premium subscribers. Upgrade your plan to unlock verification.'
+        };
+      }
+
       const docType = String(verificationData.docType || 'vnin').toLowerCase();
       const rawRef = String(verificationData.docRef || '').trim();
 
@@ -1404,9 +1429,6 @@
       // Generate or retrieve idempotency key
       const idempotencyKey = verificationData.idempotencyKey || `idem_${numId}_${refHash.slice(0, 16)}`;
       const correlationId = `cor_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-      // Access storage if running in client/node context
-      const DB = (typeof LokatorDB !== 'undefined') ? LokatorDB : (typeof require !== 'undefined' ? require('./supabase-client.js') : null);
 
       // Check for Idempotency: Has this exact request already been submitted and still pending/active?
       if (DB && typeof DB.getProviderVerificationHistory === 'function') {
@@ -1543,6 +1565,7 @@
 
       return {
         status: 'REMOTE_SUCCESS',
+        success: true,
         isDuplicate: false,
         idempotent: false,
         safeResultCode: safeResultCode,
@@ -1844,7 +1867,8 @@
     DojahKycProvider,
     VerificationSpendingGuard,
     VerificationProviderFactory,
-    PadiFixVerificationGateway
+    PadiFixVerificationGateway,
+    submitVerificationRequest: (providerId, data, opts) => PadiFixVerificationGateway.submitVerificationRequest(providerId, data, opts)
   };
 
   // Export for Browser and Node.js

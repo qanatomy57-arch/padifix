@@ -50,24 +50,24 @@ async function runMonetizationSuite() {
 
   // 2. CANONICAL PRICING & PLAN CODES
   console.log('\n--- 2. CANONICAL SUBSCRIPTION PRICING & PAYSTACK PLANS ---');
-  check('Canonical plans: Free (₦0), Basic (₦3,500), Pro (₦8,000), Premium (₦15,000)', () => {
+  check('Canonical plans: Free (₦0), Basic (₦5,500), Pro (₦11,000), Premium (₦22,000)', () => {
     const plans = PadiFixMonetization.PROVIDER_PLANS;
     assert.ok(plans, 'Provider plans must be defined');
     
     assert.strictEqual(plans.FREE.priceAmount, 0);
     assert.strictEqual(plans.FREE.contactAllowance, 5);
 
-    assert.strictEqual(plans.BASIC.priceAmount, 3500);
+    assert.strictEqual(plans.BASIC.priceAmount, 5500);
     assert.strictEqual(plans.BASIC.contactAllowance, 30);
     assert.strictEqual(plans.BASIC.paystackPlanCode, 'PLN_yf4tb6fpw2u8zj6');
 
-    assert.strictEqual(plans.PRO.priceAmount, 8000);
+    assert.strictEqual(plans.PRO.priceAmount, 11000);
     assert.strictEqual(plans.PRO.contactAllowance, 100);
     assert.strictEqual(plans.PRO.paystackPlanCode, 'PLN_pqm1fg3b1o0wwf1');
     assert.strictEqual(plans.PRO.isPopular, true);
 
-    assert.strictEqual(plans.PREMIUM.priceAmount, 15000);
-    assert.strictEqual(plans.PREMIUM.contactAllowance, 'unlimited');
+    assert.strictEqual(plans.PREMIUM.priceAmount, 22000);
+    assert.strictEqual(plans.PREMIUM.contactAllowance, 500);
     assert.strictEqual(plans.PREMIUM.fairUseLimit, 500);
     assert.strictEqual(plans.PREMIUM.paystackPlanCode, 'PLN_e3nu8i62af9ypve');
   });

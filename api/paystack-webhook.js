@@ -12,22 +12,29 @@ const { withSentry } = require('../lib/sentry-server');
 
 // In-memory processed webhook event ID cache with payload hash for replay/tamper detection
 const processedEvents = new Map();
+// In-memory email receipt delivery deduplication cache (Email Idempotency Guard)
+const sentReceipts = new Set();
 
-// Canonical Plan Map for verification (Phase 011 Canonical Pricing)
+// Canonical Plan Map for verification (Phase 012 Launch Subscription Pricing)
 const WEBHOOK_PLANS = {
-  350000: { id: 'BASIC', name: 'Basic', contacts: 30, amount_display: '₦3,500', paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6' },
-  800000: { id: 'PRO', name: 'Pro', contacts: 100, amount_display: '₦8,000', paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1' },
-  1500000: { id: 'PREMIUM', name: 'Premium', contacts: 'unlimited', amount_display: '₦15,000', paystack_plan_code: 'PLN_e3nu8i62af9ypve' }
+  // Monthly Plans
+  550000: { id: 'BASIC', name: 'Basic', contacts: 30, amount_display: '₦5,500', interval: 'monthly', paystack_plan_code: 'PLN_yf4tb6fpw2u8zj6' },
+  1100000: { id: 'PRO', name: 'Pro', contacts: 100, amount_display: '₦11,000', interval: 'monthly', paystack_plan_code: 'PLN_pqm1fg3b1o0wwf1' },
+  2200000: { id: 'PREMIUM', name: 'Premium', contacts: 500, amount_display: '₦22,000', interval: 'monthly', paystack_plan_code: 'PLN_e3nu8i62af9ypve' },
+  // Annual Plans (2 months free discount)
+  5500000: { id: 'BASIC', name: 'Basic (Annual)', contacts: 30, amount_display: '₦55,000', interval: 'annual', paystack_plan_code: null },
+  11000000: { id: 'PRO', name: 'Pro (Annual)', contacts: 100, amount_display: '₦110,000', interval: 'annual', paystack_plan_code: null },
+  22000000: { id: 'PREMIUM', name: 'Premium (Annual)', contacts: 500, amount_display: '₦220,000', interval: 'annual', paystack_plan_code: null }
 };
 
 const WEBHOOK_PLAN_CODES = {
-  'PLN_yf4tb6fpw2u8zj6': { id: 'BASIC', name: 'Basic', contacts: 30, amount: 350000, amount_display: '₦3,500' },
-  'PLN_pqm1fg3b1o0wwf1': { id: 'PRO', name: 'Pro', contacts: 100, amount: 800000, amount_display: '₦8,000' },
-  'PLN_e3nu8i62af9ypve': { id: 'PREMIUM', name: 'Premium', contacts: 'unlimited', amount: 1500000, amount_display: '₦15,000' },
+  'PLN_yf4tb6fpw2u8zj6': { id: 'BASIC', name: 'Basic', contacts: 30, amount: 550000, amount_display: '₦5,500' },
+  'PLN_pqm1fg3b1o0wwf1': { id: 'PRO', name: 'Pro', contacts: 100, amount: 1100000, amount_display: '₦11,000' },
+  'PLN_e3nu8i62af9ypve': { id: 'PREMIUM', name: 'Premium', contacts: 500, amount: 2200000, amount_display: '₦22,000' },
   // Backward compatibility aliases
-  'PLN_padifix_basic': { id: 'BASIC', name: 'Basic', contacts: 30, amount: 350000, amount_display: '₦3,500' },
-  'PLN_padifix_pro': { id: 'PRO', name: 'Pro', contacts: 100, amount: 800000, amount_display: '₦8,000' },
-  'PLN_padifix_premium': { id: 'PREMIUM', name: 'Premium', contacts: 'unlimited', amount: 1500000, amount_display: '₦15,000' }
+  'PLN_padifix_basic': { id: 'BASIC', name: 'Basic', contacts: 30, amount: 550000, amount_display: '₦5,500' },
+  'PLN_padifix_pro': { id: 'PRO', name: 'Pro', contacts: 100, amount: 1100000, amount_display: '₦11,000' },
+  'PLN_padifix_premium': { id: 'PREMIUM', name: 'Premium', contacts: 500, amount: 2200000, amount_display: '₦22,000' }
 };
 
 const paystackWebhookHandler = async (req, res) => {
@@ -40,12 +47,16 @@ const paystackWebhookHandler = async (req, res) => {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     const isLiveMode = process.env.PAYMENT_LIVE_MODE === 'true';
 
-    // Environment consistency validation: Prevent test/live key mixing
-    if (secretKey) {
-      if (isLiveMode && secretKey.startsWith('sk_test_')) {
-        return res.status(500).json({ error: 'Environment Mismatch: Test secret key configured in Live Mode.' });
+    // Environment consistency validation: Prevent test/live key mixing and fail closed
+    if (isLiveMode) {
+      if (!secretKey) {
+        return res.status(500).json({ error: 'Server Configuration Error: Missing PAYSTACK_SECRET_KEY in Live Mode.' });
       }
-      if (!isLiveMode && secretKey.startsWith('sk_live_')) {
+      if (!secretKey.startsWith('sk_live_')) {
+        return res.status(500).json({ error: 'Environment Mismatch: Non-live secret key configured in Live Mode.' });
+      }
+    } else {
+      if (secretKey && secretKey.startsWith('sk_live_')) {
         return res.status(500).json({ error: 'Environment Mismatch: Live secret key configured in Test Mode.' });
       }
     }
@@ -58,8 +69,8 @@ const paystackWebhookHandler = async (req, res) => {
       rawBody = rawBody.toString('utf8');
     }
 
-    // Require secret key in production
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+    // Require secret key in production or live mode
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production' || isLiveMode;
     if (!secretKey && isProd) {
       return res.status(500).json({ error: 'Server Configuration Error: Missing PAYSTACK_SECRET_KEY in production.' });
     }
@@ -154,24 +165,33 @@ const paystackWebhookHandler = async (req, res) => {
         }
         if (!plan) {
           const planKey = String(metadata.plan_id || 'PRO').toUpperCase();
-          plan = Object.values(WEBHOOK_PLANS).find(p => p.id === planKey) || WEBHOOK_PLANS[800000];
+          plan = Object.values(WEBHOOK_PLANS).find(p => p.id === planKey) || WEBHOOK_PLANS[1100000];
         }
 
         const isRenewal = Boolean(data.subscription_code || data.subscription || metadata.is_renewal);
         const recipientEmail = (data.customer && data.customer.email) || metadata.email;
 
-        // Asynchronously dispatch Resend receipt email without blocking webhook response
-        if (recipientEmail && typeof ResendEmailService.sendPaymentSuccessfulEmail === 'function') {
+        // Asynchronously dispatch Resend receipt email with Email Idempotency Guard (preventing duplicate receipts on webhook retries)
+        const isReceiptAlreadySent = reference && sentReceipts.has(reference);
+        if (!isReceiptAlreadySent && recipientEmail && typeof ResendEmailService.sendPaymentSuccessfulEmail === 'function') {
+          if (reference) sentReceipts.add(reference);
           ResendEmailService.sendPaymentSuccessfulEmail({
             to: recipientEmail,
             providerName: metadata.provider_name || 'Artisan',
             amount: plan.amount_display || `₦${(amount / 100).toLocaleString()}`,
             plan: plan.name,
             reference: reference,
-            nextRenewal: '30 days from today',
+            nextRenewal: plan.interval === 'annual' ? '365 days from today' : '30 days from today',
             isRenewal
-          }).catch(err => console.error('[Webhook:EmailError]', err.message));
+          }).catch(err => {
+            console.error('[Webhook:EmailError]', err.message);
+            // On network failure, clear deduplication guard to permit retry
+            if (reference) sentReceipts.delete(reference);
+          });
         }
+
+        const isAnnualPlan = plan.interval === 'annual';
+        const durationDays = isAnnualPlan ? 365 : 30;
 
         return res.status(200).json({
           status: 'success',
@@ -185,8 +205,9 @@ const paystackWebhookHandler = async (req, res) => {
           paystack_plan_code: plan.paystack_plan_code,
           contacts_allowance: plan.contacts,
           is_renewal: isRenewal,
+          billing_interval: plan.interval || 'monthly',
           subscription_code: data.subscription_code || (data.subscription && data.subscription.subscription_code) || null,
-          duration_days: 30
+          duration_days: durationDays
         });
       }
 
@@ -207,7 +228,7 @@ const paystackWebhookHandler = async (req, res) => {
     // 2. Handle Subscription Creation (subscription.create)
     if (eventType === 'subscription.create') {
       const planCode = data.plan && data.plan.plan_code;
-      const resolvedPlan = WEBHOOK_PLAN_CODES[planCode] || WEBHOOK_PLANS[data.amount] || { id: 'PRO', name: 'Pro' };
+      const resolvedPlan = WEBHOOK_PLAN_CODES[planCode] || WEBHOOK_PLANS[data.amount] || { id: 'PRO', name: 'Pro', contacts: 100, amount_display: '₦11,000/month' };
       const recipientEmail = data.customer && data.customer.email;
 
       if (recipientEmail && typeof ResendEmailService.sendSubscriptionActivatedEmail === 'function') {
@@ -215,7 +236,7 @@ const paystackWebhookHandler = async (req, res) => {
           to: recipientEmail,
           providerName: (data.customer && data.customer.first_name) || 'Artisan',
           plan: resolvedPlan.name,
-          price: resolvedPlan.amount_display || '₦8,000/month',
+          price: resolvedPlan.amount_display || '₦11,000/month',
           nextRenewalDate: data.next_payment_date ? new Date(data.next_payment_date).toLocaleDateString('en-GB') : 'Next Month',
           contactAllowance: resolvedPlan.contacts || 100
         }).catch(err => console.error('[Webhook:EmailError]', err.message));
