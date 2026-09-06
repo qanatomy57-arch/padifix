@@ -3,8 +3,8 @@
 **Report Identifier:** `PADIFIX-SEC-PHASE-012D-FINAL-CERTIFICATION`  
 **Evaluation Date:** September 6, 2026  
 **Target Environment:** Production (`https://padifix.vercel.app`)  
-**Production Deployment ID:** `cpt1::5dbld-1788664027262-89373378bee1`  
-**Git HEAD Commit SHA:** `fb830ef2eed8cf178952d74ee6df2d2b58f9ed07`  
+**Production Deployment ID:** `cpt1::v5d4v-1788664653778-2cb0f2c20636` (Baseline: `cpt1::5dbld-1788664027262-89373378bee1`)  
+**Final Commit SHA:** `437b669c5e3158c8959d35c10aeb875ee946b2b7` (Tested Baseline SHA: `fb830ef2eed8cf178952d74ee6df2d2b58f9ed07`)  
 **Git Branch:** `main`  
 **Auditing Subagent / Engine:** Antigravity Advanced Agentic Pair Programmer  
 **Final Certification Verdict:** **`YELLOW — PRODUCTION DEPLOYED / PARTIAL EMPIRICAL VERIFICATION`**
@@ -69,9 +69,10 @@ The scope of Phase 012D includes:
 
 ```text
 Branch:                 main
-HEAD Commit SHA:        fb830ef2eed8cf178952d74ee6df2d2b58f9ed07
-Committed At:           2026-09-06T03:06:40+01:00
-Commit Message:         fix(compliance): harden fail-closed admin key and eliminate test reset backdoor
+Tested Baseline SHA:    fb830ef2eed8cf178952d74ee6df2d2b58f9ed07
+Final Tracked SHA:      437b669c5e3158c8959d35c10aeb875ee946b2b7
+Committed At:           2026-09-06T04:17:09+01:00
+Commit Message:         docs(compliance): record Phase 012D final compliance desk evidence closure and production certification
 Working Tree Status:    Clean (no untracked source modifications)
 ```
 
@@ -81,8 +82,9 @@ Working Tree Status:    Clean (no untracked source modifications)
 
 ```text
 Target URL:             https://padifix.vercel.app
-Vercel Deployment ID:   cpt1::5dbld-1788664027262-89373378bee1
-Deployment Timestamp:   2026-09-06T03:07:07.262Z
+Final Deployment ID:    cpt1::v5d4v-1788664653778-2cb0f2c20636
+Baseline Deployment ID: cpt1::5dbld-1788664027262-89373378bee1
+Deployment Timestamp:   2026-09-06T03:17:33.778Z
 Environment:            Production (Vercel Serverless AWS London / eu-west-2)
 Response Status:        HTTP 200 OK
 Routing Confirmation:   Verified (admin.html, /api/admin-compliance routed authoritatively)
