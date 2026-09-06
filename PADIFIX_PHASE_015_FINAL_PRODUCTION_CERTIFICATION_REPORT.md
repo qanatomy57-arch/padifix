@@ -109,11 +109,11 @@ content-type: application/json; charset=utf-8
 * **Copy-Paste SQL for Supabase SQL Editor:**
 
 ```sql
--- 1. ENSURE BASE CONTACT_EVENTS TABLE EXISTS
+-- 1. ENSURE BASE CONTACT_EVENTS TABLE EXISTS (Reconciled from Migration 035 & Phase 015)
 CREATE TABLE IF NOT EXISTS public.contact_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id BIGINT NOT NULL,
-  channel TEXT NOT NULL DEFAULT 'whatsapp',
+  channel TEXT NOT NULL DEFAULT 'whatsapp', -- 'whatsapp' or 'call'
   idempotency_key TEXT UNIQUE,
   billing_period TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'Africa/Lagos', 'YYYY-MM'),
   session_token TEXT,
@@ -126,14 +126,16 @@ CREATE TABLE IF NOT EXISTS public.contact_events (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. UPGRADE CONTACT_EVENTS TABLE WITH OPERATIONAL METADATA
+-- 2. UPGRADE CONTACT_EVENTS TABLE WITH OPERATIONAL METADATA (Safe ALTER for pre-existing tables)
 ALTER TABLE public.contact_events 
   ADD COLUMN IF NOT EXISTS locality TEXT,
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new',
   ADD COLUMN IF NOT EXISTS intent_tag TEXT,
-  ADD COLUMN IF NOT EXISTS notes TEXT;
+  ADD COLUMN IF NOT EXISTS notes TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 3. ENFORCE CANONICAL LEAD STATUS VOCABULARY AT DATABASE LEVEL
+-- Allowed values: 'new', 'in_discussion', 'quote_sent', 'job_won'
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -157,13 +159,21 @@ BEGIN
   END IF;
 END $$;
 
--- 5. PERFORMANCE & ORDERING INDEX
+-- 5. PERFORMANCE, DEDUPLICATION & ORDERING INDEXES
 CREATE INDEX IF NOT EXISTS idx_ce_provider_created 
   ON public.contact_events(provider_id, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_ce_provider_id 
+  ON public.contact_events(provider_id);
+
+CREATE INDEX IF NOT EXISTS idx_ce_idempotency_key 
+  ON public.contact_events(idempotency_key);
+
 -- 6. ROW LEVEL SECURITY (RLS) POLICIES FOR MULTI-TENANT ISOLATION
+-- Enable RLS (idempotent)
 ALTER TABLE public.contact_events ENABLE ROW LEVEL SECURITY;
 
+-- Policy A: Providers can SELECT only their own contact events
 DROP POLICY IF EXISTS "Providers view own contact events" ON public.contact_events;
 CREATE POLICY "Providers view own contact events"
   ON public.contact_events FOR SELECT
@@ -172,6 +182,7 @@ CREATE POLICY "Providers view own contact events"
     OR auth.role() = 'service_role'
   );
 
+-- Policy B: Providers can UPDATE status and notes on only their own contact events
 DROP POLICY IF EXISTS "Providers update own contact events" ON public.contact_events;
 CREATE POLICY "Providers update own contact events"
   ON public.contact_events FOR UPDATE
@@ -183,6 +194,19 @@ CREATE POLICY "Providers update own contact events"
     provider_id IN (SELECT id FROM public.providers WHERE user_id = auth.uid())
     OR auth.role() = 'service_role'
   );
+
+-- Policy C: Allow append-only insert of fresh contact events from consumer contact metering
+DROP POLICY IF EXISTS "Allow append-only contact event insert" ON public.contact_events;
+CREATE POLICY "Allow append-only contact event insert"
+  ON public.contact_events FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (
+    channel IN ('whatsapp', 'call')
+    AND status = 'new'
+  );
+
+-- 7. TABLE GRANTS
+GRANT SELECT, INSERT, UPDATE ON public.contact_events TO anon, authenticated, service_role;
 ```
 
 ---
