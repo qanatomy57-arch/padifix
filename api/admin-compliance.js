@@ -556,15 +556,10 @@ const adminComplianceHandler = async (req, res) => {
   // Rate Limiting Check
   const rateLimitStatus = checkRateLimit(clientIp);
   if (!rateLimitStatus.allowed) {
-    const attemptedAuth = await authenticateRequest(req);
-    if (attemptedAuth.authenticated) {
-      recordAuthSuccess(clientIp);
-    } else {
-      res.setHeader('Retry-After', String(rateLimitStatus.retryAfter || 60));
-      return res.status(429).json({
-        error: 'Too Many Requests: Compliance portal access locked due to repeated authentication failures.'
-      });
-    }
+    res.setHeader('Retry-After', String(rateLimitStatus.retryAfter || 60));
+    return res.status(429).json({
+      error: 'Too Many Requests: Compliance portal access locked due to repeated authentication failures.'
+    });
   }
 
   // Authenticate Request
