@@ -14,6 +14,7 @@
  * - Verification Rejection & HTTP 409 State Conflict
  * - Dispute Resolution, Idempotency & Validation
  * - RLS Audit Immutability
+ * - Rate Limiting & Recovery
  * - Client Bundle Security Hygiene
  */
 
@@ -39,6 +40,12 @@ function generateMockJwt({ email, role = 'authenticated', exp = Math.floor(Date.
   return `${header}.${payload}.${signature}`;
 }
 
+async function resetLockout() {
+  await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
+    headers: { 'x-compliance-test-reset': 'padifix_compliance_reset_approved', 'Cache-Control': 'no-cache' }
+  }).catch(() => {});
+}
+
 async function runTest(testName, fn) {
   process.stdout.write(`  ⏳ Testing: ${testName}... `);
   try {
@@ -57,6 +64,9 @@ async function runProductionComplianceSuite() {
   console.log('🛡️  PADIFIX PHASE 012C: PRODUCTION COMPLIANCE DESK EMPIRICAL AUDIT');
   console.log(`🌐  Target: ${PROD_URL}`);
   console.log('='.repeat(80));
+
+  // Reset rate limit state for clean testing session (Section 12)
+  await resetLockout();
 
   // -------------------------------------------------------------
   // 1. PRODUCTION ROUTING & SECURITY GATE MODAL
@@ -127,6 +137,9 @@ async function runProductionComplianceSuite() {
     assert.notStrictEqual(res.status, 200, 'Dev fallback key MUST NEVER authenticate in Production');
   });
 
+  // Clear failure count before user role boundary tests
+  await resetLockout();
+
   // -------------------------------------------------------------
   // 4. NON-ADMIN SUPABASE USER TEST (Section 9)
   // -------------------------------------------------------------
@@ -196,6 +209,9 @@ async function runProductionComplianceSuite() {
     });
     assert.strictEqual(res.status, 403, `Expected 403 Forbidden on dispute, got ${res.status}`);
   });
+
+  // Clear failure count before authorized admin tests
+  await resetLockout();
 
   // -------------------------------------------------------------
   // 5. AUTHORIZED ADMIN ACCESS & DATA MINIMIZATION (Section 10)
@@ -514,6 +530,44 @@ async function runProductionComplianceSuite() {
     assert.ok(code.includes('sessionStorage'), 'admin.js must use sessionStorage for temporary tokens');
     assert.ok(code.includes('lock_desk'), 'admin.js must implement lock_desk action');
     assert.ok(code.includes('clearStoredAdminKey'), 'admin.js must clear tokens on lock');
+  });
+
+  // -------------------------------------------------------------
+  // 11. RATE LIMITING & RECOVERY (Section 12)
+  // -------------------------------------------------------------
+  console.log('\n--- 11. RATE LIMITING & RECOVERY (SECTION 12) ---');
+
+  await runTest('11.1 5 consecutive failed authentication attempts trigger HTTP 429 lockout', async () => {
+    let triggered429 = false;
+    let retryAfterHeader = null;
+
+    for (let i = 1; i <= 6; i++) {
+      const res = await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'x-admin-key': `brute_force_invalid_attempt_${i}`
+        }
+      });
+      if (res.status === 429) {
+        triggered429 = true;
+        retryAfterHeader = res.headers.get('retry-after');
+        break;
+      }
+    }
+
+    assert.ok(triggered429, 'Expected HTTP 429 after 5 failed authentication attempts');
+    assert.ok(retryAfterHeader, 'Expected Retry-After header to be present on HTTP 429');
+  });
+
+  await runTest('11.2 Approved test reset mechanism restores legitimate access', async () => {
+    await resetLockout();
+    const res = await fetch(`${PROD_URL}/api/admin-compliance?action=get_queues`, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Authorization': `Bearer ${adminJwt}`
+      }
+    });
+    assert.strictEqual(res.status, 200, `Expected 200 after reset, got ${res.status}`);
   });
 
   // -------------------------------------------------------------

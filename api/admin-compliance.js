@@ -104,96 +104,100 @@ function validateAdminSessionToken(token) {
 // -------------------------------------------------------------
 // In-Memory Seed Store (Fallback for Dev / Offline Testing)
 // -------------------------------------------------------------
-const inMemoryStore = {
-  verifications: new Map([
-    ['req_101', {
-      id: 'req_101',
-      provider_id: 101,
-      name: 'Emeka Okonkwo',
-      email: 'emeka@padifix.ng',
-      trade: 'Master Electrician',
-      category: 'electrician',
-      state: 'Lagos',
-      lga: 'Ikeja',
-      verification_type: 'vnin',
-      document_type: 'Virtual NIN (vNIN)',
-      document_reference_hash: crypto.createHash('sha256').update('vnin_10249812').digest('hex'),
-      document_masked_ref: 'vNIN: 1024-****-****-9812',
-      status: 'pending',
-      submitted_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-      metadata: {
-        plan_id: 'BASIC',
-        evidence_verified: true // Authoritative gateway completed evidence
+function createSeedStore() {
+  return {
+    verifications: new Map([
+      ['req_101', {
+        id: 'req_101',
+        provider_id: 101,
+        name: 'Emeka Okonkwo',
+        email: 'emeka@padifix.ng',
+        trade: 'Master Electrician',
+        category: 'electrician',
+        state: 'Lagos',
+        lga: 'Ikeja',
+        verification_type: 'vnin',
+        document_type: 'Virtual NIN (vNIN)',
+        document_reference_hash: crypto.createHash('sha256').update('vnin_10249812').digest('hex'),
+        document_masked_ref: 'vNIN: 1024-****-****-9812',
+        status: 'pending',
+        submitted_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+        metadata: {
+          plan_id: 'BASIC',
+          evidence_verified: true // Authoritative gateway completed evidence
+        }
+      }],
+      ['req_102', {
+        id: 'req_102',
+        provider_id: 102,
+        name: 'Amina Bello',
+        email: 'amina@padifix.ng',
+        trade: 'Professional Plumber',
+        category: 'plumber',
+        state: 'Abuja',
+        lga: 'Municipal',
+        verification_type: 'cac_cert',
+        document_type: 'CAC Certificate',
+        document_reference_hash: crypto.createHash('sha256').update('cac_rc184000').digest('hex'),
+        document_masked_ref: 'CAC: RC-184****',
+        status: 'pending',
+        submitted_at: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+        metadata: { plan_id: 'PRO', evidence_verified: false }
+      }],
+      ['req_103', {
+        id: 'req_103',
+        provider_id: 103,
+        name: 'Babajide Adeyemi',
+        email: 'babajide@padifix.ng',
+        trade: 'Auto Mechanic',
+        category: 'auto-mechanic',
+        state: 'Lagos',
+        lga: 'Surulere',
+        verification_type: 'vnin',
+        document_type: 'Virtual NIN (vNIN)',
+        document_reference_hash: crypto.createHash('sha256').update('vnin_99881122').digest('hex'),
+        document_masked_ref: 'vNIN: 9988-****-****-1122',
+        status: 'pending',
+        submitted_at: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+        metadata: {
+          plan_id: 'BASIC',
+          evidence_verified: false // Unverified vNIN (no NIMC match)
+        }
+      }]
+    ]),
+    providers: new Map([
+      [101, { id: 101, is_verified: false, nin_verified: false, verification_badge: null }],
+      [102, { id: 102, is_verified: false, nin_verified: false, verification_badge: null }],
+      [103, { id: 103, is_verified: false, nin_verified: false, verification_badge: null }],
+      [201, { id: 201, is_verified: true, nin_verified: true, verification_badge: 'Verified Pro' }]
+    ]),
+    disputes: new Map([
+      ['rep_dsp_001', {
+        report_id: 'rep_dsp_001',
+        provider_id: 305,
+        reporter_name: 'Chidi Nnamdi',
+        issue_type: 'Unresponsive after appointment confirmed',
+        details: 'Artisan agreed to fix generator on Friday 2pm but did not arrive and phone was switched off.',
+        status: 'pending',
+        created_at: new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+      }]
+    ]),
+    audits: [
+      {
+        log_id: 'aud_log_001',
+        action: 'SYSTEM_AUDIT_INITIALIZED',
+        target_type: 'system',
+        target_id: 'SYS_001',
+        officer_id: 'system_core',
+        officer_identity: 'PadiFix Security Engine',
+        notes: 'Compliance desk initialized with air-gapped verification controls.',
+        timestamp: new Date(Date.now() - 48 * 3600 * 1000).toISOString()
       }
-    }],
-    ['req_102', {
-      id: 'req_102',
-      provider_id: 102,
-      name: 'Amina Bello',
-      email: 'amina@padifix.ng',
-      trade: 'Professional Plumber',
-      category: 'plumber',
-      state: 'Abuja',
-      lga: 'Municipal',
-      verification_type: 'cac_cert',
-      document_type: 'CAC Certificate',
-      document_reference_hash: crypto.createHash('sha256').update('cac_rc184000').digest('hex'),
-      document_masked_ref: 'CAC: RC-184****',
-      status: 'pending',
-      submitted_at: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
-      metadata: { plan_id: 'PRO', evidence_verified: false }
-    }],
-    ['req_103', {
-      id: 'req_103',
-      provider_id: 103,
-      name: 'Babajide Adeyemi',
-      email: 'babajide@padifix.ng',
-      trade: 'Auto Mechanic',
-      category: 'auto-mechanic',
-      state: 'Lagos',
-      lga: 'Surulere',
-      verification_type: 'vnin',
-      document_type: 'Virtual NIN (vNIN)',
-      document_reference_hash: crypto.createHash('sha256').update('vnin_99881122').digest('hex'),
-      document_masked_ref: 'vNIN: 9988-****-****-1122',
-      status: 'pending',
-      submitted_at: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
-      metadata: {
-        plan_id: 'BASIC',
-        evidence_verified: false // Unverified vNIN (no NIMC match)
-      }
-    }]
-  ]),
-  providers: new Map([
-    [101, { id: 101, is_verified: false, nin_verified: false, verification_badge: null }],
-    [102, { id: 102, is_verified: false, nin_verified: false, verification_badge: null }],
-    [103, { id: 103, is_verified: false, nin_verified: false, verification_badge: null }],
-    [201, { id: 201, is_verified: true, nin_verified: true, verification_badge: 'Verified Pro' }]
-  ]),
-  disputes: new Map([
-    ['rep_dsp_001', {
-      report_id: 'rep_dsp_001',
-      provider_id: 305,
-      reporter_name: 'Chidi Nnamdi',
-      issue_type: 'Unresponsive after appointment confirmed',
-      details: 'Artisan agreed to fix generator on Friday 2pm but did not arrive and phone was switched off.',
-      status: 'pending',
-      created_at: new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-    }]
-  ]),
-  audits: [
-    {
-      log_id: 'aud_log_001',
-      action: 'SYSTEM_AUDIT_INITIALIZED',
-      target_type: 'system',
-      target_id: 'SYS_001',
-      officer_id: 'system_core',
-      officer_identity: 'PadiFix Security Engine',
-      notes: 'Compliance desk initialized with air-gapped verification controls.',
-      timestamp: new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-    }
-  ]
-};
+    ]
+  };
+}
+
+let inMemoryStore = createSeedStore();
 
 // -------------------------------------------------------------
 // Authentication Helper
@@ -372,9 +376,10 @@ const adminComplianceHandler = async (req, res) => {
     '127.0.0.1'
   ).split(',')[0].trim();
 
-  // Approved Test Reset Mechanism (Section 12)
+  // Approved Test Reset Mechanism (Section 12 & 19)
   if (req.headers['x-compliance-test-reset'] === 'padifix_compliance_reset_approved') {
     authFailureTracker.delete(clientIp);
+    inMemoryStore = createSeedStore();
   }
 
   // Rate Limiting Check
