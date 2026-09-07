@@ -612,7 +612,7 @@ async function runAdversarialSuite() {
       await contactMeter({
         method: 'POST',
         headers: { 'x-real-ip': throttledIp },
-        body: { provider_id: 701, channel: 'call', _inject: { forceMemoryQuota: true } }
+        body: { provider_id: 701, channel: 'call', _inject: { forceMemoryQuota: true, forceMemoryRateLimit: true } }
       }, res);
     }
 
@@ -627,7 +627,7 @@ async function runAdversarialSuite() {
         channel: 'call',
         locality: 'Yaba',
         intent_tag: 'Electrical',
-        _inject: { forceMemoryQuota: true }
+        _inject: { forceMemoryQuota: true, forceMemoryRateLimit: true }
       }
     }, res6);
 

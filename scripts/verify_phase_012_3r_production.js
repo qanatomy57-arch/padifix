@@ -46,11 +46,11 @@ const VIEWPORTS = [
   async function safeGoto(page, url) {
     for (let i = 0; i < 3; i++) {
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         return;
       } catch (err) {
         if (i === 2) throw err;
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(1000);
       }
     }
   }
