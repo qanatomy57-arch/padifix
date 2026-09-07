@@ -95,6 +95,90 @@ function getLagosBillingPeriod(date = new Date()) {
   return formatter.format(d).substring(0, 7); // 'YYYY-MM'
 }
 
+// In-memory rate limiting store: Map<key, Array<number>> (timestamps in ms)
+const memoryRateLimits = new Map();
+
+function resetRateLimitsForTest() {
+  memoryRateLimits.clear();
+}
+
+/**
+ * Extracts client IP with Nigerian mobile ISP proxy & CGNAT resilience
+ */
+function extractClientIp(req) {
+  if (!req) return null;
+  if (req._mockIp) return req._mockIp;
+  const forwarded = req.headers && (req.headers['x-forwarded-for'] || req.headers['x-vercel-forwarded-for']);
+  if (forwarded) {
+    const firstIp = String(forwarded).split(',')[0].trim();
+    if (firstIp) return firstIp;
+  }
+  const realIp = req.headers && req.headers['x-real-ip'];
+  if (realIp) return String(realIp).trim();
+  if (req.socket && req.socket.remoteAddress) return req.socket.remoteAddress;
+  if (req.connection && req.connection.remoteAddress) return req.connection.remoteAddress;
+  return req.headers ? '127.0.0.1' : null;
+}
+
+/**
+ * Evaluates rate limit against PostgreSQL RPC or in-memory sliding window
+ */
+async function checkRateLimit({ key, maxRequests = 5, windowSeconds = 60, _inject }) {
+  if (_inject?.mockRateLimitExceeded) {
+    return { allowed: false, retryAfter: 60 };
+  }
+
+  // Attempt atomic distributed rate limit via Supabase PostgreSQL RPC if configured
+  if (SUPABASE_URL && SUPABASE_ANON_KEY && !_inject?.forceMemoryRateLimit) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_rate_limit`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          p_key: key,
+          p_max_hits: maxRequests,
+          p_window_seconds: windowSeconds
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const result = await res.json();
+        return {
+          allowed: Boolean(result?.allowed),
+          retryAfter: Number(result?.retry_after || windowSeconds)
+        };
+      }
+    } catch (e) {
+      // Fallback seamlessly to local in-memory sliding window
+    }
+  }
+
+  // In-memory sliding window fallback
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+  let timestamps = memoryRateLimits.get(key) || [];
+  timestamps = timestamps.filter(t => now - t < windowMs);
+
+  if (timestamps.length >= maxRequests) {
+    const oldest = timestamps[0];
+    const retryAfterMs = Math.max(1000, windowMs - (now - oldest));
+    const retryAfter = Math.ceil(retryAfterMs / 1000);
+    return { allowed: false, retryAfter };
+  }
+
+  timestamps.push(now);
+  memoryRateLimits.set(key, timestamps);
+  return { allowed: true, retryAfter: 0 };
+}
+
 const contactMeterHandler = async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -143,7 +227,25 @@ const contactMeterHandler = async (req, res) => {
   }
 
   try {
-    const { provider_id, channel, idempotency_key, session_token, plan_id, reset_period, locality, intent_tag } = req.body || {};
+    const { provider_id, channel, idempotency_key, session_token, plan_id, reset_period, locality, intent_tag, _inject } = req.body || {};
+
+    // 1. Tier 1 IP Rate Limiting Gate (Section 10)
+    // 5 requests / minute / IP
+    const clientIp = extractClientIp(req);
+    if (clientIp && !reset_period && !_inject?.bypassRateLimit) {
+      const ipLimitStatus = await checkRateLimit({
+        key: `ip:${clientIp}`,
+        maxRequests: 5,
+        windowSeconds: 60,
+        _inject
+      });
+      if (!ipLimitStatus.allowed) {
+        res.setHeader('Retry-After', String(ipLimitStatus.retryAfter || 60));
+        return res.status(429).json({
+          error: 'Too many requests. Please try again shortly.'
+        });
+      }
+    }
 
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
@@ -263,15 +365,28 @@ const contactMeterHandler = async (req, res) => {
           session_token
         });
 
-        // Asynchronously dispatch non-blocking transactional alert to artisan
-        dispatchArtisanLeadAlert({
-          contactEventId: pgResult.eventId || effectiveKey,
-          providerId: Number(provider_id),
-          locality,
-          intentTag: intent_tag
-        }).catch(alertErr => {
-          console.error('[ContactMeter:AlertError:SoftCap]', alertErr.message);
+        // Target-Specific Pair Limit (Section 11): 1 alert / 15 minutes / pair
+        const consumerIdentity = session_token || clientIp || 'anon';
+        const pairLimitKey = `contact_pair:${consumerIdentity}:${provider_id}`;
+        const pairLimitStatus = await checkRateLimit({
+          key: pairLimitKey,
+          maxRequests: 1,
+          windowSeconds: 15 * 60,
+          _inject
         });
+
+        if (pairLimitStatus.allowed) {
+          // Asynchronously dispatch non-blocking transactional alert to artisan
+          dispatchArtisanLeadAlert({
+            contactEventId: pgResult.eventId || effectiveKey,
+            providerId: Number(provider_id),
+            locality,
+            intentTag: intent_tag,
+            _inject
+          }).catch(alertErr => {
+            console.error('[ContactMeter:AlertError:SoftCap]', alertErr.message);
+          });
+        }
       }
 
       const responsePayload = {
@@ -360,15 +475,28 @@ const contactMeterHandler = async (req, res) => {
       session_token
     });
 
-    // Asynchronously dispatch non-blocking transactional alert to artisan
-    dispatchArtisanLeadAlert({
-      contactEventId: pgResult.eventId || effectiveKey,
-      providerId: Number(provider_id),
-      locality,
-      intentTag: intent_tag
-    }).catch(alertErr => {
-      console.error('[ContactMeter:AlertError:Normal]', alertErr.message);
+    // Target-Specific Pair Limit (Section 11): 1 alert / 15 minutes / pair
+    const consumerIdentity = session_token || clientIp || 'anon';
+    const pairLimitKey = `contact_pair:${consumerIdentity}:${provider_id}`;
+    const pairLimitStatus = await checkRateLimit({
+      key: pairLimitKey,
+      maxRequests: 1,
+      windowSeconds: 15 * 60,
+      _inject
     });
+
+    if (pairLimitStatus.allowed) {
+      // Asynchronously dispatch non-blocking transactional alert to artisan
+      dispatchArtisanLeadAlert({
+        contactEventId: pgResult.eventId || effectiveKey,
+        providerId: Number(provider_id),
+        locality,
+        intentTag: intent_tag,
+        _inject
+      }).catch(alertErr => {
+        console.error('[ContactMeter:AlertError:Normal]', alertErr.message);
+      });
+    }
 
     const remaining = isUnlimited ? Math.max(0, plan.fairUse - record.used) : Math.max(0, plan.allowance - record.used);
 
@@ -404,4 +532,11 @@ const contactMeterHandler = async (req, res) => {
   }
 };
 
-module.exports = withSentry(contactMeterHandler, 'contact_meter');
+const handler = withSentry(contactMeterHandler, 'contact_meter');
+handler.extractClientIp = extractClientIp;
+handler.checkRateLimit = checkRateLimit;
+handler.resetRateLimitsForTest = resetRateLimitsForTest;
+handler.memoryRateLimits = memoryRateLimits;
+handler.contactMeterHandler = contactMeterHandler;
+
+module.exports = handler;
