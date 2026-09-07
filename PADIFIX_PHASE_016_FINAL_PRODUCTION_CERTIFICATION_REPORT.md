@@ -161,10 +161,10 @@ All 153 assertions passed synchronously against the live production environment:
 
 | Property | Record / Value |
 | :--- | :--- |
-| **Certified Git SHA** | `5a00040` |
-| **Deployed Production SHA** | `5a00040` (Synchronized with `origin/main`) |
+| **Certified Git SHA** | `6916f52` |
+| **Deployed Production SHA** | `6916f52` (Synchronized with `origin/main`) |
 | **Production URL** | [https://padifix.vercel.app](https://padifix.vercel.app) |
-| **Active Vercel Deployment ID** | `cpt1::48gnc-1788749022211-8670549f44b8` |
+| **Active Vercel Deployment ID** | `cpt1::2vxnn-1788750587168-28d6a9b0cdf4` |
 | **Migration 039 SHA-256** | `b3cdc3e1f100c7870a3bc4e2139660132e00ea9b0da199585844d43c1b5044fb` |
 | **Production Migration State** | APPLIED & VERIFIED on Supabase `hvxosxhnxauiqrhpyuur` |
 | **Working-Tree Status** | Clean (Zero untracked production files; `.env` strictly ignored) |
