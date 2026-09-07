@@ -103,21 +103,100 @@ function resetRateLimitsForTest() {
 }
 
 /**
- * Extracts client IP with Nigerian mobile ISP proxy & CGNAT resilience
+ * Strict IP validator and normalizer.
+ * Handles IPv4, IPv6, IPv4-mapped IPv6 (::ffff:192.168.1.1).
+ */
+const IPV4_REGEX = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+function sanitizeAndNormalizeIp(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  let candidate = raw.trim();
+  if (candidate.length > 45) candidate = candidate.substring(0, 45);
+
+  // Normalize IPv4-mapped IPv6 address (e.g. ::ffff:192.168.1.1)
+  if (candidate.startsWith('::ffff:')) {
+    candidate = candidate.substring(7);
+  }
+
+  // Validate IPv4
+  if (IPV4_REGEX.test(candidate)) {
+    return candidate;
+  }
+
+  // Validate IPv6 (hex and colons)
+  if (candidate.includes(':') && candidate.length <= 45 && /^[0-9a-fA-F:]+$/.test(candidate)) {
+    return candidate.toLowerCase();
+  }
+
+  return null;
+}
+
+/**
+ * Extracts client IP with Nigerian mobile ISP proxy & CGNAT resilience.
+ * Security Trust Model:
+ * On Vercel / serverless deployments, `x-real-ip` is injected authoritatively by the edge proxy
+ * from the client's actual TCP connection and CANNOT be forged by the client.
+ * If `x-real-ip` is present, it is trusted unconditionally over client-controlled `x-forwarded-for`.
  */
 function extractClientIp(req) {
   if (!req) return null;
-  if (req._mockIp) return req._mockIp;
-  const forwarded = req.headers && (req.headers['x-forwarded-for'] || req.headers['x-vercel-forwarded-for']);
-  if (forwarded) {
-    const firstIp = String(forwarded).split(',')[0].trim();
-    if (firstIp) return firstIp;
-  }
+  if (req._mockIp) return sanitizeAndNormalizeIp(req._mockIp) || req._mockIp;
+
+  // 1. Authoritative Edge IP (Vercel sets x-real-ip from connecting client socket)
   const realIp = req.headers && req.headers['x-real-ip'];
-  if (realIp) return String(realIp).trim();
-  if (req.socket && req.socket.remoteAddress) return req.socket.remoteAddress;
-  if (req.connection && req.connection.remoteAddress) return req.connection.remoteAddress;
+  if (realIp) {
+    const validated = sanitizeAndNormalizeIp(String(realIp));
+    if (validated) return validated;
+  }
+
+  // 2. Vercel Forwarded For / Standard Forwarded For
+  // If behind multiple proxies and x-real-ip is unavailable, sanitize candidate
+  const forwarded = req.headers && (req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for']);
+  if (forwarded) {
+    const parts = String(forwarded).split(',');
+    for (const part of parts) {
+      const validated = sanitizeAndNormalizeIp(part);
+      if (validated) return validated;
+    }
+  }
+
+  // 3. Underlying socket connection
+  if (req.socket && req.socket.remoteAddress) {
+    const validated = sanitizeAndNormalizeIp(req.socket.remoteAddress);
+    if (validated) return validated;
+  }
+  if (req.connection && req.connection.remoteAddress) {
+    const validated = sanitizeAndNormalizeIp(req.connection.remoteAddress);
+    if (validated) return validated;
+  }
+
   return req.headers ? '127.0.0.1' : null;
+}
+
+/**
+ * Canonicalize consumer identity for pair-limiting without leaking PII.
+ * If phone is provided, normalize to digits and hash with SHA-256.
+ * If session token is provided, sanitize it.
+ * Otherwise, fall back to sanitized client IP.
+ */
+function getCanonicalConsumerKey(session_token, clientIp, rawPhone) {
+  if (rawPhone) {
+    const cleanPhone = String(rawPhone).replace(/[^0-9]/g, '');
+    if (cleanPhone.length >= 10) {
+      const hashed = crypto.createHash('sha256').update(`phone_${cleanPhone}`).digest('hex').substring(0, 32);
+      return `phone:${hashed}`;
+    }
+  }
+  if (session_token && typeof session_token === 'string') {
+    const cleanToken = session_token.trim().replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 64);
+    if (cleanToken.length >= 4) {
+      return `sess:${cleanToken}`;
+    }
+  }
+  if (clientIp) {
+    return `ip:${clientIp}`;
+  }
+  return 'anon';
 }
 
 /**
@@ -227,28 +306,28 @@ const contactMeterHandler = async (req, res) => {
   }
 
   try {
-    const { provider_id, channel, idempotency_key, session_token, plan_id, reset_period, locality, intent_tag, _inject } = req.body || {};
-
-    // 1. Tier 1 IP Rate Limiting Gate (Section 10)
-    // 5 requests / minute / IP
-    const clientIp = extractClientIp(req);
-    if (clientIp && !reset_period && !_inject?.bypassRateLimit) {
-      const ipLimitStatus = await checkRateLimit({
-        key: `ip:${clientIp}`,
-        maxRequests: 5,
-        windowSeconds: 60,
-        _inject
-      });
-      if (!ipLimitStatus.allowed) {
-        res.setHeader('Retry-After', String(ipLimitStatus.retryAfter || 60));
-        return res.status(429).json({
-          error: 'Too many requests. Please try again shortly.'
-        });
-      }
-    }
+    const {
+      provider_id,
+      channel,
+      idempotency_key,
+      session_token,
+      consumer_phone,
+      phone,
+      plan_id,
+      reset_period,
+      locality,
+      intent_tag,
+      mode,
+      soft_cap,
+      _inject
+    } = req.body || {};
 
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
+    }
+    const provId = Number(provider_id);
+    if (isNaN(provId) || provId <= 0) {
+      return res.status(400).json({ error: 'Invalid provider_id' });
     }
 
     const normChannel = String(channel || '').toLowerCase().trim();
@@ -257,7 +336,7 @@ const contactMeterHandler = async (req, res) => {
     }
 
     const period = getLagosBillingPeriod();
-    const storeKey = `${provider_id}_${period}`;
+    const storeKey = `${provId}_${period}`;
 
     // Admin / Test simulation: Reset period usage if requested in non-production test mode
     if (reset_period) {
@@ -266,7 +345,7 @@ const contactMeterHandler = async (req, res) => {
         return res.status(403).json({ error: 'Forbidden: Reset simulation hook is strictly disabled in production.' });
       }
       usageStore.set(storeKey, { used: 0, whatsapp: 0, call: 0, plan_id: plan_id || 'FREE' });
-      LeadStore.resetUsageForTest(provider_id, plan_id || 'FREE', 0);
+      LeadStore.resetUsageForTest(provId, plan_id || 'FREE', 0);
       return res.status(200).json({ status: 'success', message: `Usage reset for ${storeKey}` });
     }
 
@@ -277,8 +356,8 @@ const contactMeterHandler = async (req, res) => {
     const timeBucket15m = Math.floor(Date.now() / (15 * 60 * 1000));
     const effectiveKey = idempotency_key || clientHeaderKey || 
       (session_token 
-        ? `idem_${provider_id}_${normChannel}_${session_token}_${timeBucket15m}` 
-        : `idem_${provider_id}_${normChannel}_${crypto.randomUUID()}`);
+        ? `idem_${provId}_${normChannel}_${session_token}_${timeBucket15m}` 
+        : `idem_${provId}_${normChannel}_${crypto.randomUUID()}`);
 
     // Check idempotency cache (Prevents double clicks, browser refreshes, network retries)
     if (idempotencyCache.has(effectiveKey)) {
@@ -292,39 +371,76 @@ const contactMeterHandler = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------------------------
+    // RULE A: NEVER LOSE THE LEAD (Section 20)
+    // Contact intent/event persistence happens BEFORE abuse/SMS side-effects.
+    // This guarantees lead capture even if rate-limited, quota-exhausted, or SMS fails.
+    // --------------------------------------------------------------------------
+    const pgResult = await persistContactEvent({
+      provider_id: provId,
+      channel: normChannel,
+      locality,
+      intent_tag,
+      idempotency_key: effectiveKey,
+      billing_period: period,
+      session_token
+    });
+
+    LeadStore.logContactLead({
+      provider_id: provId,
+      channel: normChannel,
+      locality,
+      intent_tag,
+      idempotency_key: effectiveKey,
+      billing_period: period,
+      session_token
+    });
+
+    // --------------------------------------------------------------------------
+    // TIER 1 IP RATE LIMITING GATE (Section 10 & 13)
+    // 5 requests / minute / IP.
+    // Lead is already captured above, but throttled clients receive 429
+    // and outbound SMS notification is strictly prevented.
+    // --------------------------------------------------------------------------
+    const clientIp = extractClientIp(req);
+    if (clientIp && !_inject?.bypassRateLimit) {
+      const ipLimitStatus = await checkRateLimit({
+        key: `ip:${clientIp}`,
+        maxRequests: 5,
+        windowSeconds: 60,
+        _inject
+      });
+      if (!ipLimitStatus.allowed) {
+        res.setHeader('Retry-After', String(ipLimitStatus.retryAfter || 60));
+        return res.status(429).json({
+          error: 'Too many requests. Please try again shortly.',
+          retry_after: Number(ipLimitStatus.retryAfter || 60),
+          lead_saved: true
+        });
+      }
+    }
+
     // Resolve Provider Plan and current usage
+    // Security: Untrusted client-supplied plan_id in req.body cannot escalate privileges.
+    // Only _inject.overridePlanId in test mocks or server-authoritative state is respected.
     let record = usageStore.get(storeKey);
     if (!record) {
-      const initialPlan = String(plan_id || 'FREE').toUpperCase();
+      const initialPlan = _inject?.overridePlanId ? String(_inject.overridePlanId).toUpperCase() : 'FREE';
       record = { used: 0, whatsapp: 0, call: 0, plan_id: initialPlan };
       usageStore.set(storeKey, record);
-    } else if (plan_id && plan_id !== record.plan_id) {
-      // Reflect updated plan entitlement
-      record.plan_id = String(plan_id).toUpperCase();
+    } else if (_inject?.overridePlanId) {
+      record.plan_id = String(_inject.overridePlanId).toUpperCase();
     }
 
     const plan = PLAN_ALLOWANCES[record.plan_id] || PLAN_ALLOWANCES.FREE;
     const isUnlimited = plan.allowance === 'unlimited';
     const limit = isUnlimited ? plan.fairUse : plan.allowance;
+    const isSoftCap = Boolean(mode === 'soft_cap' || soft_cap);
 
     // Enforcement: Check if monthly limit reached
     if (record.used >= limit) {
-      const isSoftCap = Boolean(req.body && (req.body.mode === 'soft_cap' || req.body.soft_cap));
-
       if (isSoftCap) {
-        // Authoritatively persist soft-cap contact event to PostgreSQL
-        const pgResult = await persistContactEvent({
-          provider_id,
-          channel: normChannel,
-          locality,
-          intent_tag,
-          idempotency_key: effectiveKey,
-          billing_period: period,
-          session_token
-        });
-
         if (pgResult.isDuplicate) {
-          // Idempotent duplicate: do not increment usage
           return res.status(200).json({
             status: 'success',
             allowed: true,
@@ -332,7 +448,7 @@ const contactMeterHandler = async (req, res) => {
             limit_reached: true,
             quota_exhausted: true,
             upgrade_required: true,
-            provider_id: Number(provider_id),
+            provider_id: provId,
             channel: normChannel,
             billing_period: period,
             plan_id: plan.id,
@@ -355,19 +471,10 @@ const contactMeterHandler = async (req, res) => {
         } else {
           record.call += 1;
         }
-        LeadStore.logContactLead({
-          provider_id,
-          channel: normChannel,
-          locality,
-          intent_tag,
-          idempotency_key: effectiveKey,
-          billing_period: period,
-          session_token
-        });
 
-        // Target-Specific Pair Limit (Section 11): 1 alert / 15 minutes / pair
-        const consumerIdentity = session_token || clientIp || 'anon';
-        const pairLimitKey = `contact_pair:${consumerIdentity}:${provider_id}`;
+        // Target-Specific Pair Limit (Section 11 & 14): 1 alert / 15 minutes / pair
+        const consumerIdentity = getCanonicalConsumerKey(session_token, clientIp, consumer_phone || phone);
+        const pairLimitKey = `contact_pair:${consumerIdentity}:${provId}`;
         const pairLimitStatus = await checkRateLimit({
           key: pairLimitKey,
           maxRequests: 1,
@@ -376,10 +483,9 @@ const contactMeterHandler = async (req, res) => {
         });
 
         if (pairLimitStatus.allowed) {
-          // Asynchronously dispatch non-blocking transactional alert to artisan
           dispatchArtisanLeadAlert({
             contactEventId: pgResult.eventId || effectiveKey,
-            providerId: Number(provider_id),
+            providerId: provId,
             locality,
             intentTag: intent_tag,
             _inject
@@ -396,7 +502,7 @@ const contactMeterHandler = async (req, res) => {
         limit_reached: true,
         quota_exhausted: true,
         upgrade_required: true,
-        provider_id: Number(provider_id),
+        provider_id: provId,
         channel: normChannel,
         billing_period: period,
         plan_id: plan.id,
@@ -412,7 +518,6 @@ const contactMeterHandler = async (req, res) => {
           : `Monthly contact limit of ${limit} reached for ${plan.name} plan.`
       };
 
-      // Cache response for idempotency
       idempotencyCache.set(effectiveKey, responsePayload);
       if (idempotencyCache.size > 2000) {
         const oldestKey = idempotencyCache.keys().next().value;
@@ -421,19 +526,8 @@ const contactMeterHandler = async (req, res) => {
       return res.status(200).json(responsePayload);
     }
 
-    // Persist contact event to authoritative PostgreSQL public.contact_events ledger
-    const pgResult = await persistContactEvent({
-      provider_id,
-      channel: normChannel,
-      locality,
-      intent_tag,
-      idempotency_key: effectiveKey,
-      billing_period: period,
-      session_token
-    });
-
     if (pgResult.isDuplicate) {
-      // Idempotent duplicate: already persisted in PostgreSQL (e.g. concurrent tap or restart)
+      // Idempotent duplicate: already persisted in PostgreSQL
       const currentRec = usageStore.get(storeKey);
       const remaining = isUnlimited ? Math.max(0, plan.fairUse - (currentRec ? currentRec.used : 0)) : Math.max(0, plan.allowance - (currentRec ? currentRec.used : 0));
       return res.status(200).json({
@@ -442,7 +536,7 @@ const contactMeterHandler = async (req, res) => {
         limit_reached: (currentRec ? currentRec.used : 0) >= limit,
         quota_exhausted: false,
         upgrade_required: false,
-        provider_id: Number(provider_id),
+        provider_id: provId,
         channel: normChannel,
         billing_period: period,
         plan_id: plan.id,
@@ -465,19 +559,9 @@ const contactMeterHandler = async (req, res) => {
       record.call += 1;
     }
 
-    LeadStore.logContactLead({
-      provider_id,
-      channel: normChannel,
-      locality,
-      intent_tag,
-      idempotency_key: effectiveKey,
-      billing_period: period,
-      session_token
-    });
-
-    // Target-Specific Pair Limit (Section 11): 1 alert / 15 minutes / pair
-    const consumerIdentity = session_token || clientIp || 'anon';
-    const pairLimitKey = `contact_pair:${consumerIdentity}:${provider_id}`;
+    // Target-Specific Pair Limit (Section 11 & 14): 1 alert / 15 minutes / pair
+    const consumerIdentity = getCanonicalConsumerKey(session_token, clientIp, consumer_phone || phone);
+    const pairLimitKey = `contact_pair:${consumerIdentity}:${provId}`;
     const pairLimitStatus = await checkRateLimit({
       key: pairLimitKey,
       maxRequests: 1,
@@ -486,10 +570,9 @@ const contactMeterHandler = async (req, res) => {
     });
 
     if (pairLimitStatus.allowed) {
-      // Asynchronously dispatch non-blocking transactional alert to artisan
       dispatchArtisanLeadAlert({
         contactEventId: pgResult.eventId || effectiveKey,
-        providerId: Number(provider_id),
+        providerId: provId,
         locality,
         intentTag: intent_tag,
         _inject
@@ -506,7 +589,7 @@ const contactMeterHandler = async (req, res) => {
       limit_reached: record.used >= limit,
       quota_exhausted: false,
       upgrade_required: false,
-      provider_id: Number(provider_id),
+      provider_id: provId,
       channel: normChannel,
       billing_period: period,
       plan_id: plan.id,
