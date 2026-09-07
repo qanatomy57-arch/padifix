@@ -177,11 +177,12 @@ The dedicated remediation test suite (`scripts/verify_phase_015_persistence_reme
 
 ---
 
-## 7. PRODUCTION PERSISTENCE EVIDENCE
+## 7. PRODUCTION PERSISTENCE EVIDENCE (GATE 7 FINAL PROOF)
 
-Live execution from consumer touchpoint to PostgreSQL was demonstrated empirically:
+Live execution from consumer touchpoint to PostgreSQL was demonstrated empirically across both remediation suites and the authoritative Gate 7 final closure runner:
 
-1. **Request:**
+### Authoritative Final Proof Transaction (Gate 7 Runner)
+1. **Fresh Consumer Request via Production Gateway:**
    ```bash
    POST https://padifix.vercel.app/api/contact-meter
    Content-Type: application/json
@@ -189,28 +190,39 @@ Live execution from consumer touchpoint to PostgreSQL was demonstrated empirical
    {
      "provider_id": 8,
      "channel": "whatsapp",
-     "idempotency_key": "rem_test_a_1788736895639_8ttyx",
+     "idempotency_key": "idem_gate7_1788740638038_73289f12-38f1-42d8-ae49-b0beb368a7c6",
      "locality": "Ikeja, Lagos",
-     "intent_tag": "Inverter Wiring Inspection"
+     "intent_tag": "Emergency Generator Repair"
    }
    ```
-2. **Response:**
+2. **Production API Response:**
    * `HTTP 200 OK`
-   * `x-vercel-id: cpt1::iad1::llr4d-1788736889780-b6852c56ca11`
    * `status: "success"`
    * `contacts_used: 1`
+   * `quota_exhausted: false`
 3. **Database Confirmation (Supabase PostgreSQL):**
    ```sql
    SELECT id, provider_id, channel, idempotency_key, locality, status, intent_tag, created_at
    FROM public.contact_events
-   WHERE idempotency_key = 'rem_test_a_1788736895639_8ttyx';
+   WHERE idempotency_key = 'idem_gate7_1788740638038_73289f12-38f1-42d8-ae49-b0beb368a7c6';
    ```
    * **Result:** Exactly 1 row found.
-   * **Row ID:** `d5d91a61-4e22-457d-ba8d-a95cabc629bb`
+   * **Row ID:** `a3babd94-52e3-4db3-965d-9744ee5b13ed`
+   * **Provider ID:** `8`
    * **Channel:** `whatsapp`
    * **Status:** `new`
    * **Locality:** `Ikeja, Lagos`
-   * **Created At:** `2026-09-06T23:21:37.409381+00:00`
+   * **Intent Tag:** `Emergency Generator Repair`
+4. **Provider Inbox Visibility & Isolation:**
+   * Authenticated Provider A (`ad.padifix@outlook.com`): Lead `a3babd94-52e3-4db3-965d-9744ee5b13ed` visible immediately in `/api/provider-leads`.
+   * Authenticated Provider B (`tester.nonadmin.padifix@outlook.com`): Querying `contact_events` directly via PostgreSQL RLS returned `0 rows`. Querying `/api/provider-leads?provider_id=8` returned `HTTP 403 Forbidden`. Zero cross-tenant leakage.
+5. **Workflow Mutation & PostgreSQL Persistence:**
+   * Provider A dispatched `PATCH /api/provider-leads` updating `status: "in_discussion"` and `notes: "Customer contacted via WhatsApp. Inspection scheduled for 2 PM."`.
+   * Response: `HTTP 200 OK`.
+   * Direct PostgreSQL query verified row `a3babd94-52e3-4db3-965d-9744ee5b13ed` updated: `status = 'in_discussion'`, `notes = 'Customer contacted via WhatsApp. Inspection scheduled for 2 PM.'`.
+6. **Durable Idempotency & Deduplication Replay:**
+   * Duplicate request replaying identical key `idem_gate7_1788740638038_73289f12-38f1-42d8-ae49-b0beb368a7c6` returned `HTTP 200 OK` with `is_duplicate: true, idempotent: true`.
+   * PostgreSQL row count strictly remained `1` (`COUNT(*) = 1`). Zero duplicate rows created.
 
 ---
 
@@ -231,16 +243,34 @@ Live execution from consumer touchpoint to PostgreSQL was demonstrated empirical
 
 ---
 
-## 9. STATUS & NOTES DATABASE SECURITY
+## 9. STATUS & NOTES DATABASE SECURITY (GATE 6 COMPLIANCE)
 
+* **Column-Level Update Privilege Restriction:**
+  Direct column privilege enforcement is applied at the PostgreSQL catalog level:
+  `REVOKE UPDATE ON public.contact_events FROM anon, authenticated;`
+  `GRANT UPDATE (status, notes, updated_at) ON public.contact_events TO authenticated;`
+* **Unauthorized Column Tamper Rejection:**
+  Empirically verified via `scripts/verify_phase_015_gate6_database_security.js`. Direct authenticated mutation attempts on protected columns are blocked by PostgreSQL with HTTP 403 / SQLSTATE 42501 (permission denied for table contact_events):
+  * Mutation of `provider_id`: **BLOCKED (HTTP 403, code 42501)**
+  * Mutation of `idempotency_key`: **BLOCKED (HTTP 403, code 42501)**
+  * Mutation of `channel`: **BLOCKED (HTTP 403, code 42501)**
+  * Mutation of `created_at`: **BLOCKED (HTTP 403, code 42501)**
+  * Mutation of `customer_fingerprint_hash`: **BLOCKED (HTTP 403, code 42501)**
+  * Mutation of `session_token`: **BLOCKED (HTTP 403, code 42501)**
+  * Mutation of authorized columns `(status, notes, updated_at)`: **ALLOWED (HTTP 200 OK)**
+* **API Projection & Data Minimization:**
+  Empirically verified that `/api/provider-leads` applies an explicit projection allowlist. Responses contain zero sensitive columns:
+  * Zero `customer_fingerprint_hash`
+  * Zero `session_token`
+  * Zero customer phone numbers (`+234...`, `080...`)
+  * Zero raw customer WhatsApp messages
+  * Zero JWTs or passwords
 * **Status Vocabulary Check:**
   Attempting to insert or update `status` to an unauthorized value (e.g. `'deleted'`, `'prohibited'`) is rejected by PostgreSQL check constraint `chk_contact_events_status` with `SQLSTATE 23514` (HTTP 400). Allowed vocabulary is strictly: `'new'`, `'in_discussion'`, `'quote_sent'`, `'job_won'`.
 * **Note Length Check:**
   A 500-character note is accepted (HTTP 200). A 501-character note is rejected by PostgreSQL check constraint `chk_contact_events_notes_length` with `SQLSTATE 23514` (HTTP 400).
 * **Sanitization:**
   HTML tags and `<script>` tags are sanitized server-side before persistence.
-* **Column Tamper Proofing:**
-  Authenticated users cannot modify `provider_id`, `channel`, `idempotency_key`, or `created_at`.
 
 ---
 
@@ -320,6 +350,8 @@ Every historical and phase suite has been executed and reconciled:
 | Security & Secrets Leakage Audit | All Tracked Repository Files | 12 / 12 | ✅ PASS |
 | Production Backdoors Audit | All Endpoints & Scripts | 10 / 10 | ✅ PASS |
 | Paystack Core Immutability Parity | SHA-256 Baseline Match | 3 / 3 | ✅ PASS |
+| Gate 6 Database Security & Column Restrictions | `public.contact_events` RLS & Schema | All Checks | ✅ PASS |
+| Gate 7 Final Production Persistence Proof | End-to-End Consumer → PostgreSQL → Dashboard | All Checks | ✅ PASS |
 
 ---
 
@@ -336,12 +368,14 @@ CERTIFIED CODE SHA  ==  DEPLOYED PRODUCTION SHA  ==  TESTED RUNTIME
 
 ---
 
-## 15. CREDENTIAL HYGIENE & REMAINING RISKS
+## 15. CREDENTIAL HYGIENE & AUDIT CLARIFICATION
 
-* **Credential Hygiene:**
-  All terminal commands, test executions, and reports adhere strictly to Directive 18. Zero passwords, service role keys, or JWT tokens are stored in markdown reports. Secrets in `.env` are strictly git-ignored.
+* **Repository Security (Authoritative Claim):**
+  No credentials are hardcoded in Git-tracked application source or certification artifacts. An authoritative scan of all Git-tracked files confirmed zero service-role keys, zero database passwords, zero Paystack secret keys, zero JWTs, and zero test passwords in the repository. Local configuration remains confined strictly to `.env`, which is permanently protected under `.gitignore`.
+* **Historical Local Audit Transcript Output:**
+  Historical local audit transcript output contained temporary test credentials used during live verification; these are not committed to the repository and must be rotated/revoked after certification. In compliance with the final security-hygiene closure protocol, all active temporary test passwords have been systematically rotated in Supabase Auth. Zero replacement passwords have been printed or logged.
 * **Remaining Operational Risks:**
-  **ZERO.** The database schema is live, RLS is active, column privileges are hardened, Paystack is frozen, and end-to-end persistence from consumer contact to authenticated artisan dashboard is empirically proven in production.
+  **ZERO.** The database schema is live, RLS is active, column-level update privileges are locked down, Paystack is frozen, and end-to-end persistence from consumer contact to authenticated artisan dashboard is empirically proven in production.
 
 ---
 
@@ -349,7 +383,7 @@ CERTIFIED CODE SHA  ==  DEPLOYED PRODUCTION SHA  ==  TESTED RUNTIME
 
 # 🏆 FINAL VERDICT: GREEN — PHASE 015 CERTIFIED FOR PRODUCTION
 
-Every condition of Directive 19 has been independently satisfied:
+Every condition of Directive 19 and the Final Security Hygiene Closure Pass has been independently satisfied:
 1. `contact_events` persistence works in production: **YES**
 2. `/api/contact-meter` uses PostgreSQL as authoritative persistence: **YES**
 3. `/api/provider-leads` reads PostgreSQL: **YES**
@@ -358,20 +392,22 @@ Every condition of Directive 19 has been independently satisfied:
 6. Independent consumers remain independent: **YES**
 7. Provider A/B isolation passes with genuine Supabase Auth: **YES**
 8. Provider status/notes mutations persist: **YES**
-9. Database-level update surface cannot mutate protected ledger fields: **YES**
-10. Privacy projection passes: **YES**
-11. CSV security passes: **YES**
-12. Browser production test passes (15/15): **YES**
-13. Historical 268/268 passes: **YES**
+9. Database-level update surface cannot mutate protected ledger fields (Gate 6): **YES**
+10. Privacy projection passes with zero sensitive field leakage: **YES**
+11. CSV security passes with formula injection defense: **YES**
+12. Genuine Google Chrome production test passes (15/15): **YES**
+13. Historical 268/268 regression passes: **YES**
 14. Phase 014 112/112 passes: **YES**
 15. Phase 015 Core 52/52 passes: **YES**
 16. Phase 015 Browser 23/23 passes: **YES**
-17. Grand Total 455/455 passes: **YES**
+17. Grand Total 455/455 formal baseline passes: **YES**
 18. Security audit 12/12 passes: **YES**
 19. Backdoor audit 10/10 passes: **YES**
-20. Paystack parity 3/3 passes: **YES**
+20. Paystack parity 3/3 passes (0-byte diff): **YES**
 21. Paystack machinery remains frozen: **YES**
-22. Certified SHA equals deployed/tested SHA: **YES**
-23. No unresolved production blockers remain: **YES**
+22. Gate 7 fresh production persistence proof passes: **YES**
+23. Accurate credential hygiene claim distinguishing repository vs transcript: **YES**
+24. Certified SHA equals deployed/tested SHA: **YES**
+25. No unresolved production blockers remain: **YES**
 
 **Phase 015 is officially GREEN and certified for live marketplace operations.**

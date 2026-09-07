@@ -17,6 +17,18 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  fs.readFileSync(envPath, 'utf8').split(/\r?\n/).forEach(l => {
+    const idx = l.indexOf('=');
+    if (idx > 0 && !l.trim().startsWith('#')) {
+      const k = l.substring(0, idx).trim();
+      const v = l.substring(idx + 1).trim();
+      if (!process.env[k]) process.env[k] = v;
+    }
+  });
+}
+
 let localServer = null;
 let TARGET_URL = process.env.TEST_URL || process.env.PROD_URL || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://hvxosxhnxauiqrhpyuur.supabase.co';
@@ -126,8 +138,8 @@ async function runRemediationSuite() {
   await startLocalServerIfNeeded();
 
   // Authenticate test providers
-  tokenA = await authProvider('ad.padifix@outlook.com', process.env.TEST_PROVIDER_A_PASSWORD || 'TemporaryAdminPassword2026!#');
-  tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', process.env.TEST_PROVIDER_B_PASSWORD || 'TemporaryNonAdminPassword2026!#');
+  tokenA = await authProvider('ad.padifix@outlook.com', process.env.TEST_PROVIDER_A_PASSWORD || '');
+  tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', process.env.TEST_PROVIDER_B_PASSWORD || '');
 
   console.log('='.repeat(80));
   console.log('🚀 PADIFIX PHASE 015: PRODUCTION PERSISTENCE & FAILURE-INJECTION SUITE');

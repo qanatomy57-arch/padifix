@@ -413,7 +413,8 @@ async function runHardeningSuite() {
   const contactMeterHandler = require('../api/contact-meter');
 
   await test('Enforce 15-minute idempotency dedupe window on duplicate clicks', async () => {
-    const testProvId = 881;
+    const testProvId = 88100 + Math.floor(Math.random() * 800);
+    const sessionToken = `cust_abc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     // Reset period for test
     const { req: resetReq, res: resetRes } = createMockReqRes({
       body: { provider_id: testProvId, reset_period: true }
@@ -422,7 +423,7 @@ async function runHardeningSuite() {
 
     // Click 1: WhatsApp
     const { req: req1, res: res1 } = createMockReqRes({
-      body: { provider_id: testProvId, channel: 'whatsapp', session_token: 'cust_abc' }
+      body: { provider_id: testProvId, channel: 'whatsapp', session_token: sessionToken }
     });
     await contactMeterHandler(req1, res1);
     assert.strictEqual(res1.statusCode, 200);
@@ -431,7 +432,7 @@ async function runHardeningSuite() {
 
     // Duplicate Click 2 within 15 minutes
     const { req: req2, res: res2 } = createMockReqRes({
-      body: { provider_id: testProvId, channel: 'whatsapp', session_token: 'cust_abc' }
+      body: { provider_id: testProvId, channel: 'whatsapp', session_token: sessionToken }
     });
     await contactMeterHandler(req2, res2);
     assert.strictEqual(res2.statusCode, 200);
@@ -442,7 +443,8 @@ async function runHardeningSuite() {
   });
 
   await test('Exhaust Free tier allowance (5/month) and assert upgrade messaging', async () => {
-    const testProvId = 882;
+    const testProvId = 88900 + Math.floor(Math.random() * 800);
+    const runKey = `cust_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     // Reset period
     const { req: rReq, res: rRes } = createMockReqRes({
       body: { provider_id: testProvId, reset_period: true, plan_id: 'FREE' }
@@ -452,7 +454,7 @@ async function runHardeningSuite() {
     // Simulate 5 unique contacts
     for (let i = 1; i <= 5; i++) {
       const { req, res } = createMockReqRes({
-        body: { provider_id: testProvId, channel: 'call', idempotency_key: `unique_cust_${i}` }
+        body: { provider_id: testProvId, channel: 'call', idempotency_key: `unique_${runKey}_${i}` }
       });
       await contactMeterHandler(req, res);
       assert.strictEqual(res.body.allowed, true);
@@ -461,7 +463,7 @@ async function runHardeningSuite() {
 
     // 6th Contact should be blocked
     const { req: blockReq, res: blockRes } = createMockReqRes({
-      body: { provider_id: testProvId, channel: 'whatsapp', idempotency_key: 'unique_cust_6' }
+      body: { provider_id: testProvId, channel: 'whatsapp', idempotency_key: `unique_${runKey}_6` }
     });
     await contactMeterHandler(blockReq, blockRes);
     assert.strictEqual(blockRes.body.allowed, false);

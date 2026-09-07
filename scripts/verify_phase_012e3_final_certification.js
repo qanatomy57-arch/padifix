@@ -122,7 +122,7 @@ async function runPhase012e3Certification() {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: ADMIN_EMAIL, password: 'TemporaryAdminPassword2026!#' })
+      body: JSON.stringify({ email: ADMIN_EMAIL, password: process.env.TEST_PROVIDER_A_PASSWORD || process.env.ADMIN_PASSWORD || '' })
     });
     assert.strictEqual(res.status, 200, `Admin login failed with status ${res.status}`);
     const data = await res.json();
@@ -135,7 +135,7 @@ async function runPhase012e3Certification() {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: NON_ADMIN_EMAIL, password: 'TemporaryNonAdminPassword2026!#' })
+      body: JSON.stringify({ email: NON_ADMIN_EMAIL, password: process.env.TEST_PROVIDER_B_PASSWORD || '' })
     });
     const data = await res.json();
     if (res.ok && data.access_token) {

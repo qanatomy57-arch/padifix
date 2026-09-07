@@ -89,8 +89,8 @@ async function runClosureAudit() {
   let tokenA = null;
   let tokenB = null;
   try {
-    tokenA = await authProvider('ad.padifix@outlook.com', 'TemporaryAdminPassword2026!#');
-    tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', 'TemporaryNonAdminPassword2026!#');
+    tokenA = await authProvider('ad.padifix@outlook.com', process.env.TEST_PROVIDER_A_PASSWORD || '');
+    tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', process.env.TEST_PROVIDER_B_PASSWORD || '');
   } catch (e) {
     console.error('Auth failure:', e.message);
   }

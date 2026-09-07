@@ -245,7 +245,7 @@ async function runSuite() {
   // ==========================================================================
   console.log('\n--- TEST GROUP 2B: SOFT-CAP CONCURRENCY AT QUOTA BOUNDARY (Directive 5) ---');
 
-  const concProviderId = 14005;
+  const concProviderId = 14005 + Math.floor(Math.random() * 800);
   // Reset fixture for provider
   await contactMeterHandler({ body: { provider_id: concProviderId, reset_period: true, plan_id: 'FREE' } }, {
     status() { return this; }, setHeader() { return this; }, json() {}
@@ -498,7 +498,11 @@ async function runSuite() {
     });
 
     await page.goto(`${BASE_URL}/profile.html?id=1`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1000);
+    await page.waitForFunction(() => {
+      const el = document.getElementById('btn-wa-hero');
+      return el && el.getAttribute('href') && el.getAttribute('href') !== '#';
+    }, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
 
     const heroWaBtn = page.locator('#btn-wa-hero');
     const heroWaVisible = await heroWaBtn.isVisible().catch(() => false);

@@ -4,9 +4,23 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
-const SUPABASE_URL = 'https://hvxosxhnxauiqrhpyuur.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  fs.readFileSync(envPath, 'utf8').split(/\r?\n/).forEach(l => {
+    const idx = l.indexOf('=');
+    if (idx > 0 && !l.trim().startsWith('#')) {
+      const k = l.substring(0, idx).trim();
+      const v = l.substring(idx + 1).trim();
+      if (!process.env[k]) process.env[k] = v;
+    }
+  });
+}
+
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://hvxosxhnxauiqrhpyuur.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
 
 let passCount = 0;
 let failCount = 0;
@@ -97,8 +111,8 @@ async function runDatabaseVerification() {
 
   // 3. Database-Level Multi-Tenant RLS Isolation (Directive 4)
   console.log('\n--- 3. DATABASE-LEVEL RLS TENANT ISOLATION (DIRECTIVE 4) ---');
-  const tokenA = await authProvider('ad.padifix@outlook.com', 'TemporaryAdminPassword2026!#');
-  const tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', 'TemporaryNonAdminPassword2026!#');
+  const tokenA = await authProvider('ad.padifix@outlook.com', process.env.TEST_PROVIDER_A_PASSWORD || '');
+  const tokenB = await authProvider('tester.nonadmin.padifix@outlook.com', process.env.TEST_PROVIDER_B_PASSWORD || '');
 
   // 2.3 Status vocabulary check on UPDATE via authenticated provider
   const badStatusRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.8&limit=1`, {

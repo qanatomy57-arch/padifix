@@ -27,7 +27,7 @@ const path = require('path');
 const envPath = path.join(__dirname, '..', '.env');
 if (!process.env.PADIFIX_ADMIN_KEY && fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf8');
-  const m = envContent.match(/PADIFIX_ADMIN_KEY\s*=\s*([^\r\n]+)/);
+  const m = envContent.match(/PADIFIX_ADMIN_KEYS?\s*=\s*([^\r\n]+)/);
   if (m) process.env.PADIFIX_ADMIN_KEY = m[1].trim();
 }
 

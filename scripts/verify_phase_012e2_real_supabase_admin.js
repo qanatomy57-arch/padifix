@@ -187,7 +187,7 @@ async function runPhase012e2Certification() {
       },
       body: JSON.stringify({
         email: TARGET_ADMIN_EMAIL,
-        password: 'TemporaryAdminPassword2026!#'
+        password: process.env.TEST_PROVIDER_A_PASSWORD || process.env.ADMIN_PASSWORD || ''
       })
     });
 
@@ -247,7 +247,7 @@ async function runPhase012e2Certification() {
         },
         body: JSON.stringify({
           email: 'tester.nonadmin.padifix@outlook.com',
-          password: 'TemporaryNonAdminPassword2026!#'
+          password: process.env.TEST_PROVIDER_B_PASSWORD || ''
         })
       });
       const tokenData = await tokenRes.json();

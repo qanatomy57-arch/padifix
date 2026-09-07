@@ -5,6 +5,27 @@
  */
 
 const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
+
+// Safely load local .env without printing values
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const idx = trimmed.indexOf('=');
+      if (idx > -1) {
+        const key = trimmed.slice(0, idx).trim();
+        const val = trimmed.slice(idx + 1).trim();
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
 
 const SUPABASE_URL = 'https://hvxosxhnxauiqrhpyuur.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
@@ -49,10 +70,10 @@ async function runChromeProductionGate() {
 
   // 1. Acquire genuine Supabase token for Provider A (ad.padifix@outlook.com -> Provider 8)
   console.log('--- 1. ACQUIRING GENUINE PRODUCTION TOKENS ---');
-  const sessionA = await getGenuineSupabaseSession('ad.padifix@outlook.com', 'TemporaryAdminPassword2026!#');
+  const sessionA = await getGenuineSupabaseSession('ad.padifix@outlook.com', process.env.TEST_PROVIDER_A_PASSWORD || '');
   check('1.1 Genuine Supabase Auth token acquired for Provider A', Boolean(sessionA.access_token && sessionA.access_token.length > 500), `User ID: ${sessionA.user.id}, Token length: ${sessionA.access_token.length}`);
 
-  const sessionB = await getGenuineSupabaseSession('tester.nonadmin.padifix@outlook.com', 'TemporaryNonAdminPassword2026!#');
+  const sessionB = await getGenuineSupabaseSession('tester.nonadmin.padifix@outlook.com', process.env.TEST_PROVIDER_B_PASSWORD || '');
   check('1.2 Genuine Supabase Auth token acquired for Provider B', Boolean(sessionB.access_token && sessionB.access_token.length > 500), `User ID: ${sessionB.user.id}, Token length: ${sessionB.access_token.length}`);
 
   // Launch real Google Chrome browser
