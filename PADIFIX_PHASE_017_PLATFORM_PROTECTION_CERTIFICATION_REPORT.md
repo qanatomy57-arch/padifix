@@ -117,3 +117,7 @@ PAYSTACK_CORE_DIFF = 0 bytes
   - `lib/artisan-notification-service.js` (Lagos timezone windowing, platform budget circuit breaker, artisan daily cap, atomic quota reservation)
   - `api/contact-meter.js` (Tier 1 IP rate limiter with 429 & Retry-After, consumer-artisan pair limit, Rule A lead preservation)
 * **New Test Suite:** `scripts/verify_phase_017_platform_protection.js`
+* **Certified Commit:** `2e9098f` (synchronized on `origin/main`)
+* **Live Production Gateway:** `https://padifix.vercel.app`
+* **Active Vercel Deployment ID:** `cpt1::zzf8l-1788799160661-513104693762` (HTTP 200 OK)
+* **Working Tree:** Clean (`git status --short` -> 0 uncommitted changes)
