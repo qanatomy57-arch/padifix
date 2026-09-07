@@ -35,6 +35,7 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
   try {
     const cleanLocality = locality ? String(locality).replace(/<[^>]*>/g, '').trim().substring(0, 80) : null;
     const cleanIntent = intent_tag ? String(intent_tag).replace(/<[^>]*>/g, '').trim().substring(0, 80) : null;
+    const eventId = crypto.randomUUID();
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/contact_events`, {
       method: 'POST',
@@ -42,9 +43,10 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
+        'Prefer': 'return=minimal'
       },
       body: JSON.stringify({
+        id: eventId,
         provider_id: Number(provider_id),
         channel,
         idempotency_key: idempotency_key || null,
@@ -57,8 +59,7 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
     });
 
     if (res.status === 201) {
-      const rows = await res.json().catch(() => []);
-      return { success: true, isDuplicate: false, eventId: rows[0]?.id };
+      return { success: true, isDuplicate: false, eventId };
     }
     if (res.status === 409) {
       // PostgreSQL unique constraint 23505 (durable idempotency)

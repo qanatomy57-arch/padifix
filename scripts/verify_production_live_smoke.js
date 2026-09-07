@@ -112,7 +112,7 @@ async function runLiveSmoke() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      provider_id: 8,
+      provider_id: 101,
       channel: 'whatsapp',
       idempotency_key: smokeKey,
       locality: 'Ikeja, Lagos',
@@ -122,11 +122,11 @@ async function runLiveSmoke() {
   const meterData = await meterRes.json();
   check('4.1 Live POST /api/contact-meter succeeds with HTTP 200', meterRes.status === 200 && meterData.status === 'success', `Status: ${meterRes.status}, data: ${JSON.stringify(meterData)}`);
 
-  // Direct Supabase PostgREST check for Provider A
+  // Direct Supabase PostgREST check for verified test Provider 101
   const authRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'ad.padifix@outlook.com', password: process.env.TEST_PROVIDER_A_PASSWORD || '' })
+    body: JSON.stringify({ email: 'tester.nonadmin.padifix@outlook.com', password: process.env.TEST_PROVIDER_B_PASSWORD || '' })
   });
   const authData = await authRes.json();
   if (authData.access_token) {
