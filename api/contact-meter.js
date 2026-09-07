@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const { withSentry } = require('../lib/sentry-server');
 const LeadStore = require('../lib/lead-store');
+const { dispatchArtisanLeadAlert } = require('../lib/artisan-notification-service');
 
 // Supabase PostgreSQL Ledger Configuration
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
@@ -41,7 +42,7 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
+        'Prefer': 'return=representation'
       },
       body: JSON.stringify({
         provider_id: Number(provider_id),
@@ -56,7 +57,8 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
     });
 
     if (res.status === 201) {
-      return { success: true, isDuplicate: false };
+      const rows = await res.json().catch(() => []);
+      return { success: true, isDuplicate: false, eventId: rows[0]?.id };
     }
     if (res.status === 409) {
       // PostgreSQL unique constraint 23505 (durable idempotency)
@@ -259,6 +261,16 @@ const contactMeterHandler = async (req, res) => {
           billing_period: period,
           session_token
         });
+
+        // Asynchronously dispatch non-blocking transactional alert to artisan
+        dispatchArtisanLeadAlert({
+          contactEventId: pgResult.eventId || effectiveKey,
+          providerId: Number(provider_id),
+          locality,
+          intentTag: intent_tag
+        }).catch(alertErr => {
+          console.error('[ContactMeter:AlertError:SoftCap]', alertErr.message);
+        });
       }
 
       const responsePayload = {
@@ -345,6 +357,16 @@ const contactMeterHandler = async (req, res) => {
       idempotency_key: effectiveKey,
       billing_period: period,
       session_token
+    });
+
+    // Asynchronously dispatch non-blocking transactional alert to artisan
+    dispatchArtisanLeadAlert({
+      contactEventId: pgResult.eventId || effectiveKey,
+      providerId: Number(provider_id),
+      locality,
+      intentTag: intent_tag
+    }).catch(alertErr => {
+      console.error('[ContactMeter:AlertError:Normal]', alertErr.message);
     });
 
     const remaining = isUnlimited ? Math.max(0, plan.fairUse - record.used) : Math.max(0, plan.allowance - record.used);
