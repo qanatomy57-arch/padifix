@@ -34,6 +34,18 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let passCount = 0;
 let failCount = 0;
 
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = async function(url, options = {}, retries = 4, delayMs = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await nativeFetch(url, options);
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+};
+
 function check(label, condition, details = '') {
   if (condition) {
     console.log(`  ✅ [PASS] ${label}`);

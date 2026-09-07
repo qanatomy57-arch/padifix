@@ -27,27 +27,36 @@ async function queryTable(endpoint, options = {}) {
     ...(options.headers || {})
   };
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
-    method,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
+        method,
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+      });
 
-  let body = null;
-  let rawText = '';
-  try {
-    rawText = await res.text();
-    body = JSON.parse(rawText);
-  } catch (e) {
-    body = rawText;
+      let body = null;
+      let rawText = '';
+      try {
+        rawText = await res.text();
+        body = JSON.parse(rawText);
+      } catch (e) {
+        body = rawText;
+      }
+
+      return {
+        status: res.status,
+        ok: res.ok,
+        body,
+        headers: res.headers
+      };
+    } catch (err) {
+      lastErr = err;
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
-
-  return {
-    status: res.status,
-    ok: res.ok,
-    body,
-    headers: res.headers
-  };
+  throw lastErr;
 }
 
 async function verifyDatabaseSchema() {

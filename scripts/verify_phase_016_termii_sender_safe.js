@@ -214,13 +214,15 @@ async function runTermiiSenderSafeSuite() {
   // --------------------------------------------------------------------------
   await runCheck('7. Termii 4xx (specifically 422 SENDER_ID_NOT_APPROVED)', async () => {
     const eventId = 'evt_test_4xx_sender_' + Date.now();
+    const testProviderId = 99200 + (Date.now() % 500);
     // Live Termii call with currently pending Sender ID 'PadiFix'
     const res = await notificationService.dispatchArtisanLeadAlert({
       contactEventId: eventId,
-      providerId: 101,
+      providerId: testProviderId,
       locality: 'Yaba',
       intentTag: 'Plumber',
-      explicitPhone: '08031234567'
+      explicitPhone: '08031234567',
+      _inject: { forceMemoryQuota: true }
     });
     assert.strictEqual(res.delivered, false, 'Must NOT manufacture successful delivery when Sender ID is pending');
     assert.strictEqual(res.status, 'pending_sender_approval');

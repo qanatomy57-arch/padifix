@@ -364,7 +364,8 @@ async function runPhase016Suite() {
       providerId: 101,
       locality: 'Lekki Phase 1',
       intentTag: 'Electrical Fault',
-      explicitPhone: '08031234567'
+      explicitPhone: '08031234567',
+      _inject: { forceMemoryQuota: true }
     });
 
     assert.strictEqual(result.delivered, false, 'Must NOT claim successful delivery when Sender ID is pending');
