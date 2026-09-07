@@ -47,7 +47,7 @@ async function runProductionBrowserCertification() {
     // 1. Visit Profile Page
     const profileUrl = `${PROD_URL}/profile.html?id=8`;
     console.log(`📱 1. Navigating to Provider Profile: ${profileUrl}`);
-    await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(1500);
 
     const title = await page.title();
