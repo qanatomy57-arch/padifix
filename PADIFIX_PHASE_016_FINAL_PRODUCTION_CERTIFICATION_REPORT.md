@@ -89,14 +89,17 @@ Auditing 9 sensitive secret keys against all tracked files...
 ================================================================================
 ```
 
-### Mandatory Exposure Certification
+### Mandatory Credential Hygiene & Remediation Certification
 ```text
-TERMII_SECRET_EXPOSURE: NONE
-PAYSTACK_SECRET_EXPOSURE: NONE
-SUPABASE_SERVICE_ROLE_EXPOSURE: NONE
-RESEND_SECRET_EXPOSURE: NONE
-CLIENT_BUNDLE_SECRET_EXPOSURE: NONE
+REPOSITORY SECRET EXPOSURE: NONE
+CLIENT-BUNDLE SECRET EXPOSURE: NONE
+HISTORICAL LOCAL EXECUTION-LOG EXPOSURE: REMEDIATED
+COMPROMISED TERMII CREDENTIAL: REVOKED
+REPLACEMENT TERMII CREDENTIAL: ACTIVE AND MASKED
 ```
+
+* **Historical Transcript Exposure Remediation:** A previous local Antigravity transcript (`transcript.jsonl`) logged an unmasked Termii credential string. In accordance with strict security protocol, that historical credential was classified as COMPROMISED, immediately revoked in the Termii administrative portal, and replaced with a fresh credential.
+* **Replacement Credential Status:** The active replacement `TERMII_API_KEY` resides strictly within the uncommitted local `.env` file, has zero presence in Git index/commit history, zero presence in client bundles, and is never logged, printed, or exposed.
 
 ---
 
