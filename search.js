@@ -960,10 +960,33 @@ document.addEventListener("DOMContentLoaded", () => {
       // Render Provider Cards (Matches Image 2 Canonical Design with Phase 10.21 Conversion Intent)
       providersContainer.innerHTML = providers.map((provider, index) => {
         const safeId = parseInt(provider.id, 10) || 0;
-        const initials = getInitials(provider.name);
-        const providerArea = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || 'your area';
-        const serviceCtx = state.keyword || provider.trade;
-        const locationCtx = state.locationQuery || providerArea;
+
+        // Clean display name: Business name + Artisan contact if both exist
+        let displayName = provider.name || provider.business_name || 'Verified Provider';
+        let subTitleName = '';
+        if (provider.business_name && provider.first_name) {
+          const artName = `${provider.first_name}${provider.last_initial ? ' ' + provider.last_initial : ''}`.trim();
+          if (artName && artName.toLowerCase() !== provider.business_name.toLowerCase()) {
+            displayName = provider.business_name;
+            subTitleName = artName;
+          }
+        }
+
+        const initials = getInitials(displayName);
+
+        // Location formatting with State guarantee
+        let fullLoc = provider.area || '';
+        if (provider.lga && provider.state) {
+          if (!fullLoc.toLowerCase().includes(provider.state.toLowerCase())) {
+            fullLoc = fullLoc ? `${fullLoc}, ${provider.state}` : `${provider.lga}, ${provider.state}`;
+          }
+        } else if (provider.city && provider.state && !fullLoc.toLowerCase().includes(provider.state.toLowerCase())) {
+          fullLoc = `${fullLoc || provider.city}, ${provider.state}`;
+        }
+        if (!fullLoc) fullLoc = provider.city || 'your area';
+
+        const serviceCtx = state.keyword || provider.primary_trade || provider.trade;
+        const locationCtx = state.locationQuery || fullLoc;
 
         // Phase 10.21: Construct contextual profile URL preserving search intent
         const profileUrlParams = new URLSearchParams();
@@ -998,14 +1021,31 @@ document.addEventListener("DOMContentLoaded", () => {
           ? (PhoneEngine.buildSmartWhatsAppUrl ? PhoneEngine.buildSmartWhatsAppUrl(provider, { service: serviceCtx, location: locationCtx }) : PhoneEngine.buildWhatsAppUrl(provider, { service: serviceCtx, location: locationCtx }))
           : '';
 
-        // Distance format: Orerokpe, Okpe (2.4 km)
+        // Distance format: Orerokpe, Okpe, Delta (2.4 km)
         const distText = (provider.distanceKm != null) 
-          ? `${providerArea} (${provider.distanceKm} km)`
-          : `${providerArea}`;
+          ? `${fullLoc} (${provider.distanceKm} km)`
+          : `${fullLoc}`;
 
-        const skillsList = Array.isArray(provider.skills) ? provider.skills : [provider.trade];
-        const safeRating = Number(provider.rating || 5).toFixed(1);
+        // Skills & Primary Trade
+        const rawSkills = Array.isArray(provider.skills) && provider.skills.length > 0 ? provider.skills : [provider.trade || 'Artisan'];
+        const skillsList = rawSkills.filter(s => s && s.trim());
+
+        let displayTrade = provider.primary_trade || provider.trade || 'Specialist Artisan';
+        if (displayTrade.includes(' & ') && provider.primary_category_slug) {
+          displayTrade = provider.primary_category_slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+
+        // Truthful Rating & Review Count
         const safeReviewsCount = parseInt(provider.reviewsCount || 0, 10);
+        const hasReviews = safeReviewsCount > 0 && provider.rating != null && Number(provider.rating) > 0;
+        const safeRating = hasReviews ? Number(provider.rating).toFixed(1) : 'New';
+        const ratingHtml = hasReviews
+          ? `<span class="meta-rating-num">${safeRating}</span>
+             <span class="meta-rating-star">★</span>
+             <span class="meta-reviews-count">(${safeReviewsCount} review${safeReviewsCount === 1 ? '' : 's'})</span>`
+          : `<span class="meta-rating-num" style="color: #059669; font-weight: 700;">★ New</span>
+             <span class="meta-reviews-count">(0 reviews)</span>`;
+
         const safeExpYrs = parseInt(provider.experienceYrs || 3, 10);
         const safeAvatarBg = (provider.avatarBg && typeof provider.avatarBg === 'string' && provider.avatarBg.startsWith('linear-gradient')) ? provider.avatarBg : 'linear-gradient(135deg, #006B3F, #059669)';
 
@@ -1027,31 +1067,37 @@ document.addEventListener("DOMContentLoaded", () => {
           intentBadgesHtml += `<span class="intent-match-pill match-loc" title="Located in your state">📍 In Your State</span>`;
         }
 
-        // Dual Contact buttons: Call Now (solid green) & Message on WhatsApp
+        // Dual Contact buttons: Never disabled! Seamlessly routes to direct call or profile contact reveal
         const callBtnHtml = telUrl
-          ? `<a href="${escapeHtml(telUrl)}" class="action-btn call-btn" data-provider-id="${safeId}" data-trade="${escapeHtml(provider.trade)}" aria-label="Call ${escapeHtml(provider.name)}">
+          ? `<a href="${escapeHtml(telUrl)}" class="action-btn call-btn" data-provider-id="${safeId}" data-trade="${escapeHtml(displayTrade)}" aria-label="Call ${escapeHtml(displayName)}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
               <span>Call Now</span>
             </a>`
-          : `<button class="action-btn call-btn" disabled><span>Call Now</span></button>`;
+          : `<a href="${escapeHtml(profileUrl)}&action=call" class="action-btn call-btn" data-provider-id="${safeId}" data-trade="${escapeHtml(displayTrade)}" aria-label="Call ${escapeHtml(displayName)}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              <span>Call Now</span>
+            </a>`;
 
         const messageBtnHtml = waUrl
-          ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener" class="action-btn message-btn" data-provider-id="${safeId}" data-trade="${escapeHtml(provider.trade)}" aria-label="Message ${escapeHtml(provider.name)} on WhatsApp">
+          ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener" class="action-btn message-btn" data-provider-id="${safeId}" data-trade="${escapeHtml(displayTrade)}" aria-label="Message ${escapeHtml(displayName)} on WhatsApp">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
               <span>Message</span>
             </a>`
-          : `<a href="${escapeHtml(profileUrl)}" class="action-btn message-btn"><span>Message</span></a>`;
+          : `<a href="${escapeHtml(profileUrl)}&action=whatsapp" class="action-btn message-btn" data-provider-id="${safeId}" data-trade="${escapeHtml(displayTrade)}" aria-label="Message ${escapeHtml(displayName)} on WhatsApp">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              <span>Message</span>
+            </a>`;
 
         const isSponsored = Boolean(provider.is_sponsored || provider.isSponsored);
 
         return `
-          <article class="provider-item-card ${provider.isVerified ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(provider.trade)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
+          <article class="provider-item-card ${provider.isVerified ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(displayTrade)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
             <div class="provider-card-main-row">
               <!-- Avatar Column -->
               <div class="provider-avatar-col">
                 <a href="${escapeHtml(profileUrl)}" class="provider-card-profile-link" title="Open Full Profile Page" style="text-decoration: none;">
                   <div class="big-avatar" style="background: ${safeAvatarBg};">
-                    ${provider.avatarUrl ? `<img src="${escapeHtml(provider.avatarUrl)}" alt="${escapeHtml(provider.name)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />` : escapeHtml(initials)}
+                    ${provider.avatarUrl ? `<img src="${escapeHtml(provider.avatarUrl)}" alt="${escapeHtml(displayName)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />` : escapeHtml(initials)}
                   </div>
                 </a>
                 <span class="status-dot ${provider.isAvailable ? 'online' : 'offline'}" title="${provider.isAvailable ? 'Available today' : 'Currently busy'}"></span>
@@ -1061,8 +1107,9 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="provider-content-col">
                 <div class="provider-header-line">
                   <a href="${escapeHtml(profileUrl)}" class="provider-card-profile-link" title="Open Full Profile Page" style="text-decoration: none; color: inherit;">
-                    <h3 class="provider-title-name">${escapeHtml(provider.name)}</h3>
+                    <h3 class="provider-title-name">${escapeHtml(displayName)}</h3>
                   </a>
+                  ${subTitleName ? `<span class="artisan-sub-name" title="Artisan In Charge" style="font-size: 13px; color: #64748B; font-weight: 500;">• ${escapeHtml(subTitleName)}</span>` : ''}
                   ${provider.isVerified ? `
                     <span class="verified-badge-icon" title="NIN Verified Professional">
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="#0284C7"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
@@ -1072,11 +1119,14 @@ document.addEventListener("DOMContentLoaded", () => {
                   ${provider.isTop ? `<span class="badge-tag-top">⭐ Top</span>` : ''}
                 </div>
 
+                <!-- Primary Trade & Specialty Line -->
+                <div class="provider-specialty-line" style="font-size: 13.5px; font-weight: 700; color: #006B3F; margin-top: 1px;">
+                  ${escapeHtml(displayTrade)}
+                </div>
+
                 <!-- Rating & Experience Meta -->
                 <div class="provider-rating-row">
-                  <span class="meta-rating-num">${safeRating}</span>
-                  <span class="meta-rating-star">★</span>
-                  <span class="meta-reviews-count">(${safeReviewsCount} reviews)</span>
+                  ${ratingHtml}
                   <span class="meta-sep">•</span>
                   <span class="meta-exp">${safeExpYrs} yrs exp</span>
                 </div>
@@ -1091,7 +1141,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 <!-- Skill tag pills -->
                 <div class="provider-tags-row">
-                  ${skillsList.map(skill => `<span class="skill-tag">${escapeHtml(skill)}</span>`).join('')}
+                  ${skillsList.map(skill => `<span class="mini-tag skill-tag">${escapeHtml(skill)}</span>`).join('')}
                 </div>
               </div>
             </div>

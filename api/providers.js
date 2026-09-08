@@ -93,12 +93,32 @@ function toPublicProvider(row) {
   const lastName = row.last_name ? String(row.last_name).trim() : '';
   const lastInitial = lastName ? `${lastName.charAt(0).toUpperCase()}.` : null;
 
+  const isVerified = Boolean(row.is_verified);
+  const isNinVerified = Boolean(row.nin_verified);
+  let badgeTitle = 'PadiFix Artisan';
+  if (isNinVerified) {
+    badgeTitle = 'NIN Verified Artisan';
+  } else if (isVerified) {
+    badgeTitle = 'Verified Artisan';
+  } else if (row.badge_title && !row.badge_title.toLowerCase().includes('verified')) {
+    badgeTitle = row.badge_title;
+  }
+
+  const rawTrade = row.trade_title ? String(row.trade_title).trim() : null;
+  let primaryTrade = rawTrade;
+  if (row.primary_category_slug) {
+    primaryTrade = row.primary_category_slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  } else if (rawTrade && rawTrade.includes(' & ')) {
+    primaryTrade = rawTrade.split(' & ')[0].trim();
+  }
+
   return {
     id: Number(row.id),
     business_name: row.business_name ? String(row.business_name).trim() : null,
     first_name: row.first_name ? String(row.first_name).trim() : null,
     last_initial: lastInitial,
     trade_title: row.trade_title ? String(row.trade_title).trim() : null,
+    primary_trade: primaryTrade,
     primary_category_slug: row.primary_category_slug ? String(row.primary_category_slug).trim() : null,
     skills: Array.isArray(row.skills) ? row.skills : [],
     bio: row.bio ? String(row.bio).trim() : null,
@@ -108,13 +128,13 @@ function toPublicProvider(row) {
     area: row.area ? String(row.area).trim() : null,
     starting_price: row.starting_price ? String(row.starting_price).trim() : null,
     avatar_bg: row.avatar_bg || 'linear-gradient(135deg, #006B3F, #059669)',
-    badge_title: row.badge_title || (row.nin_verified || row.is_verified ? 'Verified Artisan' : 'PadiFix Artisan'),
+    badge_title: badgeTitle,
     response_time: row.response_time || '~15 mins',
     completed_jobs: Number(row.completed_jobs || 0),
     rating: Number(row.rating || 0.0),
     reviews_count: Number(row.reviews_count || 0),
-    is_verified: Boolean(row.is_verified),
-    nin_verified: Boolean(row.nin_verified),
+    is_verified: isVerified,
+    nin_verified: isNinVerified,
     is_available: Boolean(row.is_available)
   };
 }

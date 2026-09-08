@@ -160,7 +160,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const heroTrade = document.getElementById('hero-trade');
-  if (heroTrade) heroTrade.textContent = provider.trade || provider.category || 'Specialist Artisan';
+  if (heroTrade) {
+    let rawTrade = provider.trade_title || provider.trade || provider.category || 'Specialist Artisan';
+    if (provider.name && rawTrade.startsWith(provider.name + ' - ')) {
+      rawTrade = rawTrade.replace(provider.name + ' - ', '').trim();
+    }
+    heroTrade.textContent = rawTrade;
+  }
 
   const heroLocationText = document.getElementById('hero-location-text');
   if (heroLocationText) {
@@ -169,11 +175,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const revCount = parseInt(provider.reviewsCount != null ? provider.reviewsCount : (provider.reviews ? provider.reviews.length : 0), 10);
-  const heroRatingVal = document.getElementById('hero-rating-val');
-  if (heroRatingVal) heroRatingVal.textContent = revCount > 0 ? Number(provider.rating != null ? provider.rating : 5).toFixed(1) : 'New';
+  const heroRatingStars = document.getElementById('hero-rating-stars');
+  if (heroRatingStars) {
+    if (revCount > 0) {
+      heroRatingStars.innerHTML = `★ <strong id="hero-rating-val">${Number(provider.rating != null ? provider.rating : 5).toFixed(1)}</strong> (<span id="hero-reviews-count">${revCount}</span> reviews)`;
+    } else {
+      heroRatingStars.innerHTML = `⭐ <strong id="hero-rating-val">New</strong> (<span id="hero-reviews-count">0</span> reviews)`;
+    }
+  } else {
+    const heroRatingVal = document.getElementById('hero-rating-val');
+    if (heroRatingVal) heroRatingVal.textContent = revCount > 0 ? Number(provider.rating != null ? provider.rating : 5).toFixed(1) : 'New';
 
-  const heroReviewsCount = document.getElementById('hero-reviews-count');
-  if (heroReviewsCount) heroReviewsCount.textContent = String(revCount);
+    const heroReviewsCount = document.getElementById('hero-reviews-count');
+    if (heroReviewsCount) heroReviewsCount.textContent = String(revCount);
+  }
 
   // 3.1 Dynamic Verification & Trust Badge (Phase 006 Canonical Engine)
   const heroVerifiedBadge = document.getElementById('hero-verified-badge');
@@ -285,7 +300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 4. Populate Metric Badges
   const metricRating = document.getElementById('metric-rating');
-  if (metricRating) metricRating.textContent = `★ ${Number(provider.rating != null ? provider.rating : 5).toFixed(1)}`;
+  if (metricRating) metricRating.textContent = revCount > 0 ? `★ ${Number(provider.rating != null ? provider.rating : 5).toFixed(1)}` : '★ New';
 
   const metricJobs = document.getElementById('metric-jobs');
   if (metricJobs) metricJobs.textContent = `${parseInt(provider.completedJobs, 10) || 50}+`;
@@ -300,12 +315,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   const PhoneEngine = (typeof NigeriaPhone !== 'undefined' ? NigeriaPhone : null) || (typeof window !== 'undefined' ? window.NigeriaPhone : null);
   const providerLocation = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || 'your area';
   
-  const heroTelUrl = PhoneEngine ? PhoneEngine.buildTelUrl(provider) : (provider.phone ? `tel:${provider.phone}` : '');
-  const heroWaUrl = PhoneEngine 
-    ? (PhoneEngine.buildSmartWhatsAppUrl 
+  function getTelUrl() {
+    return PhoneEngine ? PhoneEngine.buildTelUrl(provider) : (provider.phone ? `tel:${provider.phone}` : '');
+  }
+
+  function getWaUrl(customMsg = null) {
+    if (PhoneEngine) {
+      if (customMsg) return PhoneEngine.buildWhatsAppUrl(provider, { customMessage: customMsg });
+      return PhoneEngine.buildSmartWhatsAppUrl
         ? PhoneEngine.buildSmartWhatsAppUrl(provider, { service: provider.trade, lga: provider.lga, state: provider.state })
-        : PhoneEngine.buildWhatsAppUrl(provider, { service: provider.trade, location: providerLocation })) 
-    : '';
+        : PhoneEngine.buildWhatsAppUrl(provider, { service: provider.trade, location: providerLocation });
+    }
+    const cleanNum = (provider.whatsapp_number || provider.phone || '').replace(/\D/g, '');
+    if (!cleanNum) return '';
+    return customMsg ? `https://wa.me/${cleanNum}?text=${encodeURIComponent(customMsg)}` : `https://wa.me/${cleanNum}`;
+  }
+
+  let heroTelUrl = getTelUrl();
+  let heroWaUrl = getWaUrl();
 
   // Phase 010 / Phase 014: Server-side contact metering with idempotency, soft-cap, and PWA outbox
   function checkOrMeterContact(channel, e) {
@@ -419,74 +446,163 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Unified Contact Coordinate Unlocker via /api/contact-meter
+  let contactUnlockPromise = null;
+  async function ensureContactUnlocked(channel = 'whatsapp') {
+    if (provider.phone && (channel !== 'whatsapp' || provider.whatsapp_number)) {
+      return { phone: provider.phone, whatsapp: provider.whatsapp_number || provider.phone };
+    }
+    if (contactUnlockPromise) return contactUnlockPromise;
+
+    contactUnlockPromise = (async () => {
+      try {
+        if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
+          const res = await PadiFixPWA.dispatchContactLead({
+            provider_id: provider.id,
+            channel: channel
+          });
+          if (res && res.contact) {
+            if (res.contact.phone) provider.phone = res.contact.phone;
+            if (res.contact.whatsapp_number) provider.whatsapp_number = res.contact.whatsapp_number;
+            refreshAllContactButtons();
+            return { phone: provider.phone, whatsapp: provider.whatsapp_number || provider.phone };
+          }
+          if (res && !res.allowed && res.limit_reached) {
+            return { limitReached: true };
+          }
+        }
+      } catch (err) {
+        console.warn('Contact coordinate unlock failed:', err);
+      } finally {
+        contactUnlockPromise = null;
+      }
+      return { phone: provider.phone, whatsapp: provider.whatsapp_number || provider.phone };
+    })();
+    return contactUnlockPromise;
+  }
+
+  function refreshAllContactButtons() {
+    heroTelUrl = getTelUrl();
+    heroWaUrl = getWaUrl();
+
+    const heroCall = document.getElementById('btn-call-hero');
+    const heroWa = document.getElementById('btn-wa-hero');
+    const sideCall = document.getElementById('sidebar-call-btn');
+    const sidePhone = document.getElementById('sidebar-phone-text');
+    const stickCall = document.getElementById('sticky-call-btn');
+    const waSend = document.getElementById('wa-send-btn');
+
+    if (heroCall && heroTelUrl) heroCall.href = heroTelUrl;
+    if (heroWa && heroWaUrl) heroWa.href = heroWaUrl;
+    if (sideCall && heroTelUrl) sideCall.href = heroTelUrl;
+    if (sidePhone && provider.phone) {
+      sidePhone.textContent = provider.phoneDisplay || provider.phone;
+    }
+    if (stickCall && heroTelUrl) stickCall.href = heroTelUrl;
+    if (waSend && heroWaUrl) waSend.href = heroWaUrl;
+    if (typeof updateWhatsAppPreview === 'function') {
+      try { updateWhatsAppPreview(); } catch (e) {}
+    }
+  }
+
+  function showContactLimitModal() {
+    const limitModal = document.getElementById('contact-limit-modal');
+    if (limitModal) {
+      limitModal.classList.add('active');
+      limitModal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    } else {
+      showProfileToast("This artisan has reached their monthly customer inquiry limit. Please explore other artisans.", 4000);
+    }
+  }
+
   const btnCallHero = document.getElementById('btn-call-hero');
   if (btnCallHero) {
-    if (heroTelUrl) {
-      btnCallHero.href = heroTelUrl;
-      btnCallHero.addEventListener('click', (e) => {
-        if (!checkOrMeterContact('call', e)) return;
-        if (typeof LokatorTelemetry !== 'undefined') {
-          LokatorTelemetry.trackEvent('phone_clicked', {
-            providerId: provider.id,
-            trade: provider.trade,
-            category: provider.primary_category_slug || provider.categorySlug || provider.trade,
-            city: provider.city,
-            state: provider.state || stateParam,
-            lga: provider.lga || lgaParam,
-            verificationStatus: provider.verificationStatus || (provider.ninVerified ? 'verified' : (provider.isVerified ? 'reviewed' : 'unverified'))
-          });
+    btnCallHero.style.display = 'inline-flex';
+    if (heroTelUrl) btnCallHero.href = heroTelUrl;
+    btnCallHero.addEventListener('click', async (e) => {
+      if (!provider.phone) {
+        e.preventDefault();
+        const prevText = btnCallHero.innerHTML;
+        btnCallHero.innerHTML = `Connecting...`;
+        const res = await ensureContactUnlocked('call');
+        btnCallHero.innerHTML = prevText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
         }
-        if (typeof LokatorDB !== 'undefined' && LokatorDB.marketplaceDiscovery) {
-          LokatorDB.marketplaceDiscovery.trackDiscoveryEvent('phone_clicked', {
-            provider_id: provider.id,
-            trade: provider.trade,
-            city: provider.city,
-            state: provider.state || stateParam
-          }).catch(() => {});
+        if (res && res.phone) {
+          window.location.href = `tel:${res.phone}`;
         }
-      });
-    } else {
-      btnCallHero.style.display = 'none';
-    }
+        return;
+      }
+      if (!checkOrMeterContact('call', e)) return;
+      if (typeof LokatorTelemetry !== 'undefined') {
+        LokatorTelemetry.trackEvent('phone_clicked', {
+          providerId: provider.id,
+          trade: provider.trade,
+          category: provider.primary_category_slug || provider.categorySlug || provider.trade,
+          city: provider.city,
+          state: provider.state || stateParam,
+          lga: provider.lga || lgaParam,
+          verificationStatus: provider.verificationStatus || (provider.ninVerified ? 'verified' : (provider.isVerified ? 'reviewed' : 'unverified'))
+        });
+      }
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.marketplaceDiscovery) {
+        LokatorDB.marketplaceDiscovery.trackDiscoveryEvent('phone_clicked', {
+          provider_id: provider.id,
+          trade: provider.trade,
+          city: provider.city,
+          state: provider.state || stateParam
+        }).catch(() => {});
+      }
+    });
   }
 
   const btnWaHero = document.getElementById('btn-wa-hero');
   if (btnWaHero) {
-    if (heroWaUrl) {
-      btnWaHero.href = heroWaUrl;
-      btnWaHero.addEventListener('click', (e) => {
-        if (!checkOrMeterContact('whatsapp', e)) return;
-        if (typeof LokatorTelemetry !== 'undefined') {
-          LokatorTelemetry.trackEvent('whatsapp_clicked', {
-            providerId: provider.id,
-            trade: provider.trade,
-            category: provider.primary_category_slug || provider.categorySlug || provider.trade,
-            city: provider.city,
-            state: provider.state || stateParam,
-            lga: provider.lga || lgaParam,
-            verificationStatus: provider.verificationStatus || (provider.ninVerified ? 'verified' : (provider.isVerified ? 'reviewed' : 'unverified'))
-          });
+    btnWaHero.style.display = 'inline-flex';
+    if (heroWaUrl) btnWaHero.href = heroWaUrl;
+    btnWaHero.addEventListener('click', async (e) => {
+      if (!provider.phone && !provider.whatsapp_number) {
+        e.preventDefault();
+        const prevText = btnWaHero.innerHTML;
+        btnWaHero.innerHTML = `Opening WhatsApp...`;
+        const res = await ensureContactUnlocked('whatsapp');
+        btnWaHero.innerHTML = prevText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
         }
-        if (typeof LokatorDB !== 'undefined' && LokatorDB.marketplaceDiscovery) {
-          LokatorDB.marketplaceDiscovery.trackDiscoveryEvent('whatsapp_clicked', {
-            provider_id: provider.id,
-            trade: provider.trade,
-            city: provider.city,
-            state: provider.state || stateParam
-          }).catch(() => {});
+        const targetWa = (res && res.whatsapp) ? res.whatsapp : (res && res.phone ? res.phone : null);
+        if (targetWa) {
+          const num = targetWa.replace(/\D/g, '');
+          const encodedMsg = encodeURIComponent(`Hello ${provider.name}, I found your verified profile on PadiFix and would like to inquire about your ${provider.trade} services.`);
+          window.open(`https://wa.me/${num}?text=${encodedMsg}`, '_blank', 'noopener,noreferrer');
         }
-      });
-    } else if (heroTelUrl) {
-      btnWaHero.href = heroTelUrl;
-      btnWaHero.textContent = 'Call Provider';
-      btnWaHero.className = btnWaHero.className.replace('btn-gold', 'btn-outline');
-      btnWaHero.setAttribute('title', 'WhatsApp not available — tap to call');
-      btnWaHero.addEventListener('click', (e) => {
-        if (!checkOrMeterContact('call', e)) return;
-      });
-    } else {
-      btnWaHero.style.display = 'none';
-    }
+        return;
+      }
+      if (!checkOrMeterContact('whatsapp', e)) return;
+      if (typeof LokatorTelemetry !== 'undefined') {
+        LokatorTelemetry.trackEvent('whatsapp_clicked', {
+          providerId: provider.id,
+          trade: provider.trade,
+          category: provider.primary_category_slug || provider.categorySlug || provider.trade,
+          city: provider.city,
+          state: provider.state || stateParam,
+          lga: provider.lga || lgaParam,
+          verificationStatus: provider.verificationStatus || (provider.ninVerified ? 'verified' : (provider.isVerified ? 'reviewed' : 'unverified'))
+        });
+      }
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.marketplaceDiscovery) {
+        LokatorDB.marketplaceDiscovery.trackDiscoveryEvent('whatsapp_clicked', {
+          provider_id: provider.id,
+          trade: provider.trade,
+          city: provider.city,
+          state: provider.state || stateParam
+        }).catch(() => {});
+      }
+    });
   }
 
   // Track profile view
@@ -770,17 +886,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
     const reviewsCount = summary.totalCount || liveReviews.length;
-    const avgRating = summary.averageRating || provider.rating || 5.0;
+    const avgRating = summary.averageRating || provider.rating || 0;
 
     const scoreBig = document.getElementById('score-big-val');
-    if (scoreBig) scoreBig.textContent = avgRating.toFixed(1);
+    if (scoreBig) scoreBig.textContent = reviewsCount > 0 ? avgRating.toFixed(1) : 'New';
+
+    const scoreBigStars = document.getElementById('score-big-stars');
+    if (scoreBigStars) {
+      scoreBigStars.textContent = reviewsCount > 0 ? ('★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating))) : '☆☆☆☆☆';
+    }
 
     const scoreSub = document.getElementById('score-sub-text');
-    if (scoreSub) scoreSub.textContent = `Based on ${reviewsCount} verified review${reviewsCount === 1 ? '' : 's'}`;
+    if (scoreSub) scoreSub.textContent = reviewsCount > 0 ? `Based on ${reviewsCount} verified review${reviewsCount === 1 ? '' : 's'}` : 'No customer reviews yet';
 
-    if (heroRatingVal) heroRatingVal.textContent = avgRating.toFixed(1);
-    if (heroReviewsCount) heroReviewsCount.textContent = reviewsCount;
-    if (metricRating) metricRating.textContent = `★ ${avgRating.toFixed(1)}`;
+    if (heroRatingVal) heroRatingVal.textContent = reviewsCount > 0 ? avgRating.toFixed(1) : 'New';
+    if (heroReviewsCount) heroReviewsCount.textContent = String(reviewsCount);
+    if (metricRating) metricRating.textContent = reviewsCount > 0 ? `★ ${avgRating.toFixed(1)}` : '★ New';
 
     // Histogram
     const dist = summary.distribution || { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
@@ -1509,18 +1630,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 11. Sidebar Actions & Structured WhatsApp Booking Generator
   const sidebarPhoneText = document.getElementById('sidebar-phone-text');
-  if (sidebarPhoneText) sidebarPhoneText.textContent = provider.phone;
+  if (sidebarPhoneText) {
+    sidebarPhoneText.textContent = provider.phone ? (provider.phoneDisplay || provider.phone) : 'Artisan Directly';
+  }
 
   const sidebarCallBtn = document.getElementById('sidebar-call-btn');
   if (sidebarCallBtn) {
-    if (heroTelUrl) {
-      sidebarCallBtn.href = heroTelUrl;
-      sidebarCallBtn.addEventListener('click', (e) => {
-        if (!checkOrMeterContact('call', e)) return;
-      });
-    } else {
-      sidebarCallBtn.style.display = 'none';
-    }
+    sidebarCallBtn.style.display = 'inline-flex';
+    if (heroTelUrl) sidebarCallBtn.href = heroTelUrl;
+    sidebarCallBtn.addEventListener('click', async (e) => {
+      if (!provider.phone) {
+        e.preventDefault();
+        const origText = sidebarCallBtn.innerHTML;
+        sidebarCallBtn.innerHTML = `Connecting...`;
+        const res = await ensureContactUnlocked('call');
+        sidebarCallBtn.innerHTML = origText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
+        }
+        if (res && res.phone) {
+          window.location.href = `tel:${res.phone}`;
+        }
+        return;
+      }
+      if (!checkOrMeterContact('call', e)) return;
+    });
   }
 
   // 11. Phase 10.12D / Phase 10.20: Interactive Structured WhatsApp Job Brief & Quote Generator
@@ -1694,12 +1829,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (waPreviewText) waPreviewText.textContent = formattedMessage;
     
     if (waSendBtn) {
-      const waLink = PhoneEngine ? PhoneEngine.buildWhatsAppUrl(provider, { customMessage: formattedMessage }) : '';
+      const waLink = getWaUrl(formattedMessage);
       if (waLink) {
         waSendBtn.href = waLink;
-      } else if (heroTelUrl) {
-        waSendBtn.href = heroTelUrl;
-        waSendBtn.textContent = 'Call Provider Directly';
       }
     }
   }
@@ -1753,7 +1885,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (waCopyBriefBtn) waCopyBriefBtn.addEventListener('click', copyJobBriefHandler);
 
   if (waSendBtn) {
-    waSendBtn.addEventListener('click', (e) => {
+    waSendBtn.addEventListener('click', async (e) => {
+      if (!provider.phone && !provider.whatsapp_number) {
+        e.preventDefault();
+        const origText = waSendBtn.innerHTML;
+        waSendBtn.innerHTML = `Generating WhatsApp Link...`;
+        const res = await ensureContactUnlocked('whatsapp');
+        waSendBtn.innerHTML = origText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
+        }
+        const targetWa = (res && res.whatsapp) ? res.whatsapp : (res && res.phone ? res.phone : null);
+        if (targetWa) {
+          const num = targetWa.replace(/\D/g, '');
+          const msg = waPreviewText ? waPreviewText.textContent : `Hello ${provider.name}, I found your verified profile on PadiFix.`;
+          window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
       if (!checkOrMeterContact('whatsapp', e)) return;
       if (typeof LokatorTelemetry !== 'undefined') {
         LokatorTelemetry.trackEvent('whatsapp_brief_submitted', {
@@ -1776,21 +1926,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stickyCallBtn = document.getElementById('sticky-call-btn');
   const stickyWaBtn = document.getElementById('sticky-wa-btn');
   if (stickyCallBtn) {
-    if (heroTelUrl) {
-      stickyCallBtn.href = heroTelUrl;
-      stickyCallBtn.addEventListener('click', (e) => {
-        if (!checkOrMeterContact('call', e)) return;
-        if (typeof LokatorTelemetry !== 'undefined') {
-          LokatorTelemetry.trackEvent('call_clicked', {
-            providerId: provider.id,
-            trade: provider.trade,
-            surface: 'profile_mobile_sticky'
-          });
+    stickyCallBtn.style.display = 'inline-flex';
+    if (heroTelUrl) stickyCallBtn.href = heroTelUrl;
+    stickyCallBtn.addEventListener('click', async (e) => {
+      if (!provider.phone) {
+        e.preventDefault();
+        const origText = stickyCallBtn.innerHTML;
+        stickyCallBtn.innerHTML = `Connecting...`;
+        const res = await ensureContactUnlocked('call');
+        stickyCallBtn.innerHTML = origText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
         }
-      });
-    } else {
-      stickyCallBtn.style.display = 'none';
-    }
+        if (res && res.phone) {
+          window.location.href = `tel:${res.phone}`;
+        }
+        return;
+      }
+      if (!checkOrMeterContact('call', e)) return;
+      if (typeof LokatorTelemetry !== 'undefined') {
+        LokatorTelemetry.trackEvent('call_clicked', {
+          providerId: provider.id,
+          trade: provider.trade,
+          surface: 'profile_mobile_sticky'
+        });
+      }
+    });
   }
 
   if (stickyWaBtn) {
@@ -1807,6 +1969,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
     });
+  }
+
+  // Handle incoming search intent action: ?action=call
+  if (actionParam === 'call') {
+    setTimeout(() => {
+      if (btnCallHero) btnCallHero.click();
+    }, 450);
   }
 
   document.body.classList.add('has-sticky-bar');

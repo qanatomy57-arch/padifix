@@ -82,6 +82,37 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
 }
 
 /**
+ * Look up sanitized contact coordinates (phone & WhatsApp) upon authorized contact entitlement.
+ * Enforces server-controlled contact disclosure gate.
+ */
+async function fetchProviderContactCoordinates(providerId) {
+  if (!providerId) return null;
+  const numId = Number(providerId);
+  if (SUPABASE_URL && SUPABASE_AUTH_KEY) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/providers?select=phone,whatsapp_number&id=eq.${numId}&limit=1`, {
+        headers: {
+          'apikey': SUPABASE_AUTH_KEY,
+          'Authorization': `Bearer ${SUPABASE_AUTH_KEY}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return {
+            phone: data[0].phone || null,
+            whatsapp_number: data[0].whatsapp_number || data[0].phone || null
+          };
+        }
+      }
+    } catch (err) {
+      console.error('[ContactMeter:CoordsError]', err.message);
+    }
+  }
+  return null;
+}
+
+/**
  * Authoritatively consume contact entitlement via PostgreSQL stored function
  * public.consume_contact_entitlement (Migration 043)
  */
@@ -585,6 +616,10 @@ const contactMeterHandler = async (req, res) => {
       });
 
       if (rpcEntitlement.is_duplicate) {
+        let coords = null;
+        if (!effectiveInject?.skipContactLookup) {
+          coords = await fetchProviderContactCoordinates(provId);
+        }
         return res.status(200).json({
           status: 'success',
           allowed: true,
@@ -602,6 +637,7 @@ const contactMeterHandler = async (req, res) => {
           idempotency_key: effectiveKey,
           is_duplicate: true,
           idempotent: true,
+          contact: coords ? { phone: coords.phone, whatsapp_number: coords.whatsapp_number } : undefined,
           message: 'Contact initiated successfully (idempotent replay).'
         });
       }
@@ -655,6 +691,11 @@ const contactMeterHandler = async (req, res) => {
         });
       }
 
+      let coords = null;
+      if (!effectiveInject?.skipContactLookup) {
+        coords = await fetchProviderContactCoordinates(provId);
+      }
+
       const responsePayload = {
         status: 'success',
         allowed: true,
@@ -673,6 +714,7 @@ const contactMeterHandler = async (req, res) => {
         idempotency_key: effectiveKey,
         upgrade_recommended: planId === 'FREE' ? 'BASIC' : 'PRO',
         upgrade_price_display: '₦5,500/month',
+        contact: coords ? { phone: coords.phone, whatsapp_number: coords.whatsapp_number } : undefined,
         message: isLimitReached
           ? (planId === 'FREE'
               ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
@@ -763,6 +805,11 @@ const contactMeterHandler = async (req, res) => {
         });
       }
 
+      let coords = null;
+      if (!effectiveInject?.skipContactLookup) {
+        coords = await fetchProviderContactCoordinates(provId);
+      }
+
       const responsePayload = {
         status: 'success',
         allowed: true,
@@ -781,6 +828,7 @@ const contactMeterHandler = async (req, res) => {
         idempotency_key: effectiveKey,
         upgrade_recommended: inMemoryReservation.plan.id === 'FREE' ? 'BASIC' : 'PRO',
         upgrade_price_display: '₦5,500/month',
+        contact: coords ? { phone: coords.phone, whatsapp_number: coords.whatsapp_number } : undefined,
         message: inMemoryReservation.limitReached
           ? (inMemoryReservation.plan.id === 'FREE'
               ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
