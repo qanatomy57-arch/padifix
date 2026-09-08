@@ -23,13 +23,15 @@ const { dispatchArtisanLeadAlert } = require('../lib/artisan-notification-servic
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
+const SUPABASE_AUTH_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 
 /**
  * Authoritatively persist contact event to PostgreSQL public.contact_events.
  * Enforces durable cross-restart idempotency via PostgreSQL unique constraint on idempotency_key.
  */
 async function persistContactEvent({ provider_id, channel, idempotency_key, billing_period, locality, intent_tag, session_token }) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_AUTH_KEY) {
     return { success: true, isDuplicate: false, offline: true };
   }
   try {
@@ -41,7 +43,7 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${SUPABASE_AUTH_KEY}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=minimal'
       },
@@ -76,7 +78,7 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
  * public.consume_contact_entitlement (Migration 043)
  */
 async function consumeContactEntitlementPg({ provider_id, channel, idempotency_key, billing_period, locality, intent_tag, session_token }) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_AUTH_KEY) {
     return null;
   }
   try {
@@ -87,7 +89,7 @@ async function consumeContactEntitlementPg({ provider_id, channel, idempotency_k
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${SUPABASE_AUTH_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -477,7 +479,7 @@ const contactMeterHandler = async (req, res) => {
         session_token
       });
 
-      if (rpcEntitlement && rpcEntitlement.status === 'success') {
+      if (rpcEntitlement && (rpcEntitlement.status === 'success' || rpcEntitlement.status === 'limit_reached')) {
         pgResult = {
           success: true,
           isDuplicate: Boolean(rpcEntitlement.is_duplicate),
@@ -486,7 +488,8 @@ const contactMeterHandler = async (req, res) => {
       }
     }
 
-    if (!rpcEntitlement || rpcEntitlement.status !== 'success') {
+    // Only fallback to standalone table insertion if the atomic RPC was unreachable or errored
+    if (!rpcEntitlement || (rpcEntitlement.status !== 'success' && rpcEntitlement.status !== 'limit_reached')) {
       pgResult = await persistContactEvent({
         provider_id: provId,
         channel: normChannel,
