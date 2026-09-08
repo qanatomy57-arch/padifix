@@ -42,7 +42,7 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
     const res = await fetch(`${SUPABASE_URL}/rest/v1/contact_events`, {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_ANON_KEY,
+        'apikey': SUPABASE_AUTH_KEY,
         'Authorization': `Bearer ${SUPABASE_AUTH_KEY}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=minimal'
@@ -65,7 +65,15 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
     }
     if (res.status === 409) {
       // PostgreSQL unique constraint 23505 (durable idempotency)
-      return { success: true, isDuplicate: true };
+      try {
+        const errJson = await res.json();
+        if (errJson && (errJson.code === '23505' || (errJson.message && errJson.message.includes('duplicate')))) {
+          return { success: true, isDuplicate: true };
+        }
+        return { success: false, isDuplicate: false, error: errJson.message || 'Constraint violation' };
+      } catch (e) {
+        return { success: true, isDuplicate: true };
+      }
     }
     return { success: true, isDuplicate: false, status: res.status };
   } catch (err) {
@@ -88,7 +96,7 @@ async function consumeContactEntitlementPg({ provider_id, channel, idempotency_k
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/consume_contact_entitlement`, {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_ANON_KEY,
+        'apikey': SUPABASE_AUTH_KEY,
         'Authorization': `Bearer ${SUPABASE_AUTH_KEY}`,
         'Content-Type': 'application/json'
       },
@@ -106,8 +114,14 @@ async function consumeContactEntitlementPg({ provider_id, channel, idempotency_k
     if (res.ok) {
       const data = await res.json();
       return data;
+    } else {
+      const errText = await res.text();
+      console.error('consumeContactEntitlementPg failed:', res.status, errText);
+      return { status: 'rpc_error', http_status: res.status, error_detail: errText };
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error('consumeContactEntitlementPg network exception:', err.message);
+  }
   return null;
 }
 
@@ -489,7 +503,7 @@ const contactMeterHandler = async (req, res) => {
     }
 
     // Only fallback to standalone table insertion if the atomic RPC was unreachable or errored
-    if (!rpcEntitlement || (rpcEntitlement.status !== 'success' && rpcEntitlement.status !== 'limit_reached')) {
+    if (!effectiveInject?.forceMemoryQuota && (!rpcEntitlement || (rpcEntitlement.status !== 'success' && rpcEntitlement.status !== 'limit_reached'))) {
       pgResult = await persistContactEvent({
         provider_id: provId,
         channel: normChannel,
@@ -538,13 +552,13 @@ const contactMeterHandler = async (req, res) => {
     // --------------------------------------------------------------------------
     // PRODUCTION AUTHORITY: POSTGRESQL ATOMIC ENTITLEMENT DECISION (F-03)
     // --------------------------------------------------------------------------
-    if (rpcEntitlement && rpcEntitlement.status === 'success') {
+    if (rpcEntitlement && (rpcEntitlement.status === 'success' || rpcEntitlement.status === 'limit_reached')) {
       const used = Number(rpcEntitlement.contacts_used || 0);
       const allowance = Number(rpcEntitlement.allowance || 5);
       const remaining = Number(rpcEntitlement.contacts_remaining != null ? rpcEntitlement.contacts_remaining : Math.max(0, allowance - used));
       const planId = String(rpcEntitlement.plan_id || 'FREE').toUpperCase();
       const planName = rpcEntitlement.plan_name || 'Free';
-      const isLimitReached = Boolean(rpcEntitlement.limit_reached);
+      const isLimitReached = Boolean(rpcEntitlement.limit_reached || rpcEntitlement.status === 'limit_reached');
 
       usageStore.set(storeKey, {
         used,
