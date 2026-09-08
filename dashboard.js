@@ -2729,6 +2729,93 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 11.5 Handle Paystack Subscription Payment Return (Phase 019 Section 24)
+  async function handleSubscriptionPaymentReturn() {
+    if (typeof window === 'undefined' || !window.location || !window.location.search) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentRef = urlParams.get('reference') || urlParams.get('trxref') || urlParams.get('payment_ref');
+    if (!paymentRef || !currentProvider || !currentProvider.id) return;
+
+    // Remove payment parameters from URL immediately to prevent repeated triggers on reload
+    urlParams.delete('reference');
+    urlParams.delete('trxref');
+    urlParams.delete('payment_ref');
+    const remainingQuery = urlParams.toString();
+    const cleanUrl = window.location.pathname + (remainingQuery ? `?${remainingQuery}` : '');
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    showToast('Verifying payment with Paystack...', 'info');
+
+    // Retrieve Supabase JWT session token
+    let token = null;
+    try {
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getSession === 'function') {
+        const sessionRes = await LokatorDB.auth.getSession();
+        token = sessionRes?.data?.session?.access_token;
+      }
+    } catch (e) {}
+
+    if (!token && typeof localStorage !== 'undefined') {
+      try {
+        const rawSession = localStorage.getItem('lokator_supabase_auth_session') || localStorage.getItem('lokator_auth_session');
+        if (rawSession) {
+          const parsed = JSON.parse(rawSession);
+          token = parsed.access_token || parsed.token || null;
+        }
+      } catch (e) {}
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const res = await fetch('/api/subscription-manage', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'verify_and_activate',
+          reference: paymentRef,
+          provider_id: currentProvider.id
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && (data.status === 'success' || data.action === 'verify_and_activate')) {
+        const sub = data.subscription || {};
+        const planName = sub.plan_name || sub.plan_id || 'new';
+
+        // Synchronize local subscription cache
+        if (typeof LokatorDB !== 'undefined' && LokatorDB.subscriptions && sub.plan_id) {
+          try {
+            LokatorDB.subscriptions.activateSubscription(currentProvider.id, sub.plan_id, {
+              reference: paymentRef,
+              status: sub.status || 'active',
+              current_period_start: sub.current_period_start,
+              current_period_end: sub.current_period_end
+            });
+          } catch (syncErr) {}
+        }
+
+        showToast(`🎉 Payment verified! Your ${planName} Plan is now active.`, 'success');
+
+        // Refresh UI state & usage
+        if (typeof renderSubscriptionDashboard === 'function') {
+          renderSubscriptionDashboard();
+        }
+        if (typeof loadProviderLeadsAndQuota === 'function') {
+          loadProviderLeadsAndQuota();
+        }
+      } else {
+        const errMsg = data.error || 'Payment verification could not be completed';
+        showToast(`Payment check: ${errMsg}`, 'error');
+      }
+    } catch (err) {
+      showToast('Error connecting to payment verification server.', 'error');
+    }
+  }
+
   // 12. Run Initial Render Pipeline
   await loadMetrics();
   await loadProviderLeadsAndQuota();
@@ -2741,4 +2828,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderReferralTool();
   renderMonetizationResearch();
   renderDashboardReviews();
+  await handleSubscriptionPaymentReturn();
 });

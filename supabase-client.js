@@ -1397,6 +1397,43 @@
         ? city 
         : (searchIntent.extractedLocation || (effectiveLga !== 'all' ? effectiveLga : (effectiveState !== 'all' ? effectiveState : 'all')));
 
+      // 0. Primary Source of Truth: Authoritative PostgreSQL Directory via /api/providers
+      try {
+        if (typeof fetch === 'function') {
+          const params = new URLSearchParams();
+          if (category && category !== 'all') params.set('category', category);
+          if (effectiveState && effectiveState !== 'all') params.set('state', effectiveState);
+          if (effectiveLga && effectiveLga !== 'all') params.set('lga', effectiveLga);
+          if (effectiveLocality && effectiveLocality !== 'all') params.set('locality', effectiveLocality);
+          if (query) params.set('q', query);
+          if (isVerified) params.set('verified', 'true');
+          if (isAvailable) params.set('available', 'true');
+          if (page) params.set('page', String(page));
+          if (pageSize) params.set('page_size', String(pageSize));
+          if (sortBy) params.set('sort', sortBy);
+
+          const apiBase = (typeof window !== 'undefined' && window.location && window.location.origin) 
+            ? window.location.origin 
+            : ((typeof process !== 'undefined' && process.env && process.env.APP_URL) || 'https://padifix.vercel.app');
+
+          const endpointUrl = typeof window !== 'undefined' ? `/api/providers?${params.toString()}` : `${apiBase}/api/providers?${params.toString()}`;
+          const res = await fetch(endpointUrl);
+          if (res.ok) {
+            const json = await res.json();
+            if (json && Array.isArray(json.data) && json.data.length > 0) {
+              return {
+                data: this._sanitizeProvidersList(json.data, userLat, userLng),
+                totalCount: json.total || json.data.length,
+                page: json.page || 1,
+                pageSize: json.page_size || 20
+              };
+            }
+          }
+        }
+      } catch (netErr) {
+        // Fallback to local sync layer
+      }
+
       // 1. If remote live Supabase client is connected and active:
       let remoteData = null;
       if (isRemoteActive()) {
@@ -1867,10 +1904,30 @@
       const numId = Number(id);
       if (!numId) return null;
 
-      // Remote Supabase query if available with fast timeout protection
+      // 0. Primary Source of Truth: Authoritative PostgreSQL Directory via /api/providers?id=X
+      try {
+        if (typeof fetch === 'function') {
+          const apiBase = (typeof window !== 'undefined' && window.location && window.location.origin) 
+            ? window.location.origin 
+            : ((typeof process !== 'undefined' && process.env && process.env.APP_URL) || 'https://padifix.vercel.app');
+          const endpointUrl = typeof window !== 'undefined' ? `/api/providers?id=${numId}` : `${apiBase}/api/providers?id=${numId}`;
+          const res = await fetch(endpointUrl);
+          if (res.ok) {
+            const json = await res.json();
+            const p = json.provider || (Array.isArray(json.data) ? json.data[0] : null);
+            if (p) {
+              return this._sanitizeProviderDetail(p);
+            }
+          }
+        }
+      } catch (netErr) {
+        // Fallback to direct DB or local sync layer
+      }
+
+      // 1. Remote Supabase query if available
       if (isRemoteActive()) {
         try {
-          const fetchPromise = supabaseInstance
+          const { data, error } = await supabaseInstance
             .from('providers')
             .select(`
               *,
@@ -1881,13 +1938,9 @@
             `)
             .eq('id', numId)
             .eq('is_active', true)
+            .eq('is_public', true)
+            .eq('profile_complete', true)
             .limit(1);
-
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Supabase query timeout')), 1200)
-          );
-
-          const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
 
           if (!error && Array.isArray(data) && data.length > 0) {
             return this._sanitizeProviderDetail(data[0]);

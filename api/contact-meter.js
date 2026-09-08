@@ -71,6 +71,44 @@ async function persistContactEvent({ provider_id, channel, idempotency_key, bill
   }
 }
 
+/**
+ * Authoritatively consume contact entitlement via PostgreSQL stored function
+ * public.consume_contact_entitlement (Migration 043)
+ */
+async function consumeContactEntitlementPg({ provider_id, channel, idempotency_key, billing_period, locality, intent_tag, session_token }) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return null;
+  }
+  try {
+    const cleanLocality = locality ? String(locality).replace(/<[^>]*>/g, '').trim().substring(0, 80) : null;
+    const cleanIntent = intent_tag ? String(intent_tag).replace(/<[^>]*>/g, '').trim().substring(0, 80) : null;
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/consume_contact_entitlement`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        p_provider_id: Number(provider_id),
+        p_channel: channel,
+        p_idempotency_key: idempotency_key || null,
+        p_billing_period: billing_period,
+        p_session_token: session_token || null,
+        p_locality: cleanLocality,
+        p_intent_tag: cleanIntent
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {}
+  return null;
+}
+
 // In-memory usage store for serverless execution / testing
 // Structure: Map<`${provider_id}_${billing_period}`, { used, whatsapp, call, plan_id }>
 const usageStore = LeadStore.usageStore;
@@ -321,6 +359,7 @@ const contactMeterHandler = async (req, res) => {
       soft_cap,
       _inject
     } = req.body || {};
+    const effectiveInject = _inject || req._inject || {};
 
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
@@ -372,19 +411,92 @@ const contactMeterHandler = async (req, res) => {
     }
 
     // --------------------------------------------------------------------------
-    // RULE A: NEVER LOSE THE LEAD (Section 20)
-    // Contact intent/event persistence happens BEFORE abuse/SMS side-effects.
-    // This guarantees lead capture even if rate-limited, quota-exhausted, or SMS fails.
+    // ATOMIC SYNCHRONOUS IN-MEMORY QUOTA RESERVATION (Concurrency Guard)
+    // Ensures concurrent requests arriving in same event loop tick serialize correctly.
     // --------------------------------------------------------------------------
-    const pgResult = await persistContactEvent({
-      provider_id: provId,
-      channel: normChannel,
-      locality,
-      intent_tag,
-      idempotency_key: effectiveKey,
-      billing_period: period,
-      session_token
-    });
+    const isSoftCap = Boolean(mode === 'soft_cap' || soft_cap);
+    let inMemoryReservation = null;
+
+    const shouldPrepareMemory = effectiveInject?.forceMemoryQuota || 
+                                !SUPABASE_URL || 
+                                !SUPABASE_ANON_KEY || 
+                                process.env.VERCEL_ENV !== 'production';
+
+    if (shouldPrepareMemory) {
+      let rec = usageStore.get(storeKey);
+      const activePlanId = effectiveInject?.overridePlanId ? String(effectiveInject.overridePlanId).toUpperCase() : (rec ? rec.plan_id : 'FREE');
+      const planConfig = PLAN_ALLOWANCES[activePlanId] || PLAN_ALLOWANCES.FREE;
+      const isUnlimited = planConfig.allowance === 'unlimited';
+      const maxLimit = isUnlimited ? planConfig.fairUse : planConfig.allowance;
+
+      if (!rec) {
+        rec = { used: 0, whatsapp: 0, call: 0, plan_id: activePlanId };
+        usageStore.set(storeKey, rec);
+      } else if (effectiveInject?.overridePlanId) {
+        rec.plan_id = activePlanId;
+      }
+
+      if (rec.used >= maxLimit && !isSoftCap) {
+        inMemoryReservation = {
+          allowed: false,
+          used: rec.used,
+          remaining: 0,
+          limitReached: true,
+          plan: planConfig
+        };
+      } else {
+        rec.used += 1;
+        if (normChannel === 'whatsapp') rec.whatsapp += 1;
+        else rec.call += 1;
+        inMemoryReservation = {
+          allowed: true,
+          used: rec.used,
+          remaining: Math.max(0, maxLimit - rec.used),
+          limitReached: rec.used >= maxLimit,
+          plan: planConfig
+        };
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // RULE A: NEVER LOSE THE LEAD (Section 20) & ATOMIC ENTITLEMENT (F-03)
+    // Contact intent/event persistence happens BEFORE abuse/SMS side-effects.
+    // In production, public.consume_contact_entitlement enforces atomic row-locked metering.
+    // --------------------------------------------------------------------------
+    let pgResult = { success: true, isDuplicate: false };
+    let rpcEntitlement = null;
+
+    if (!effectiveInject?.forceMemoryQuota && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      rpcEntitlement = await consumeContactEntitlementPg({
+        provider_id: provId,
+        channel: normChannel,
+        locality,
+        intent_tag,
+        idempotency_key: effectiveKey,
+        billing_period: period,
+        session_token
+      });
+
+      if (rpcEntitlement && rpcEntitlement.status === 'success') {
+        pgResult = {
+          success: true,
+          isDuplicate: Boolean(rpcEntitlement.is_duplicate),
+          eventId: rpcEntitlement.event_id
+        };
+      }
+    }
+
+    if (!rpcEntitlement || rpcEntitlement.status !== 'success') {
+      pgResult = await persistContactEvent({
+        provider_id: provId,
+        channel: normChannel,
+        locality,
+        intent_tag,
+        idempotency_key: effectiveKey,
+        billing_period: period,
+        session_token
+      });
+    }
 
     LeadStore.logContactLead({
       provider_id: provId,
@@ -420,195 +532,239 @@ const contactMeterHandler = async (req, res) => {
       }
     }
 
-    // Resolve Provider Plan and current usage
-    // Security: Untrusted client-supplied plan_id in req.body cannot escalate privileges.
-    // Only _inject.overridePlanId in test mocks or server-authoritative state is respected.
-    let record = usageStore.get(storeKey);
-    if (!record) {
-      const initialPlan = _inject?.overridePlanId ? String(_inject.overridePlanId).toUpperCase() : 'FREE';
-      record = { used: 0, whatsapp: 0, call: 0, plan_id: initialPlan };
-      usageStore.set(storeKey, record);
-    } else if (_inject?.overridePlanId) {
-      record.plan_id = String(_inject.overridePlanId).toUpperCase();
-    }
+    // --------------------------------------------------------------------------
+    // PRODUCTION AUTHORITY: POSTGRESQL ATOMIC ENTITLEMENT DECISION (F-03)
+    // --------------------------------------------------------------------------
+    if (rpcEntitlement && rpcEntitlement.status === 'success') {
+      const used = Number(rpcEntitlement.contacts_used || 0);
+      const allowance = Number(rpcEntitlement.allowance || 5);
+      const remaining = Number(rpcEntitlement.contacts_remaining != null ? rpcEntitlement.contacts_remaining : Math.max(0, allowance - used));
+      const planId = String(rpcEntitlement.plan_id || 'FREE').toUpperCase();
+      const planName = rpcEntitlement.plan_name || 'Free';
+      const isLimitReached = Boolean(rpcEntitlement.limit_reached);
 
-    const plan = PLAN_ALLOWANCES[record.plan_id] || PLAN_ALLOWANCES.FREE;
-    const isUnlimited = plan.allowance === 'unlimited';
-    const limit = isUnlimited ? plan.fairUse : plan.allowance;
-    const isSoftCap = Boolean(mode === 'soft_cap' || soft_cap);
+      usageStore.set(storeKey, {
+        used,
+        whatsapp: normChannel === 'whatsapp' ? 1 : 0,
+        call: normChannel === 'call' ? 1 : 0,
+        plan_id: planId
+      });
 
-    // Enforcement: Check if monthly limit reached
-    if (record.used >= limit) {
-      if (isSoftCap) {
-        if (pgResult.isDuplicate) {
-          return res.status(200).json({
-            status: 'success',
-            allowed: true,
-            soft_cap: true,
-            limit_reached: true,
-            quota_exhausted: true,
-            upgrade_required: true,
-            provider_id: provId,
-            channel: normChannel,
-            billing_period: period,
-            plan_id: plan.id,
-            plan_name: plan.name,
-            contacts_used: record.used,
-            contacts_remaining: 0,
-            allowance: plan.allowance,
-            idempotency_key: effectiveKey,
-            is_duplicate: true,
-            idempotent: true,
-            upgrade_recommended: plan.id === 'FREE' ? 'BASIC' : 'PRO',
-            upgrade_price_display: '₦5,500/month',
-            message: 'Contact initiated successfully in soft-cap mode (idempotent replay).'
-          });
-        }
-
-        record.used += 1;
-        if (normChannel === 'whatsapp') {
-          record.whatsapp += 1;
-        } else {
-          record.call += 1;
-        }
-
-        // Target-Specific Pair Limit (Section 11 & 14): 1 alert / 15 minutes / pair
-        const consumerIdentity = getCanonicalConsumerKey(session_token, clientIp, consumer_phone || phone);
-        const pairLimitKey = `contact_pair:${consumerIdentity}:${provId}`;
-        const pairLimitStatus = await checkRateLimit({
-          key: pairLimitKey,
-          maxRequests: 1,
-          windowSeconds: 15 * 60,
-          _inject
+      if (rpcEntitlement.is_duplicate) {
+        return res.status(200).json({
+          status: 'success',
+          allowed: true,
+          limit_reached: isLimitReached,
+          quota_exhausted: isLimitReached,
+          upgrade_required: isLimitReached,
+          provider_id: provId,
+          channel: normChannel,
+          billing_period: period,
+          plan_id: planId,
+          plan_name: planName,
+          contacts_used: used,
+          contacts_remaining: remaining,
+          allowance: allowance,
+          idempotency_key: effectiveKey,
+          is_duplicate: true,
+          idempotent: true,
+          message: 'Contact initiated successfully (idempotent replay).'
         });
+      }
 
-        if (pairLimitStatus.allowed) {
-          dispatchArtisanLeadAlert({
-            contactEventId: pgResult.eventId || effectiveKey,
-            providerId: provId,
-            locality,
-            intentTag: intent_tag,
-            _inject
-          }).catch(alertErr => {
-            console.error('[ContactMeter:AlertError:SoftCap]', alertErr.message);
-          });
-        }
+      if (isLimitReached && !isSoftCap) {
+        const responsePayload = {
+          status: 'limit_reached',
+          allowed: false,
+          soft_cap: false,
+          limit_reached: true,
+          quota_exhausted: true,
+          upgrade_required: true,
+          provider_id: provId,
+          channel: normChannel,
+          billing_period: period,
+          plan_id: planId,
+          plan_name: planName,
+          contacts_used: used,
+          contacts_remaining: 0,
+          allowance: allowance,
+          idempotency_key: effectiveKey,
+          upgrade_recommended: planId === 'FREE' ? 'BASIC' : 'PRO',
+          upgrade_price_display: '₦5,500/month',
+          message: planId === 'FREE'
+            ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
+            : `Monthly contact limit of ${allowance} reached for ${planName} plan.`
+        };
+        idempotencyCache.set(effectiveKey, responsePayload);
+        return res.status(200).json(responsePayload);
+      }
+
+      // Allowed (within allowance or soft_cap = true)
+      const consumerIdentity = getCanonicalConsumerKey(session_token, clientIp, consumer_phone || phone);
+      const pairLimitKey = `contact_pair:${consumerIdentity}:${provId}`;
+      const pairLimitStatus = await checkRateLimit({
+        key: pairLimitKey,
+        maxRequests: 1,
+        windowSeconds: 15 * 60,
+        _inject
+      });
+
+      if (pairLimitStatus.allowed) {
+        dispatchArtisanLeadAlert({
+          contactEventId: rpcEntitlement.event_id || effectiveKey,
+          providerId: provId,
+          locality,
+          intentTag: intent_tag,
+          _inject
+        }).catch(alertErr => {
+          console.error('[ContactMeter:AlertError:Pg]', alertErr.message);
+        });
       }
 
       const responsePayload = {
-        status: isSoftCap ? 'success' : 'limit_reached',
-        allowed: isSoftCap ? true : false,
-        soft_cap: isSoftCap,
-        limit_reached: true,
-        quota_exhausted: true,
-        upgrade_required: true,
+        status: 'success',
+        allowed: true,
+        soft_cap: isLimitReached && isSoftCap,
+        limit_reached: isLimitReached,
+        quota_exhausted: isLimitReached,
+        upgrade_required: isLimitReached,
         provider_id: provId,
         channel: normChannel,
         billing_period: period,
-        plan_id: plan.id,
-        plan_name: plan.name,
-        contacts_used: record.used,
-        contacts_remaining: 0,
-        allowance: plan.allowance,
+        plan_id: planId,
+        plan_name: planName,
+        contacts_used: used,
+        contacts_remaining: remaining,
+        allowance: allowance,
         idempotency_key: effectiveKey,
-        upgrade_recommended: plan.id === 'FREE' ? 'BASIC' : 'PRO',
+        upgrade_recommended: planId === 'FREE' ? 'BASIC' : 'PRO',
         upgrade_price_display: '₦5,500/month',
-        message: plan.id === 'FREE'
-          ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
-          : `Monthly contact limit of ${limit} reached for ${plan.name} plan.`
+        message: isLimitReached
+          ? (planId === 'FREE'
+              ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
+              : `Monthly contact limit of ${allowance} reached for ${planName} plan.`)
+          : 'Contact initiated successfully.'
       };
-
       idempotencyCache.set(effectiveKey, responsePayload);
-      if (idempotencyCache.size > 2000) {
-        const oldestKey = idempotencyCache.keys().next().value;
-        idempotencyCache.delete(oldestKey);
-      }
       return res.status(200).json(responsePayload);
     }
 
-    if (pgResult.isDuplicate) {
-      // Idempotent duplicate: already persisted in PostgreSQL
-      const currentRec = usageStore.get(storeKey);
-      const remaining = isUnlimited ? Math.max(0, plan.fairUse - (currentRec ? currentRec.used : 0)) : Math.max(0, plan.allowance - (currentRec ? currentRec.used : 0));
-      return res.status(200).json({
+    // --------------------------------------------------------------------------
+    // IN-MEMORY QUOTA ENFORCEMENT & RESPONSE DISPATCH (Offline / Test Scenarios)
+    // --------------------------------------------------------------------------
+    if (inMemoryReservation) {
+      if (pgResult.isDuplicate) {
+        // Roll back in-memory reservation if this turn was an idempotent duplicate
+        let rec = usageStore.get(storeKey);
+        if (rec && inMemoryReservation.allowed) {
+          rec.used = Math.max(0, rec.used - 1);
+        }
+        return res.status(200).json({
+          status: 'success',
+          allowed: true,
+          limit_reached: rec ? rec.used >= inMemoryReservation.plan.allowance : false,
+          quota_exhausted: false,
+          upgrade_required: false,
+          provider_id: provId,
+          channel: normChannel,
+          billing_period: period,
+          plan_id: inMemoryReservation.plan.id,
+          plan_name: inMemoryReservation.plan.name,
+          contacts_used: rec ? rec.used : 1,
+          contacts_remaining: rec ? Math.max(0, inMemoryReservation.plan.allowance - rec.used) : 0,
+          allowance: inMemoryReservation.plan.allowance,
+          idempotency_key: effectiveKey,
+          is_duplicate: true,
+          idempotent: true,
+          message: 'Contact initiated successfully (idempotent replay).'
+        });
+      }
+
+      if (!inMemoryReservation.allowed) {
+        const responsePayload = {
+          status: 'limit_reached',
+          allowed: false,
+          soft_cap: false,
+          limit_reached: true,
+          quota_exhausted: true,
+          upgrade_required: true,
+          provider_id: provId,
+          channel: normChannel,
+          billing_period: period,
+          plan_id: inMemoryReservation.plan.id,
+          plan_name: inMemoryReservation.plan.name,
+          contacts_used: inMemoryReservation.used,
+          contacts_remaining: 0,
+          allowance: inMemoryReservation.plan.allowance,
+          idempotency_key: effectiveKey,
+          upgrade_recommended: inMemoryReservation.plan.id === 'FREE' ? 'BASIC' : 'PRO',
+          upgrade_price_display: '₦5,500/month',
+          message: inMemoryReservation.plan.id === 'FREE'
+            ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
+            : `Monthly contact limit of ${inMemoryReservation.plan.allowance} reached for ${inMemoryReservation.plan.name} plan.`
+        };
+        idempotencyCache.set(effectiveKey, responsePayload);
+        return res.status(200).json(responsePayload);
+      }
+
+      // Allowed under inMemoryReservation
+      const consumerIdentity = getCanonicalConsumerKey(session_token, clientIp, consumer_phone || phone);
+      const pairLimitKey = `contact_pair:${consumerIdentity}:${provId}`;
+      const pairLimitStatus = await checkRateLimit({
+        key: pairLimitKey,
+        maxRequests: 1,
+        windowSeconds: 15 * 60,
+        _inject: effectiveInject
+      });
+
+      if (pairLimitStatus.allowed) {
+        dispatchArtisanLeadAlert({
+          contactEventId: pgResult.eventId || effectiveKey,
+          providerId: provId,
+          locality,
+          intentTag: intent_tag,
+          _inject: effectiveInject
+        }).catch(alertErr => {
+          console.error('[ContactMeter:AlertError:Memory]', alertErr.message);
+        });
+      }
+
+      const responsePayload = {
         status: 'success',
         allowed: true,
-        limit_reached: (currentRec ? currentRec.used : 0) >= limit,
-        quota_exhausted: false,
-        upgrade_required: false,
+        soft_cap: inMemoryReservation.limitReached && isSoftCap,
+        limit_reached: inMemoryReservation.limitReached,
+        quota_exhausted: inMemoryReservation.limitReached,
+        upgrade_required: inMemoryReservation.limitReached,
         provider_id: provId,
         channel: normChannel,
         billing_period: period,
-        plan_id: plan.id,
-        plan_name: plan.name,
-        contacts_used: currentRec ? currentRec.used : 1,
-        contacts_remaining: remaining,
-        allowance: plan.allowance,
+        plan_id: inMemoryReservation.plan.id,
+        plan_name: inMemoryReservation.plan.name,
+        contacts_used: inMemoryReservation.used,
+        contacts_remaining: inMemoryReservation.remaining,
+        allowance: inMemoryReservation.plan.allowance,
         idempotency_key: effectiveKey,
-        is_duplicate: true,
-        idempotent: true,
-        message: 'Contact initiated successfully (idempotent replay).'
-      });
+        upgrade_recommended: inMemoryReservation.plan.id === 'FREE' ? 'BASIC' : 'PRO',
+        upgrade_price_display: '₦5,500/month',
+        message: inMemoryReservation.limitReached
+          ? (inMemoryReservation.plan.id === 'FREE'
+              ? "You've reached your 5 customer contact limit for this month. Upgrade to Basic — ₦5,500/month."
+              : `Monthly contact limit of ${inMemoryReservation.plan.allowance} reached for ${inMemoryReservation.plan.name} plan.`)
+          : 'Contact initiated successfully.'
+      };
+      idempotencyCache.set(effectiveKey, responsePayload);
+      return res.status(200).json(responsePayload);
     }
 
-    // Atomic increment
-    record.used += 1;
-    if (normChannel === 'whatsapp') {
-      record.whatsapp += 1;
-    } else {
-      record.call += 1;
-    }
-
-    // Target-Specific Pair Limit (Section 11 & 14): 1 alert / 15 minutes / pair
-    const consumerIdentity = getCanonicalConsumerKey(session_token, clientIp, consumer_phone || phone);
-    const pairLimitKey = `contact_pair:${consumerIdentity}:${provId}`;
-    const pairLimitStatus = await checkRateLimit({
-      key: pairLimitKey,
-      maxRequests: 1,
-      windowSeconds: 15 * 60,
-      _inject
+    // Fail closed if neither database authority nor in-memory reservation handled the turn
+    return res.status(503).json({
+      status: 'store_unavailable',
+      allowed: false,
+      limit_reached: true,
+      error: 'Entitlement authority temporarily unavailable. Contact lead was safely persisted.',
+      lead_saved: true
     });
-
-    if (pairLimitStatus.allowed) {
-      dispatchArtisanLeadAlert({
-        contactEventId: pgResult.eventId || effectiveKey,
-        providerId: provId,
-        locality,
-        intentTag: intent_tag,
-        _inject
-      }).catch(alertErr => {
-        console.error('[ContactMeter:AlertError:Normal]', alertErr.message);
-      });
-    }
-
-    const remaining = isUnlimited ? Math.max(0, plan.fairUse - record.used) : Math.max(0, plan.allowance - record.used);
-
-    const successResponse = {
-      status: 'success',
-      allowed: true,
-      limit_reached: record.used >= limit,
-      quota_exhausted: false,
-      upgrade_required: false,
-      provider_id: provId,
-      channel: normChannel,
-      billing_period: period,
-      plan_id: plan.id,
-      plan_name: plan.name,
-      contacts_used: record.used,
-      contacts_remaining: remaining,
-      allowance: plan.allowance,
-      idempotency_key: effectiveKey,
-      message: 'Contact initiated successfully.'
-    };
-
-    // Store in idempotency cache
-    idempotencyCache.set(effectiveKey, successResponse);
-    if (idempotencyCache.size > 2000) {
-      const oldestKey = idempotencyCache.keys().next().value;
-      idempotencyCache.delete(oldestKey);
-    }
-
-    return res.status(200).json(successResponse);
 
   } catch (err) {
     return res.status(500).json({ error: 'Internal Server Error', message: err.message });
