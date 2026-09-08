@@ -241,25 +241,61 @@ All historical phase test suites were executed sequentially:
 
 ---
 
-## 6. KNOWN LIMITATIONS & REMAINING EXTERNAL GAPS
+## 6. PHASE 019.1 PRODUCTION MIGRATION & LIVE CERTIFICATION GATE
 
-1. **Remote Git Push / Deployment:**
-   Direct `git push origin main` from this local Windows shell failed with HTTP 408 (remote connection timeout). Local commit `bca8d4a` has been committed cleanly to `main`. Deployment to Vercel will trigger once the branch is pushed via authenticated GitHub credentials.
-2. **Supabase Migration 043 Execution:**
-   The migration file `supabase/migrations/043_padifix_phase_019_atomic_entitlement_consumption.sql` has been created and version-controlled. It must be applied to remote production Supabase (`hvxosxhnxauiqrhpyuur`) via the Supabase Dashboard SQL Editor or Supabase CLI migration pipeline.
-3. **Termii Live Activation:**
-   Live SMS dispatch remains held until NCC/telco regulatory approval is granted for the PadiFix Sender ID.
+### 6.1 GitHub Push & Production Deployment
+- **Git Push:** Successfully pushed commits `bca8d4a` (Implementation) and `3facd28` (Report) to `origin/main` (`c3a992b..3facd28 main -> main`).
+- **Remote HEAD:** Synchronized with `origin/main` at `3facd28`.
+- **Vercel Production Deployment:** Automatically triggered and active at `https://padifix.vercel.app`.
+
+### 6.2 Live API Smoke Verification (`https://padifix.vercel.app/api/providers`)
+Tested against live Vercel production:
+1. **Public Directory Discovery:** `GET /api/providers` returns `HTTP 200 OK`, `status: "success"`, 4 live database-backed providers.
+2. **Data Minimization:** Zero exposure of `user_id`, `email`, `phone`, `whatsapp_number`, `exact_address`, `latitude`, `longitude`, `paystack_customer_code`, or `subscription_id`.
+3. **Single Provider ID Lookup:** `GET /api/providers?id=101` returns `HTTP 200 OK` with sanitized provider record. Unknown provider `GET /api/providers?id=999999` returns `HTTP 404 Not Found`.
+4. **Category Filtering:** `GET /api/providers?category=electrician` returns `HTTP 200 OK` filtering correctly by category.
+5. **Bounded Pagination:** `GET /api/providers?page=-5&page_size=999` sanitizes page to 1 and clamps `page_size` to hard ceiling of 50.
+
+### 6.3 Live Browser E2E Verification
+Executed `scripts/verify_phase_012_3r_production.js` live against `https://padifix.vercel.app`:
+- **Viewports Verified (6):** Desktop (1280x720, 1440x900, 1920x1080), Mobile (320x844, 390x844, 412x915).
+- **Core Flows:** Cinematic hero stage, search and LGA filtering (returning live provider cards), provider profile WhatsApp flow, provider registration onboarding, and PWA install surface.
+- **Results:** **36 PASSED, 0 FAILED | Console Errors: 0**.
+
+### 6.4 Live Production Database Schema Verification
+Audited live Supabase project `hvxosxhnxauiqrhpyuur` via PostgREST:
+- `public.providers`: Verified active with all required fields (`user_id`, `is_active`, `is_public`, `profile_complete`, trade, contact, and geo fields).
+- `public.provider_plans`: Verified active with canonical pricing (FREE = ₦0 / 5 contacts, BASIC = ₦5,500 / 30 contacts, PRO = ₦11,000 / 100 contacts, PREMIUM = ₦22,000 / 500 contacts).
+- `public.provider_subscriptions`: Verified active with `current_period_start`, `current_period_end`, `lifecycle_status`, `grace_period_ends_at`, `last_payment_reference`.
+- `public.contact_events`: Verified active with `provider_id`, `channel`, `idempotency_key`, `billing_period`, `session_token`, `locality`, `intent_tag`, `status`.
+
+### 6.5 Migration 043 Execution State & Live RPC Gate
+- **Migration File:** [`supabase/migrations/043_padifix_phase_019_atomic_entitlement_consumption.sql`](file:///c:/All%20workspace/PadiFix%20project/lokator/supabase/migrations/043_padifix_phase_019_atomic_entitlement_consumption.sql)
+- **Security Audit:** Contains `SECURITY DEFINER`, fixed `search_path = public, pg_temp`, `SELECT ... FOR UPDATE` row locking, and index `idx_ce_provider_billing_period`.
+- **Live RPC Probe:** `POST https://hvxosxhnxauiqrhpyuur.supabase.co/rest/v1/rpc/consume_contact_entitlement` returned `HTTP 404 (PGRST202: function not found in schema cache)`.
+- **Execution Requirement:** Supabase connection pooling (Supavisor) is not enabled on port 6543 and direct IPv4 is not provisioned for the project. Migration 043 must be executed in the Supabase SQL Editor (`https://supabase.com/dashboard/project/hvxosxhnxauiqrhpyuur/sql/new`) to create the function in production.
 
 ---
 
-## 7. FINAL VERDICT
+## 7. REMAINING EXTERNAL EVIDENCE GAPS
+
+1. **Supabase Migration 043 Execution:** Run the SQL in `supabase/migrations/043_padifix_phase_019_atomic_entitlement_consumption.sql` via the Supabase Dashboard SQL Editor for `hvxosxhnxauiqrhpyuur`.
+2. **Termii Live Activation:** Live SMS remains held in `pending_sender_approval` with `TERMII_SENDER_ID_APPROVED=false` until regulatory NCC approval is granted.
+3. **Live Payment Activation:** Production payments remain in test mode (`PAYMENT_LIVE_MODE=false`) to prevent uncertified real monetary transactions.
+
+---
+
+## 8. FINAL VERDICT
 
 ```text
-PHASE 019 VERDICT: GREEN (IMPLEMENTATION CERTIFIED)
+PHASE 019.1 VERDICT: YELLOW — IMPLEMENTATION SOUND & DEPLOYED, SUPABASE SQL EDITOR MIGRATION PENDING
 ```
-- **F-01 Authentication & Isolation:** RESOLVED & CERTIFIED
-- **F-02 Live Directory & Publication:** RESOLVED & CERTIFIED
-- **F-03 Monetization & Atomic Entitlement:** RESOLVED & CERTIFIED
-- **Paystack Frozen Hashes:** BYTE-FOR-BYTE IDENTICAL
-- **Termii Safety:** STRICTLY PRESERVED (`TERMII_SENDER_ID_APPROVED=false`)
-- **Regression Suite:** 225/225 PASS (100% GREEN)
+- **Codebase & Architecture:** GREEN (All Phase 018 P1 blockers resolved)
+- **Paystack Frozen Hashes:** GREEN (Byte-for-byte identical across all 3 files)
+- **Termii Safety:** GREEN (`TERMII_SENDER_ID_APPROVED=false` preserved)
+- **Full Regression:** GREEN (225/225 automated checks passing)
+- **GitHub Push:** GREEN (Pushed to `main` at `3facd28`)
+- **Vercel Production Deployment:** GREEN (Live at `https://padifix.vercel.app`)
+- **Live API Smoke:** GREEN (`/api/providers` functional, sanitized, bounded)
+- **Live Browser QA:** GREEN (36/36 viewports passing, 0 console errors)
+- **Production Supabase Migration 043:** PENDING (Requires execution in Supabase SQL Editor)
