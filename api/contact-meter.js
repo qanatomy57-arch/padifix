@@ -417,6 +417,14 @@ const contactMeterHandler = async (req, res) => {
     // Check idempotency cache (Prevents double clicks, browser refreshes, network retries)
     if (idempotencyCache.has(effectiveKey)) {
       const cached = idempotencyCache.get(effectiveKey);
+      if (cached.provider_id && Number(cached.provider_id) !== Number(provId)) {
+        return res.status(409).json({
+          status: 'error',
+          allowed: false,
+          error: 'cross_provider_idempotency_conflict',
+          message: 'Idempotency key has already been used for another provider'
+        });
+      }
       const currentRec = usageStore.get(storeKey);
       return res.status(200).json({
         ...cached,
@@ -552,6 +560,15 @@ const contactMeterHandler = async (req, res) => {
     // --------------------------------------------------------------------------
     // PRODUCTION AUTHORITY: POSTGRESQL ATOMIC ENTITLEMENT DECISION (F-03)
     // --------------------------------------------------------------------------
+    if (rpcEntitlement && rpcEntitlement.error === 'cross_provider_idempotency_conflict') {
+      return res.status(409).json({
+        status: 'error',
+        allowed: false,
+        error: 'cross_provider_idempotency_conflict',
+        message: 'Idempotency key has already been used for another provider'
+      });
+    }
+
     if (rpcEntitlement && (rpcEntitlement.status === 'success' || rpcEntitlement.status === 'limit_reached')) {
       const used = Number(rpcEntitlement.contacts_used || 0);
       const allowance = Number(rpcEntitlement.allowance || 5);
