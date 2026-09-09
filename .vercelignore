@@ -9,3 +9,4 @@ test_*.js
 schema.sql
 .git
 .github
+api/admin-analytics.js

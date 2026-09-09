@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/admin-analytics",
+      "destination": "/api/admin-compliance?__route=admin-analytics"
+    }
+  ]
+}

@@ -537,6 +537,15 @@ async function authenticateRequest(req) {
 // Core Request Handler
 // -------------------------------------------------------------
 const adminComplianceHandler = async (req, res) => {
+  // Check if routed from /api/admin-analytics
+  const rawUrl = req.url || '';
+  const matchedPath = req.headers['x-matched-path'] || '';
+  const queryRoute = req.query?.__route || (rawUrl.includes('__route=admin-analytics') ? 'admin-analytics' : '');
+  if (rawUrl.includes('admin-analytics') || matchedPath.includes('admin-analytics') || queryRoute === 'admin-analytics') {
+    const adminAnalyticsCore = require('../lib/admin-analytics-core');
+    return adminAnalyticsCore(req, res);
+  }
+
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
