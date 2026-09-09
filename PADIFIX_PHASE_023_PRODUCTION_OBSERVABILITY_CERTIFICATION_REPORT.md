@@ -2,10 +2,10 @@
 
 **Project:** PadiFix Nigeria Skills Marketplace  
 **Production URL:** `https://padifix.vercel.app`  
-**Active Production Deployment:** `https://lokator-r6854hxef-qanatomy57-archs-projects.vercel.app`  
+**Active Production Deployment:** `https://lokator-fdx79aqoi-qanatomy57-archs-projects.vercel.app`  
 **Production Supabase Project:** `hvxosxhnxauiqrhpyuur` (`eu-west-3`)  
 **Production Branch:** `main`  
-**Git Commit SHA:** `8c465cf` (`fix(deploy): route /api/admin-analytics through admin-compliance to comply with Vercel 12-function limit`)  
+**Git Commit SHA:** `aa315a1` (`docs(phase-023): update certification report with root-cause analysis and live deployment verification`)  
 **Deployment State:** **`READY`**  
 **Audit Timestamp:** 2026-09-09T05:35:00Z  
 **Final Certification Classification:** **`GREEN (CERTIFIED OPERATIONAL & PRIVACY-COMPLIANT)`**  
