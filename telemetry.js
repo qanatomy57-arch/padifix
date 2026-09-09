@@ -348,39 +348,27 @@
     },
 
     /**
-     * Flushes queued telemetry batch to Supabase REST endpoint
+     * Flushes queued telemetry batch to serverless /api/telemetry endpoint
      */
     flushBatch() {
       if (inMemoryBatch.length === 0) return;
       const itemsToSend = inMemoryBatch.splice(0, MAX_BATCH_SIZE);
 
       try {
-        let supabaseUrl = null;
-        let anonKey = null;
-
-        if (typeof window !== 'undefined' && window.SUPABASE_CONFIG) {
-          supabaseUrl = window.SUPABASE_CONFIG.url;
-          anonKey = window.SUPABASE_CONFIG.anonKey;
-        } else if (typeof process !== 'undefined' && process.env) {
-          supabaseUrl = process.env.SUPABASE_URL || 'https://hvxosxhnxauiqrhpyuur.supabase.co';
-          anonKey = process.env.SUPABASE_ANON_KEY;
+        let endpoint = '/api/telemetry';
+        if (typeof window !== 'undefined' && window.APP_URL && !window.APP_URL.includes('localhost')) {
+          endpoint = `${window.APP_URL.replace(/\/$/, '')}/api/telemetry`;
+        } else if (typeof process !== 'undefined' && process.env && process.env.APP_URL) {
+          endpoint = `${process.env.APP_URL.replace(/\/$/, '')}/api/telemetry`;
         }
 
-        if (!supabaseUrl || !anonKey) {
-          return; // No sink credentials configured; silently drop
-        }
-
-        const endpoint = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/analytics_events`;
         const bodyStr = JSON.stringify(itemsToSend);
 
         if (typeof fetch === 'function') {
           fetch(endpoint, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
-              'apikey': anonKey,
-              'Authorization': `Bearer ${anonKey}`,
-              'Prefer': 'return=minimal'
+              'Content-Type': 'application/json'
             },
             body: bodyStr,
             keepalive: true
@@ -395,7 +383,7 @@
     },
 
     /**
-     * Centralized Error Logger
+     * Centralized Error Logger with PadiFixSentry Bridge
      */
     reportError(error, context = {}) {
       try {
@@ -408,7 +396,16 @@
           path: (typeof window !== 'undefined' && window.location) ? window.location.pathname.substring(0, 128) : '/'
         };
 
+        // 1. Log lightweight event in telemetry pipeline
         this.trackEvent('client_error', payload);
+
+        // 2. Bridge to PadiFixSentry if available
+        if (typeof window !== 'undefined' && window.PadiFixSentry && typeof window.PadiFixSentry.captureException === 'function') {
+          try {
+            window.PadiFixSentry.captureException(error instanceof Error ? error : new Error(errMessage), context);
+          } catch (sentryErr) {}
+        }
+
         if (typeof console !== 'undefined' && console.warn) {
           console.warn('[Lokator Telemetry Notice]:', errMessage);
         }
