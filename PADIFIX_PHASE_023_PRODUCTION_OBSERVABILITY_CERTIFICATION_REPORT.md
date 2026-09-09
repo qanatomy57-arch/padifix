@@ -2,15 +2,55 @@
 
 **Project:** PadiFix Nigeria Skills Marketplace  
 **Production URL:** `https://padifix.vercel.app`  
+**Active Production Deployment:** `https://lokator-r6854hxef-qanatomy57-archs-projects.vercel.app`  
 **Production Supabase Project:** `hvxosxhnxauiqrhpyuur` (`eu-west-3`)  
 **Production Branch:** `main`  
-**Git Commit SHA:** `edcf363` (`feat(phase-023): implement privacy-constrained telemetry, core web vitals and sentry hardening`)  
-**Audit Timestamp:** 2026-09-09T05:04:30Z  
+**Git Commit SHA:** `8c465cf` (`fix(deploy): route /api/admin-analytics through admin-compliance to comply with Vercel 12-function limit`)  
+**Deployment State:** **`READY`**  
+**Audit Timestamp:** 2026-09-09T05:35:00Z  
 **Final Certification Classification:** **`GREEN (CERTIFIED OPERATIONAL & PRIVACY-COMPLIANT)`**  
 
 ---
 
-## A. IMPLEMENTATION SUMMARY
+## A. VERCEL DEPLOYMENT FAILURE ROOT CAUSE & RECOVERY
+
+### Root Cause Analysis:
+1. **12 Serverless Function Limit on Vercel Hobby Plan:**
+   - Vercel's Hobby plan enforces a hard limit of **12 Serverless Functions per deployment**.
+   - In Phase 022R, the project contained 11 serverless functions in `api/`.
+   - Phase 023 introduced two new routes: `api/telemetry.js` and `api/admin-analytics.js`, bringing the total count to **13 Serverless Functions**.
+   - Upon output deployment, Vercel's builder failed with:
+     ```
+     Error: No more than 12 Serverless Functions can be added to a Deployment on the Hobby plan. Create a team (Pro plan) to deploy more.
+     ```
+2. **Excess Deployment Payload Size:**
+   - Without a `.vercelignore` file, 537 local test/verification scripts (`scripts/`, 75.6 MB), scratch files, and audit markdown documentation were being bundled into the output directory, causing payload bloat.
+
+### Architectural Resolution & Recovery:
+1. **Created `.vercelignore`:** Excluded non-runtime verification suites (`scripts/`), documentation (`docs/`, `*.md`), and database migration files (`supabase/`), dropping static output size by over 235 MB.
+2. **Unified Admin Controller Architecture:**
+   - Created `lib/admin-analytics-core.js` containing the authoritative Dual-Auth analytics engine.
+   - Preserved `api/admin-analytics.js` for local tooling and verification suites by re-exporting `lib/admin-analytics-core.js`.
+   - Added `api/admin-analytics.js` to `.vercelignore` so Vercel discovers exactly **12 Serverless Functions**.
+   - Configured `vercel.json` rewrite:
+     ```json
+     {
+       "rewrites": [
+         {
+           "source": "/api/admin-analytics",
+           "destination": "/api/admin-compliance?__route=admin-analytics"
+         }
+       ]
+     }
+     ```
+   - Updated `api/admin-compliance.js` to transparently route requests for `/api/admin-analytics` to `adminAnalyticsCore`.
+3. **Deployment Verification:**
+   - Production deployment `dpl_3xwVuUbk9bGth99MXaN2iwkLmWTv` succeeded and aliased to `https://padifix.vercel.app`.
+   - Automated GitHub push commit `8c465cf` deployed cleanly: deployment `lokator-r6854hxef-qanatomy57-archs-projects.vercel.app` reached `READY` in 14s.
+
+---
+
+## B. IMPLEMENTATION SUMMARY
 
 Phase 023 establishes production-grade observability, privacy-conscious edge telemetry, Core Web Vitals monitoring, and Sentry error trapping for PadiFix while maintaining zero client IP storage, zero PII persistence, strict zero-trust database privilege boundaries, and immutable Paystack payment freezes.
 
@@ -26,13 +66,15 @@ Phase 023 establishes production-grade observability, privacy-conscious edge tel
    - Strict batch gating (max 10 events, max 16 KB body).
    - Canonical event-specific property allowlists; instant HTTP 400 rejection for unknown properties, nested objects, or forbidden PII/network keys.
    - Server-side constructed records persisted via Supabase `service_role`.
-3. `api/admin-analytics.js`:
+3. `lib/admin-analytics-core.js` & `api/admin-analytics.js`:
    - Dual-Auth administrative endpoint requiring BOTH `PADIFIX_ADMIN_KEY` AND `ADMIN_EMAIL`.
    - Aggregate-only reporting for 24h / 7d windows: Lead Funnel, Core Web Vitals (p75 LCP, INP, CLS, TTFB), and client error summaries.
    - Zero disclosure of which credential failed; constant-time secret comparison.
-4. `scripts/verify_phase_023_observability.js`:
+4. `vercel.json` & `.vercelignore`:
+   - Enforces the 12-function Hobby plan boundary and excludes test suites from deployment bundle.
+5. `scripts/verify_phase_023_observability.js`:
    - 15-Gate automated verification suite executing full end-to-end security and telemetry assertions.
-5. `scripts/capture_phase_023_evidence.js`:
+6. `scripts/capture_phase_023_evidence.js`:
    - Playwright automated production browser probe verifying search, profile, telemetry flush, and sanitized Sentry exception dispatch.
 
 ### Files Modified:
@@ -170,14 +212,15 @@ All Paystack files and safety flags match the immutable cryptographic baseline:
 
 ## K. PRODUCTION & BROWSER CERTIFICATION
 
-Automated Playwright browser probe executed against live production `https://padifix.vercel.app` (Deployment ID: `cpt1::fwlvd-1788926586632-3067b4e04359`):
+Automated Playwright browser probe executed against live production `https://padifix.vercel.app` (Deployment ID: `dpl_3xwVuUbk9bGth99MXaN2iwkLmWTv` / `lokator-r6854hxef-qanatomy57-archs-projects.vercel.app`):
 1. **Search & Discovery Journey:** Navigated to `/search.html`, verified interactive card rendering, filter selections, and visual layout.
 2. **Artisan Profile Journey:** Navigated to `/profile.html?id=101`, verified artisan bio, rating badges, and action triggers.
 3. **Network Traffic Inspection:**
    - Direct requests to `/rest/v1/analytics_events`: **0 (NONE DETECTED)**.
+   - Total network requests inspected: **62**.
    - Telemetry payloads inspected: zero IP, zero JWT, zero authorization headers, zero emails, zero phone numbers, zero raw queries.
-4. **Sentry Error Dispatch:** Triggered browser synthetic verification error; received Sentry event ID `3d48d8b76a4a4d4fa3b6c4be79b7808c` with full privacy sanitization.
-5. **Data Minimization Integrity:** Public `/api/providers` query confirmed 4 registered providers with `phone: false` and `whatsapp_number: false`.
+4. **Sentry Error Dispatch:** Triggered browser synthetic verification error; received Sentry event ID `1232e6a7043e40428968eaabc148ce22` with full privacy sanitization.
+5. **Data Minimization Integrity:** Public `/api/providers` query confirmed registered providers with `phone: false` and `whatsapp_number: false`.
 
 ---
 
