@@ -25,3 +25,5 @@ Thumbs.db
 # Local scratch and test binaries
 scratch/
 supabase/.temp/
+
+.vercel

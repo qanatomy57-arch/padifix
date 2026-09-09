@@ -1,0 +1,11 @@
+# Development and verification tooling
+scripts/
+scratch/
+evidence_canonical_logo/
+docs/
+supabase/
+*.md
+test_*.js
+schema.sql
+.git
+.github
