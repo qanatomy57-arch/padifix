@@ -298,10 +298,18 @@
         <div class="dash-card-section dash-section-spaced">
           <div class="dash-section-header">
             <div>
-              <h2>Recent Leads</h2>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <h2 style="margin: 0;">Recent Leads</h2>
+                <span id="realtime-stream-status" class="dash-stream-pill live" title="Real-time WebSocket active">
+                  <span class="stream-dot"></span> Live
+                </span>
+              </div>
               <p>Direct customer inquiries from your local area</p>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <button type="button" class="btn btn-outline" id="btn-toggle-lead-sound" aria-label="Toggle Lead Audio Chime" title="Toggle sound notification for incoming leads">
+                <span id="lead-sound-icon">🔊</span> <span id="lead-sound-text">Sound On</span>
+              </button>
               <button type="button" class="btn btn-outline" id="btn-refresh-leads" title="Refresh leads list and quota">🔄 Refresh</button>
               <button type="button" class="btn btn-outline" id="btn-export-leads-csv" title="Export privacy-safe lead history as CSV">📥 Export CSV</button>
               <button type="button" class="btn btn-outline btn-view-all-revs" onclick="switchTab('reviews')">View Reviews →</button>

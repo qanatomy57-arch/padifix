@@ -156,6 +156,80 @@ async function consumeContactEntitlementPg({ provider_id, channel, idempotency_k
   return null;
 }
 
+/**
+ * PHASE 027: Real-Time Artisan Dashboard Lead Stream Broadcast
+ * Emits a real-time lead notification broadcast via Supabase Realtime REST API.
+ * Target channel topic: artisan-leads:<provider_id>
+ * Event name: 'new_lead'
+ * Strict Invariant C: Zero customer PII in payload.
+ * Non-blocking: failures never fail or delay the consumer flow.
+ */
+async function emitRealtimeLeadBroadcast({ eventId, providerId, channel, locality, intentTag, _inject }) {
+  if (!eventId || !providerId) return null;
+  if (_inject?.skipRealtimeBroadcast) return { skipped: true };
+
+  const cleanLocality = locality ? String(locality).replace(/<[^>]*>/g, '').trim().substring(0, 80) : 'Local Area';
+  const cleanIntent = intentTag ? String(intentTag).replace(/<[^>]*>/g, '').trim().substring(0, 80) : 'Artisan Service';
+  const numProviderId = Number(providerId);
+
+  // Whitelist-only sanitized lead metadata (Invariant C - Absolute Zero Customer PII)
+  const payload = {
+    id: String(eventId),
+    provider_id: numProviderId,
+    channel: channel === 'whatsapp' ? 'whatsapp' : 'call',
+    locality: cleanLocality,
+    intent_tag: cleanIntent,
+    timestamp: Date.now(),
+    status: 'new'
+  };
+
+  // Test sink injection for automated verification
+  if (_inject?.broadcastSink && Array.isArray(_inject.broadcastSink)) {
+    _inject.broadcastSink.push({
+      topic: `artisan-leads:${numProviderId}`,
+      event: 'new_lead',
+      payload: { ...payload }
+    });
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_AUTH_KEY) {
+    return { success: true, offline: true, payload };
+  }
+
+  try {
+    const topic = `artisan-leads:${numProviderId}`;
+    const broadcastBody = JSON.stringify({
+      messages: [
+        {
+          topic,
+          event: 'new_lead',
+          payload
+        }
+      ]
+    });
+
+    const res = await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_AUTH_KEY,
+        'Authorization': `Bearer ${SUPABASE_AUTH_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: broadcastBody
+    });
+
+    return {
+      success: res.ok,
+      status: res.status,
+      topic,
+      payload
+    };
+  } catch (err) {
+    console.error('[ContactMeter:RealtimeBroadcastException]', err.message);
+    return { success: false, error: err.message, payload };
+  }
+}
+
 // In-memory usage store for serverless execution / testing
 // Structure: Map<`${provider_id}_${billing_period}`, { used, whatsapp, call, plan_id }>
 const usageStore = LeadStore.usageStore;
@@ -692,6 +766,17 @@ const contactMeterHandler = async (req, res) => {
         }).catch(alertErr => {
           console.error('[ContactMeter:AlertError:Pg]', alertErr.message);
         });
+
+        emitRealtimeLeadBroadcast({
+          eventId: canonicalEventId,
+          providerId: provId,
+          channel: normChannel,
+          locality,
+          intentTag: intent_tag,
+          _inject
+        }).catch(broadcastErr => {
+          console.error('[ContactMeter:BroadcastError:Pg]', broadcastErr.message);
+        });
       }
 
       let coords = null;
@@ -702,6 +787,7 @@ const contactMeterHandler = async (req, res) => {
       const responsePayload = {
         status: 'success',
         allowed: true,
+        contact_event_id: canonicalEventId,
         soft_cap: isLimitReached && isSoftCap,
         limit_reached: isLimitReached,
         quota_exhausted: isLimitReached,
@@ -806,6 +892,17 @@ const contactMeterHandler = async (req, res) => {
         }).catch(alertErr => {
           console.error('[ContactMeter:AlertError:Memory]', alertErr.message);
         });
+
+        emitRealtimeLeadBroadcast({
+          eventId: canonicalEventId,
+          providerId: provId,
+          channel: normChannel,
+          locality,
+          intentTag: intent_tag,
+          _inject: effectiveInject
+        }).catch(broadcastErr => {
+          console.error('[ContactMeter:BroadcastError:Memory]', broadcastErr.message);
+        });
       }
 
       let coords = null;
@@ -816,6 +913,7 @@ const contactMeterHandler = async (req, res) => {
       const responsePayload = {
         status: 'success',
         allowed: true,
+        contact_event_id: canonicalEventId,
         soft_cap: inMemoryReservation.limitReached && isSoftCap,
         limit_reached: inMemoryReservation.limitReached,
         quota_exhausted: inMemoryReservation.limitReached,
@@ -862,5 +960,6 @@ handler.checkRateLimit = checkRateLimit;
 handler.resetRateLimitsForTest = resetRateLimitsForTest;
 handler.memoryRateLimits = memoryRateLimits;
 handler.contactMeterHandler = contactMeterHandler;
+handler.emitRealtimeLeadBroadcast = emitRealtimeLeadBroadcast;
 
 module.exports = handler;

@@ -48,6 +48,8 @@ const providerLeadsHandler = async (req, res) => {
   const queryLimit = parseInt(req.query?.limit || urlObj.searchParams.get('limit') || '50', 10);
   const queryOffset = parseInt(req.query?.offset || urlObj.searchParams.get('offset') || '0', 10);
   const queryStatus = req.query?.status || urlObj.searchParams.get('status');
+  const querySince = req.query?.since || urlObj.searchParams.get('since');
+  const queryLeadId = req.query?.lead_id || urlObj.searchParams.get('lead_id');
 
   // GET: Fetch Authoritative Quota and Lead Inbox
   if (req.method === 'GET') {
@@ -78,6 +80,12 @@ const providerLeadsHandler = async (req, res) => {
           let pgUrl = `${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.${providerId}&select=id,provider_id,channel,locality,status,intent_tag,notes,created_at&order=created_at.desc&limit=${cleanLimit}&offset=${cleanOffset}`;
           if (queryStatus) {
             pgUrl += `&status=eq.${encodeURIComponent(queryStatus)}`;
+          }
+          if (querySince) {
+            pgUrl += `&created_at=gt.${encodeURIComponent(querySince)}`;
+          }
+          if (queryLeadId) {
+            pgUrl += `&id=eq.${encodeURIComponent(queryLeadId)}`;
           }
 
           const pgRes = await fetch(pgUrl, {
@@ -177,11 +185,16 @@ const providerLeadsHandler = async (req, res) => {
       const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
 
       // Validate status if provided
+      let normStatus = undefined;
       if (status !== undefined) {
-        const normStatus = String(status).toLowerCase().trim();
+        normStatus = String(status).toLowerCase().trim();
+        // Support Phase 027 'contacted' quick action: map 'contacted' -> 'in_discussion'
+        if (normStatus === 'contacted') {
+          normStatus = 'in_discussion';
+        }
         if (!['new', 'in_discussion', 'quote_sent', 'job_won'].includes(normStatus)) {
           return res.status(400).json({
-            error: `Invalid status: '${status}'. Allowed values: new, in_discussion, quote_sent, job_won.`
+            error: `Invalid status: '${status}'. Allowed values: new, contacted, in_discussion, quote_sent, job_won.`
           });
         }
       }
@@ -203,7 +216,7 @@ const providerLeadsHandler = async (req, res) => {
       if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
         try {
           const patchPayload = { updated_at: new Date().toISOString() };
-          if (status !== undefined) patchPayload.status = String(status).toLowerCase().trim();
+          if (normStatus !== undefined) patchPayload.status = normStatus;
           if (notes !== undefined) {
             patchPayload.notes = (notes === null || notes === '') ? null : String(notes).replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '').replace(/<[^>]*>/g, '').trim();
           }
@@ -242,7 +255,7 @@ const providerLeadsHandler = async (req, res) => {
 
       // If updated in PostgreSQL, sync in-memory store and return
       if (pgUpdated && updatedLead) {
-        LeadStore.updateLead(activeProviderId, lead_id.trim(), { status, notes });
+        LeadStore.updateLead(activeProviderId, lead_id.trim(), { status: normStatus || status, notes });
         return res.status(200).json({
           status: 'success',
           message: 'Lead updated successfully.',
@@ -252,7 +265,7 @@ const providerLeadsHandler = async (req, res) => {
 
       // Fallback to LeadStore for in-memory seed records
       const result = LeadStore.updateLead(activeProviderId, lead_id.trim(), {
-        status,
+        status: normStatus || status,
         notes
       });
 

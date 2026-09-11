@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-09-11T19:24:25.057Z",
+  "totalGates": 8,
+  "passedGates": 8,
+  "failedGates": 0,
+  "status": "GREEN",
+  "gateResults": [
+    {
+      "gate": 1,
+      "title": "Broadcast Emission on Contact Event",
+      "passed": true,
+      "detail": "Canonical UUID: 056dae02-330d-404f-861d-81cd7c5c6953 emitted after persistence to artisan-leads:8",
+      "error": null
+    },
+    {
+      "gate": 2,
+      "title": "Multi-Tenant Channel & Payload Isolation",
+      "passed": true,
+      "detail": "Bidirectional isolation proven: provider 8 strictly quarantined from provider 999 events.",
+      "error": null
+    },
+    {
+      "gate": 3,
+      "title": "Zero Customer PII Invariant",
+      "passed": true,
+      "detail": "Deep recursive inspection confirmed zero customer names, phone numbers, emails, or chat bodies.",
+      "error": null
+    },
+    {
+      "gate": 4,
+      "title": "DOM Hydration & Canonical Deduplication",
+      "passed": true,
+      "detail": "Event a8ece592-5b6b-4e24-9f3c-4bb025c9d07a processed: exactly 1 card, 1 KPI increment, 1 chime, 1 toast.",
+      "error": null
+    },
+    {
+      "gate": 5,
+      "title": "Quick Action — Mark Contacted",
+      "passed": true,
+      "detail": "Status \"contacted\" cleanly mapped to \"in_discussion\" with tenant authorization enforced.",
+      "error": null
+    },
+    {
+      "gate": 6,
+      "title": "Quick Action — Private Notes",
+      "passed": true,
+      "detail": "Private notes successfully persisted, character cap (500) enforced, XSS defenses active.",
+      "error": null
+    },
+    {
+      "gate": 7,
+      "title": "Adaptive Polling Fallback & Recovery",
+      "passed": true,
+      "detail": "Offline lead lead_1789154664266_216d93844d1f successfully recovered via polling cursor; late socket push deduplicated.",
+      "error": null
+    },
+    {
+      "gate": 8,
+      "title": "Web Audio & Mute Persistence",
+      "passed": true,
+      "detail": "Web Audio synthesis executes without errors, mute state persists across sessions.",
+      "error": null
+    }
+  ]
+}

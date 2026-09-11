@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-09-11T19:28:40.748Z",
+  "results": {
+    "desktop": {
+      "passed": true,
+      "checks": {
+        "streamStatusPresent": true,
+        "soundTogglePresent": true,
+        "muteToggled": true,
+        "unmuteToggled": true,
+        "leadCardPrepended": true,
+        "kpiIncremented": true,
+        "toastNotification": true,
+        "copyBriefZeroPii": true,
+        "markContactedStatus": true,
+        "noHorizontalOverflow": true
+      }
+    },
+    "mobile": {
+      "passed": true,
+      "checks": {
+        "streamStatusPresent": true,
+        "soundTogglePresent": true,
+        "leadCardPrepended": true,
+        "noHorizontalOverflow": true
+      }
+    }
+  },
+  "consoleErrors": [],
+  "status": "GREEN"
+}

@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (kebabSignout) {
     kebabSignout.addEventListener('click', async () => {
+      if (typeof cleanupRealtimeLeadStream === 'function') cleanupRealtimeLeadStream();
       await LokatorDB.auth.signOut();
       window.location.href = 'login.html';
     });
@@ -165,6 +166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnSignOut = document.getElementById('btn-signout');
   if (btnSignOut) {
     btnSignOut.addEventListener('click', async () => {
+      if (typeof cleanupRealtimeLeadStream === 'function') cleanupRealtimeLeadStream();
       await LokatorDB.auth.signOut();
       window.location.href = 'login.html';
     });
@@ -349,6 +351,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // Helper to construct lead card HTML with Phase 027 quick action chips
+  function createLeadCardHtml(lead, isNewlyArrived = false) {
+    const isWa = lead.channel === 'whatsapp';
+    const channelIcon = isWa ? '💬' : '📞';
+    const channelClass = isWa ? 'whatsapp' : 'call';
+    const locality = escapeHtml(lead.locality || 'Local Area');
+    const intent = escapeHtml(lead.intent_tag || 'Direct Customer Inquiry');
+    const time = escapeHtml(lead.relative_time || 'Just now');
+    const notes = lead.notes ? escapeHtml(lead.notes) : '';
+    const status = lead.status || 'new';
+    const newlyClass = isNewlyArrived ? ' newly-arrived' : '';
+
+    return `
+      <div class="dash-lead-item${newlyClass}" id="lead-card-${escapeHtml(lead.id)}" data-lead-id="${escapeHtml(lead.id)}">
+        <div style="width: 100%;">
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px;">
+            <div class="dash-lead-left">
+              <div class="dash-lead-channel-icon ${channelClass}" title="${isWa ? 'WhatsApp Inquiry' : 'Phone Call'}">
+                ${channelIcon}
+              </div>
+              <div style="min-width: 0;">
+                <div class="dash-lead-name dash-lead-locality">📍 ${locality}</div>
+                <div class="dash-lead-service dash-lead-intent">${intent}</div>
+                ${notes ? `<div class="dash-lead-notes-drawer" id="notes-text-${escapeHtml(lead.id)}">📝 ${notes}</div>` : `<div id="notes-text-${escapeHtml(lead.id)}" style="display:none;"></div>`}
+              </div>
+            </div>
+            <div class="dash-lead-right">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <select class="dash-lead-status-select status-${status}" data-lead-id="${escapeHtml(lead.id)}" title="Update Lead Status">
+                  <option value="new" ${status === 'new' ? 'selected' : ''}>New</option>
+                  <option value="in_discussion" ${status === 'in_discussion' ? 'selected' : ''}>In Discussion</option>
+                  <option value="quote_sent" ${status === 'quote_sent' ? 'selected' : ''}>Quote Sent</option>
+                  <option value="job_won" ${status === 'job_won' ? 'selected' : ''}>Job Won</option>
+                </select>
+                <button type="button" class="dash-lead-notes-btn" data-lead-id="${escapeHtml(lead.id)}" title="Add or edit private note">✏️</button>
+              </div>
+              <span class="dash-lead-time">${time}</span>
+            </div>
+          </div>
+          <!-- PHASE 027 QUICK ACTIONS -->
+          <div class="dash-lead-quick-actions">
+            <button type="button" class="btn-quick-chip btn-chip-contacted" data-lead-id="${escapeHtml(lead.id)}" title="Mark this lead as contacted">
+              ✓ Mark Contacted
+            </button>
+            <button type="button" class="btn-quick-chip btn-chip-note" data-lead-id="${escapeHtml(lead.id)}" title="Add or edit a private note for this lead">
+              📝 Add Note
+            </button>
+            <button type="button" class="btn-quick-chip btn-chip-copy" data-lead-id="${escapeHtml(lead.id)}" data-intent="${intent}" data-locality="${locality}" data-channel="${isWa ? 'WhatsApp' : 'Phone Call'}" title="Copy sanitized inquiry summary to clipboard">
+              📋 Copy Brief
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderLeadsInbox(leads) {
     const leadsContainer = document.getElementById('recent-leads-list');
     if (!leadsContainer) return;
@@ -365,44 +423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    leadsContainer.innerHTML = leads.map(lead => {
-      const isWa = lead.channel === 'whatsapp';
-      const channelIcon = isWa ? '💬' : '📞';
-      const channelClass = isWa ? 'whatsapp' : 'call';
-      const locality = escapeHtml(lead.locality || 'Local Area');
-      const intent = escapeHtml(lead.intent_tag || 'Direct Customer Inquiry');
-      const time = escapeHtml(lead.relative_time || 'Recently');
-      const notes = lead.notes ? escapeHtml(lead.notes) : '';
-      const status = lead.status || 'new';
-
-      return `
-        <div class="dash-lead-item" id="lead-card-${escapeHtml(lead.id)}" data-lead-id="${escapeHtml(lead.id)}">
-          <div class="dash-lead-left">
-            <div class="dash-lead-channel-icon ${channelClass}" title="${isWa ? 'WhatsApp Inquiry' : 'Phone Call'}">
-              ${channelIcon}
-            </div>
-            <div style="min-width: 0;">
-              <div class="dash-lead-name dash-lead-locality">📍 ${locality}</div>
-              <div class="dash-lead-service dash-lead-intent">${intent}</div>
-              ${notes ? `<div class="dash-lead-notes-drawer" id="notes-text-${escapeHtml(lead.id)}">📝 ${notes}</div>` : `<div id="notes-text-${escapeHtml(lead.id)}" style="display:none;"></div>`}
-            </div>
-          </div>
-          <div class="dash-lead-right">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <select class="dash-lead-status-select status-${status}" data-lead-id="${escapeHtml(lead.id)}" title="Update Lead Status">
-                <option value="new" ${status === 'new' ? 'selected' : ''}>New</option>
-                <option value="in_discussion" ${status === 'in_discussion' ? 'selected' : ''}>In Discussion</option>
-                <option value="quote_sent" ${status === 'quote_sent' ? 'selected' : ''}>Quote Sent</option>
-                <option value="job_won" ${status === 'job_won' ? 'selected' : ''}>Job Won</option>
-              </select>
-              <button type="button" class="dash-lead-notes-btn" data-lead-id="${escapeHtml(lead.id)}" title="Add or edit private note">✏️</button>
-            </div>
-            <span class="dash-lead-time">${time}</span>
-          </div>
-        </div>
-      `;
-    }).join('');
-
+    leadsContainer.innerHTML = leads.map(lead => createLeadCardHtml(lead, false)).join('');
     bindLeadControls();
   }
 
@@ -428,6 +449,63 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
+    // PHASE 027: Quick Action Chip - Mark Contacted
+    document.querySelectorAll('.btn-chip-contacted').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', async () => {
+        const leadId = btn.dataset.leadId;
+        const selectEl = document.querySelector(`.dash-lead-status-select[data-lead-id="${leadId}"]`);
+        await handleLeadStatusChange(leadId, 'in_discussion', selectEl);
+      });
+    });
+
+    // PHASE 027: Quick Action Chip - Add Note
+    document.querySelectorAll('.btn-chip-note').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', async () => {
+        const leadId = btn.dataset.leadId;
+        await handleLeadNotesPrompt(leadId);
+      });
+    });
+
+    // PHASE 027: Quick Action Chip - Copy Brief (Strict Invariant C: Zero Customer PII)
+    document.querySelectorAll('.btn-chip-copy').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', async () => {
+        const leadId = btn.dataset.leadId;
+        const lead = cachedLeads.find(l => l.id === leadId);
+        const intent = (lead && lead.intent_tag) || btn.dataset.intent || 'Artisan Service';
+        const locality = (lead && lead.locality) || btn.dataset.locality || 'Local Area';
+        const channel = (lead && lead.channel === 'whatsapp') ? 'WhatsApp' : (btn.dataset.channel || 'Phone Call');
+
+        // Sanitized lead brief containing exclusively operational parameters — ZERO PII
+        const briefText = `PadiFix Lead Brief: Customer inquired for ${intent} in ${locality} via ${channel}.`;
+
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(briefText);
+            showToast('📋 Lead brief copied to clipboard!', 'success');
+          } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = briefText;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast('📋 Lead brief copied to clipboard!', 'success');
+          }
+        } catch (err) {
+          showToast('Clipboard copy unavailable.', 'info');
+        }
+      });
+    });
+
     // Export CSV button
     const exportBtn = document.getElementById('btn-export-leads-csv');
     if (exportBtn && !exportBtn.dataset.bound) {
@@ -444,11 +522,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadProviderLeadsAndQuota();
       });
     }
+
+    // Initialize sound toggle button if present
+    initSoundToggleButton();
   }
 
   async function handleLeadStatusChange(leadId, newStatus, selectEl) {
-    const oldStatusClass = Array.from(selectEl.classList).find(c => c.startsWith('status-')) || 'status-new';
-    selectEl.className = `dash-lead-status-select status-${newStatus}`;
+    const targetSelect = selectEl || document.querySelector(`.dash-lead-status-select[data-lead-id="${leadId}"]`);
+    const oldStatusClass = targetSelect ? (Array.from(targetSelect.classList).find(c => c.startsWith('status-')) || 'status-new') : 'status-new';
+    if (targetSelect) {
+      targetSelect.className = `dash-lead-status-select status-${newStatus}`;
+      targetSelect.value = newStatus;
+    }
 
     let token = null;
     try {
@@ -491,9 +576,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (lead) lead.status = newStatus;
 
       const displayStatus = newStatus.replace('_', ' ').toUpperCase();
-      showToast(`Lead status updated: ${displayStatus}`);
+      showToast(`Lead status updated: ${displayStatus}`, 'success');
     } catch (err) {
-      selectEl.className = `dash-lead-status-select ${oldStatusClass}`;
+      if (targetSelect) targetSelect.className = `dash-lead-status-select ${oldStatusClass}`;
       showToast(`Failed to update status: ${err.message}`, 'error');
     }
   }
@@ -582,6 +667,392 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderRecentLeads() {
     loadProviderLeadsAndQuota();
   }
+
+  // ============================================================================
+  // PHASE 027: REAL-TIME ARTISAN DASHBOARD LEAD STREAM & QUICK ACTIONS
+  // Supabase Broadcasts + Web Audio Chime + Adaptive Polling + Deduplication
+  // ============================================================================
+
+  const processedLeadIds = new Set();
+  let realtimeChannel = null;
+  let pollingTimer = null;
+  let isPollingActive = false;
+  let audioCtx = null;
+
+  function getAudioContext() {
+    if (!audioCtx && typeof window !== 'undefined') {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    return audioCtx;
+  }
+
+  function setupAudioUnlock() {
+    const unlock = () => {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('keydown', unlock);
+      document.removeEventListener('touchstart', unlock);
+    };
+    document.addEventListener('click', unlock, { once: true, passive: true });
+    document.addEventListener('keydown', unlock, { once: true, passive: true });
+    document.addEventListener('touchstart', unlock, { once: true, passive: true });
+  }
+
+  function isLeadChimeMuted() {
+    try {
+      return localStorage.getItem('padifix_lead_chime_muted') === 'true';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function playLeadChime() {
+    try {
+      if (isLeadChimeMuted()) return;
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+
+      // Harmonic two-tone notification chime:
+      // Tone 1: 587.33 Hz (D5)
+      // Tone 2: 880.00 Hz (A5)
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now);
+
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880.00, now + 0.1);
+
+      // Smooth envelope: fast attack, exponential decay
+      gainNode.gain.setValueAtTime(0.001, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.25, now + 0.04);
+      gainNode.gain.exponentialRampToValueAtTime(0.18, now + 0.12);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+      osc1.connect(gainNode);
+      osc2.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      osc1.start(now);
+      osc1.stop(now + 0.15);
+
+      osc2.start(now + 0.1);
+      osc2.stop(now + 0.45);
+    } catch (err) {
+      console.warn('[AudioChime] Non-fatal Web Audio exception:', err.message);
+    }
+  }
+
+  function setStreamStatus(status) {
+    const pill = document.getElementById('realtime-stream-status');
+    if (!pill) return;
+
+    if (status === 'live') {
+      pill.className = 'dash-stream-pill live';
+      pill.title = 'Real-time WebSocket active';
+      pill.innerHTML = '<span class="stream-dot"></span> Live';
+    } else if (status === 'reconnecting') {
+      pill.className = 'dash-stream-pill reconnecting';
+      pill.title = 'Reconnecting WebSocket...';
+      pill.innerHTML = '<span class="stream-dot" style="background:#F59E0B;box-shadow:0 0 8px #F59E0B;"></span> Reconnecting...';
+    } else if (status === 'fallback') {
+      pill.className = 'dash-stream-pill fallback';
+      pill.title = 'Polling active every 20s';
+      pill.innerHTML = '<span class="stream-dot" style="background:#F97316;box-shadow:0 0 8px #F97316;"></span> Polling (20s)';
+    }
+  }
+
+  function validateIncomingLeadEvent(payload, channelProvId) {
+    if (!currentProvider || !currentProvider.id) return { valid: false, reason: 'unauthenticated' };
+    if (!payload || typeof payload !== 'object') return { valid: false, reason: 'malformed_payload' };
+
+    // 1. Channel provider ID matches authenticated provider ID
+    if (channelProvId && String(channelProvId) !== String(currentProvider.id)) {
+      return { valid: false, reason: 'channel_tenant_mismatch' };
+    }
+
+    // 2. Payload provider ID matches authenticated provider ID
+    if (String(payload.provider_id) !== String(currentProvider.id)) {
+      return { valid: false, reason: 'payload_tenant_mismatch' };
+    }
+
+    // 3. Event ID is a valid UUID
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!payload.id || !UUID_REGEX.test(String(payload.id))) {
+      return { valid: false, reason: 'invalid_event_uuid' };
+    }
+
+    // 4. Allowed channel values
+    const normChannel = String(payload.channel || '').toLowerCase();
+    if (normChannel !== 'whatsapp' && normChannel !== 'call') {
+      return { valid: false, reason: 'disallowed_channel' };
+    }
+
+    // 5. Zero customer PII validation (Invariant C)
+    const FORBIDDEN_KEYS = [
+      'customer_name', 'name', 'first_name', 'last_name',
+      'phone', 'phone_number', 'customer_phone', 'whatsapp_number',
+      'email', 'ip', 'client_ip', 'user_id', 'address', 'nin', 'bvn', 'kyc', 'raw_text'
+    ];
+    for (const k of FORBIDDEN_KEYS) {
+      if (payload[k] !== undefined) {
+        console.warn(`[RealtimeSecurity] Prohibited field rejected: ${k}`);
+        return { valid: false, reason: 'forbidden_pii_detected' };
+      }
+    }
+
+    // 6. Deduplication check
+    if (processedLeadIds.has(payload.id) || cachedLeads.some(l => l.id === payload.id)) {
+      return { valid: false, reason: 'duplicate_event' };
+    }
+
+    return { valid: true };
+  }
+
+  function handleIncomingLeadEvent(leadPayload, channelProvId) {
+    const validation = validateIncomingLeadEvent(leadPayload, channelProvId);
+    if (!validation.valid) {
+      if (validation.reason === 'duplicate_event') return;
+      console.warn('[RealtimeStream] Ignored invalid lead event:', validation.reason);
+      return;
+    }
+
+    // Mark event ID as processed immediately (deduplication gate)
+    processedLeadIds.add(leadPayload.id);
+
+    const isWa = leadPayload.channel === 'whatsapp';
+    const cleanLead = {
+      id: String(leadPayload.id),
+      provider_id: Number(leadPayload.provider_id),
+      channel: isWa ? 'whatsapp' : 'call',
+      locality: String(leadPayload.locality || 'Local Area').replace(/<[^>]*>/g, ''),
+      intent_tag: String(leadPayload.intent_tag || 'Direct Customer Inquiry').replace(/<[^>]*>/g, ''),
+      status: 'new',
+      notes: null,
+      created_at: new Date(leadPayload.timestamp || Date.now()).toISOString(),
+      relative_time: 'Just now'
+    };
+
+    // Prepend to in-memory cached leads
+    cachedLeads.unshift(cleanLead);
+
+    // Prepend to DOM
+    const leadsContainer = document.getElementById('recent-leads-list');
+    if (leadsContainer) {
+      const emptyState = leadsContainer.querySelector('div[style*="text-align: center"]');
+      if (emptyState) {
+        leadsContainer.innerHTML = '';
+      }
+
+      const cardHtml = createLeadCardHtml(cleanLead, true);
+      leadsContainer.insertAdjacentHTML('afterbegin', cardHtml);
+      bindLeadControls();
+    }
+
+    // Sensory alerts
+    playLeadChime();
+
+    const tradeTitle = cleanLead.intent_tag || (currentProvider.trade_title || 'Service');
+    const channelLabel = isWa ? 'WhatsApp' : 'Phone Call';
+    showToast(`⚡ New Lead: Customer inquired for ${escapeHtml(tradeTitle)} in ${escapeHtml(cleanLead.locality)} via ${channelLabel}`, 'success');
+
+    // Increment KPIs
+    incrementLeadKpis(cleanLead.channel);
+  }
+
+  function incrementLeadKpis(channel) {
+    const kpiLeads = document.getElementById('kpi-leads');
+    if (kpiLeads) {
+      const cur = parseInt(kpiLeads.textContent, 10) || 0;
+      kpiLeads.textContent = cur + 1;
+    }
+
+    const quotaCounts = document.getElementById('quota-counts-display');
+    if (quotaCounts) {
+      const parts = quotaCounts.textContent.split('/');
+      if (parts.length === 2) {
+        const used = (parseInt(parts[0].trim(), 10) || 0) + 1;
+        quotaCounts.textContent = `${used} / ${parts[1].trim()}`;
+      }
+    }
+
+    if (channel === 'whatsapp') {
+      const countWa = document.getElementById('quota-count-wa');
+      if (countWa) countWa.textContent = (parseInt(countWa.textContent, 10) || 0) + 1;
+    } else {
+      const countCall = document.getElementById('quota-count-call');
+      if (countCall) countCall.textContent = (parseInt(countCall.textContent, 10) || 0) + 1;
+    }
+  }
+
+  function startAdaptivePollingFallback(providerId) {
+    if (pollingTimer) return;
+    setStreamStatus('fallback');
+    isPollingActive = true;
+
+    pollingTimer = setInterval(async () => {
+      try {
+        await pollForNewLeads(providerId);
+      } catch (e) {
+        console.warn('[PollingFallback] Polling turn error:', e.message);
+      }
+    }, 20000);
+  }
+
+  function stopAdaptivePolling() {
+    if (pollingTimer) {
+      clearInterval(pollingTimer);
+      pollingTimer = null;
+    }
+    isPollingActive = false;
+  }
+
+  async function pollForNewLeads(providerId) {
+    if (!providerId) return;
+
+    let token = null;
+    try {
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getSession === 'function') {
+        const sessionRes = await LokatorDB.auth.getSession();
+        token = sessionRes?.data?.session?.access_token;
+      }
+    } catch (e) {}
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const res = await fetch(`/api/provider-leads?provider_id=${encodeURIComponent(providerId)}&limit=10`, {
+        method: 'GET',
+        headers
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.leads)) {
+          const incoming = data.leads.filter(l => !processedLeadIds.has(l.id) && !cachedLeads.some(c => c.id === l.id));
+          incoming.reverse().forEach(lead => {
+            handleIncomingLeadEvent(lead, providerId);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[PollingFallback] Network error during lead fetch:', err.message);
+    }
+  }
+
+  function initRealtimeLeadStream() {
+    if (!currentProvider || !currentProvider.id) return;
+    const providerId = currentProvider.id;
+
+    // Seed processedLeadIds with existing cachedLeads
+    if (Array.isArray(cachedLeads)) {
+      cachedLeads.forEach(l => processedLeadIds.add(l.id));
+    }
+
+    setupAudioUnlock();
+    initSoundToggleButton();
+
+    const client = (typeof LokatorDB !== 'undefined' && LokatorDB.client) || window.supabaseClient;
+    if (!client || typeof client.channel !== 'function') {
+      startAdaptivePollingFallback(providerId);
+      return;
+    }
+
+    setStreamStatus('reconnecting');
+
+    try {
+      const channelName = `artisan-leads:${providerId}`;
+      realtimeChannel = client.channel(channelName, {
+        config: { broadcast: { self: false } }
+      });
+
+      realtimeChannel.on('broadcast', { event: 'new_lead' }, (msg) => {
+        if (msg && msg.payload) {
+          handleIncomingLeadEvent(msg.payload, providerId);
+        }
+      });
+
+      realtimeChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setStreamStatus('live');
+          stopAdaptivePolling();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          startAdaptivePollingFallback(providerId);
+        }
+      });
+    } catch (err) {
+      console.warn('[RealtimeStream] Initialization failed, falling back to polling:', err.message);
+      startAdaptivePollingFallback(providerId);
+    }
+  }
+
+  function cleanupRealtimeLeadStream() {
+    stopAdaptivePolling();
+    if (realtimeChannel && typeof realtimeChannel.unsubscribe === 'function') {
+      realtimeChannel.unsubscribe().catch(() => {});
+      realtimeChannel = null;
+    }
+  }
+
+  function initSoundToggleButton() {
+    const btn = document.getElementById('btn-toggle-lead-sound');
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = 'true';
+
+    const updateBtnUi = () => {
+      const muted = isLeadChimeMuted();
+      btn.classList.toggle('muted', muted);
+      const icon = document.getElementById('lead-sound-icon');
+      const text = document.getElementById('lead-sound-text');
+      if (icon) icon.textContent = muted ? '🔇' : '🔊';
+      if (text) text.textContent = muted ? 'Muted' : 'Sound On';
+      btn.title = muted ? 'Lead chime is muted (click to unmute)' : 'Lead chime is active (click to mute)';
+    };
+
+    updateBtnUi();
+
+    btn.addEventListener('click', () => {
+      const currentlyMuted = isLeadChimeMuted();
+      const nextMuted = !currentlyMuted;
+      try {
+        localStorage.setItem('padifix_lead_chime_muted', nextMuted ? 'true' : 'false');
+      } catch (e) {}
+
+      updateBtnUi();
+
+      if (!nextMuted) {
+        playLeadChime();
+        showToast('🔊 Lead notification sound turned on', 'success');
+      } else {
+        showToast('🔇 Lead notification sound muted', 'info');
+      }
+    });
+  }
+
+  // Expose methods for automated test gates and browser QA
+  window.playLeadChime = playLeadChime;
+  window.handleIncomingLeadEvent = handleIncomingLeadEvent;
+  window.validateIncomingLeadEvent = validateIncomingLeadEvent;
+  window.initRealtimeLeadStream = initRealtimeLeadStream;
+  window.cleanupRealtimeLeadStream = cleanupRealtimeLeadStream;
+  window.pollForNewLeads = pollForNewLeads;
 
   // 5.0 Privacy-Safe Lead History CSV Export (RFC 4180 with Formula Injection Defense)
   function exportLeadsCsv(leads) {
@@ -2819,6 +3290,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 12. Run Initial Render Pipeline
   await loadMetrics();
   await loadProviderLeadsAndQuota();
+  if (typeof initRealtimeLeadStream === 'function') {
+    initRealtimeLeadStream();
+    window.addEventListener('beforeunload', cleanupRealtimeLeadStream);
+  }
   populateProfileForm();
   renderSkillsChips();
   renderPricingRows();
