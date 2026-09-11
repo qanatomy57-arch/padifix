@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-09-11T15:50:28.666Z",
+  "production_url": "https://padifix.vercel.app",
+  "authenticated_provider": "ad.padifix@outlook.com",
+  "desktop_results": {
+    "overviewData": {
+      "welcomeName": "Arise",
+      "topName": "Arise wire",
+      "topTrade": "Plumber & Electrician & Mason & Painter",
+      "completenessScore": "--%",
+      "meterUsed": "",
+      "currentUrl": "https://padifix.vercel.app/dashboard.html"
+    },
+    "leadsData": {
+      "leadCount": 0,
+      "hasEmptyNotice": false
+    },
+    "subscriptionData": {
+      "statusBadge": "Free Plan (Active)",
+      "availablePlanActions": [
+        "✓ Current Plan",
+        "Upgrade to Basic (₦5,500)",
+        "Upgrade to Pro (₦11,000)",
+        "Upgrade to Premium (₦22,000)",
+        "Express Interest",
+        "Confirm Intent"
+      ]
+    }
+  },
+  "mobile_results": {
+    "topName": "Arise wire",
+    "completeness": "75%",
+    "statusBadge": "Free Plan (Active)",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "status": "CERTIFIED_GREEN"
+}
