@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-09-11T15:33:03.387Z",
+  "target_url": "https://padifix.vercel.app",
+  "supabase_project": "hvxosxhnxauiqrhpyuur",
+  "desktop_session": {
+    "session_id": "8a1638f8-3a02-456a-b486-8158756d719a",
+    "event_count": 3,
+    "events": [
+      {
+        "id": "33acf5d1-8b8b-4352-a970-a9a73db7a324",
+        "session_id": "8a1638f8-3a02-456a-b486-8158756d719a",
+        "event_name": "page_view",
+        "page_path": "/",
+        "device_class": "desktop",
+        "properties": {
+          "title": "PadiFix — Find Skills. Get Things Done. | Nigeria's Local-Services Marketplace",
+          "normalized_page": "home"
+        },
+        "created_at": "2026-09-11T15:32:09.371+00:00"
+      },
+      {
+        "id": "d2a6e7cc-f8c3-4a60-b5a3-11ed1b12494a",
+        "session_id": "8a1638f8-3a02-456a-b486-8158756d719a",
+        "event_name": "hero_search_submitted",
+        "page_path": "/",
+        "device_class": "desktop",
+        "properties": {
+          "lga": "",
+          "state": "",
+          "service": "electrician",
+          "location": ""
+        },
+        "created_at": "2026-09-11T15:32:17.535+00:00"
+      },
+      {
+        "id": "b199921a-539d-4539-bdbd-66d8de112b08",
+        "session_id": "8a1638f8-3a02-456a-b486-8158756d719a",
+        "event_name": "web_vitals_summary",
+        "page_path": "/",
+        "device_class": "desktop",
+        "properties": {
+          "cls": 0.038,
+          "page": "home",
+          "fcp_ms": 13248,
+          "lcp_ms": 13248,
+          "ttfb_ms": 165,
+          "dom_ready_ms": 7889
+        },
+        "created_at": "2026-09-11T15:32:17.535+00:00"
+      }
+    ]
+  },
+  "mobile_session": {
+    "session_id": "0a7d01d3-dd1e-4227-b599-fd753d0acd09",
+    "event_count": 5,
+    "events": [
+      {
+        "id": "ad49d9cd-35b4-4347-8437-c6c830ebbf2e",
+        "session_id": "0a7d01d3-dd1e-4227-b599-fd753d0acd09",
+        "event_name": "page_view",
+        "page_path": "/",
+        "device_class": "mobile",
+        "properties": {
+          "title": "PadiFix — Find Skills. Get Things Done. | Nigeria's Local-Services Marketplace",
+          "normalized_page": "home"
+        },
+        "created_at": "2026-09-11T15:32:43.548+00:00"
+      },
+      {
+        "id": "7b55e75d-7607-47cb-9251-811f70895961",
+        "session_id": "0a7d01d3-dd1e-4227-b599-fd753d0acd09",
+        "event_name": "hero_search_submitted",
+        "page_path": "/",
+        "device_class": "mobile",
+        "properties": {
+          "lga": "",
+          "state": "",
+          "service": "plumber",
+          "location": ""
+        },
+        "created_at": "2026-09-11T15:32:56.116+00:00"
+      },
+      {
+        "id": "6a96f9f7-64ae-4175-a941-8a8ae353b334",
+        "session_id": "0a7d01d3-dd1e-4227-b599-fd753d0acd09",
+        "event_name": "web_vitals_summary",
+        "page_path": "/",
+        "device_class": "mobile",
+        "properties": {
+          "cls": 0.0203,
+          "page": "home",
+          "fcp_ms": 4004,
+          "lcp_ms": 4004,
+          "ttfb_ms": 109,
+          "dom_ready_ms": 2565
+        },
+        "created_at": "2026-09-11T15:32:56.116+00:00"
+      },
+      {
+        "id": "cddc7273-bb13-4168-936c-9886dc2b5132",
+        "session_id": "0a7d01d3-dd1e-4227-b599-fd753d0acd09",
+        "event_name": "web_vitals_summary",
+        "page_path": "/search.html",
+        "device_class": "mobile",
+        "properties": {
+          "page": "search",
+          "fcp_ms": 3840,
+          "lcp_ms": 3840,
+          "ttfb_ms": 1104
+        },
+        "created_at": "2026-09-11T15:33:01.471+00:00"
+      },
+      {
+        "id": "436b66e9-3638-4910-887f-29c980daff66",
+        "session_id": "0a7d01d3-dd1e-4227-b599-fd753d0acd09",
+        "event_name": "page_view",
+        "page_path": "/profile.html",
+        "device_class": "mobile",
+        "properties": {
+          "title": "Provider Profile — PadiFix",
+          "normalized_page": "profile"
+        },
+        "created_at": "2026-09-11T15:33:05.885+00:00"
+      }
+    ]
+  }
+}
