@@ -276,7 +276,7 @@ async function runBrowserVerification() {
 
     // Simulate Realtime Lead Event Injection (zero reload)
     console.log('[Desktop] Injecting live lead event into browser runtime...');
-    const testLeadId = '00000000-0000-4000-8000-000000000027';
+    const testLeadId = crypto.randomUUID();
     await pageD.evaluate((leadId) => {
       if (typeof window.handleIncomingLeadEvent === 'function') {
         window.handleIncomingLeadEvent({
@@ -393,7 +393,7 @@ async function runBrowserVerification() {
     results.mobile.checks.soundTogglePresent = !!mobileSoundToggle;
 
     // Inject Lead on Mobile
-    const mobileLeadId = '00000000-0000-4000-8000-000000000028';
+    const mobileLeadId = crypto.randomUUID();
     await pageM.evaluate((leadId) => {
       if (typeof window.handleIncomingLeadEvent === 'function') {
         window.handleIncomingLeadEvent({
