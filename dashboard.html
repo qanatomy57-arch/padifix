@@ -294,19 +294,24 @@
           </div>
         </div>
 
-        <!-- Recent Leads Section -->
-        <div class="dash-card-section dash-section-spaced">
+        <!-- Recent Leads & Job Pipeline CRM Section -->
+        <div class="dash-card-section dash-section-spaced" id="dash-pipeline-crm-section">
           <div class="dash-section-header">
             <div>
               <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <h2 style="margin: 0;">Recent Leads</h2>
+                <h2 style="margin: 0;">Recent Leads & Job Pipeline</h2>
                 <span id="realtime-stream-status" class="dash-stream-pill live" title="Real-time WebSocket active">
                   <span class="stream-dot"></span> Live
                 </span>
               </div>
-              <p>Direct customer inquiries from your local area</p>
+              <p>Direct customer inquiries, deal stages, WhatsApp templates & revenue tracking</p>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <!-- View Switcher Toggle -->
+              <div class="crm-view-switcher" role="group" aria-label="Pipeline View Mode">
+                <button type="button" class="btn-crm-view active" id="btn-view-kanban" title="Interactive Kanban Board">📋 Kanban</button>
+                <button type="button" class="btn-crm-view" id="btn-view-list" title="Compact Chronological List">📑 List</button>
+              </div>
               <button type="button" class="btn btn-outline" id="btn-toggle-lead-sound" aria-label="Toggle Lead Audio Chime" title="Toggle sound notification for incoming leads">
                 <span id="lead-sound-icon">🔊</span> <span id="lead-sound-text">Sound On</span>
               </button>
@@ -315,8 +320,34 @@
               <button type="button" class="btn btn-outline btn-view-all-revs" onclick="switchTab('reviews')">View Reviews →</button>
             </div>
           </div>
+
+          <!-- Phase 028: Pipeline Financial & Conversion Metrics Ribbon -->
+          <div class="crm-pipeline-ribbon" id="crm-pipeline-ribbon">
+            <div class="crm-metric-chip">
+              <span class="crm-metric-label">Realized Revenue</span>
+              <strong class="crm-metric-val pos" id="crm-metric-revenue">₦0</strong>
+            </div>
+            <div class="crm-metric-chip">
+              <span class="crm-metric-label">Quoted Pipeline</span>
+              <strong class="crm-metric-val highlight" id="crm-metric-pipeline">₦0</strong>
+            </div>
+            <div class="crm-metric-chip">
+              <span class="crm-metric-label">Win Rate</span>
+              <strong class="crm-metric-val" id="crm-metric-winrate">0%</strong>
+            </div>
+            <div class="crm-metric-chip">
+              <span class="crm-metric-label">Avg. Deal Size</span>
+              <strong class="crm-metric-val" id="crm-metric-avgdeal">₦0</strong>
+            </div>
+            <div class="crm-metric-chip">
+              <span class="crm-metric-label">Active Deals</span>
+              <strong class="crm-metric-val" id="crm-metric-active">0</strong>
+            </div>
+          </div>
+
+          <!-- Leads and Kanban board container -->
           <div class="dash-leads-list" id="recent-leads-list">
-            <!-- Rendered dynamically -->
+            <!-- Rendered dynamically (Kanban or List) -->
           </div>
         </div>
 
@@ -1468,6 +1499,134 @@
           <button type="submit" class="btn btn-primary">Add to Portfolio</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Phase 028: Stage Progression & Deal Financial Modal -->
+  <div id="crm-stage-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card crm-modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 class="modal-title" id="crm-modal-title" style="margin: 0;">Update Deal Stage</h3>
+        <button type="button" class="btn-modal-close" id="btn-close-crm-modal" aria-label="Close modal">✕</button>
+      </div>
+      <p id="crm-modal-subtitle" style="font-size: 0.85rem; color: var(--dash-muted); margin: -8px 0 16px;">Record quotation and job details</p>
+      <form id="form-crm-stage">
+        <input type="hidden" id="crm-modal-lead-id" />
+        <input type="hidden" id="crm-modal-target-status" />
+
+        <!-- Client Private Alias / Name -->
+        <div class="form-group">
+          <label for="crm-client-name">Customer Name / Alias (Private)</label>
+          <input type="text" id="crm-client-name" placeholder="e.g. Alhaji Musa / Lekki Landlord" maxlength="100" />
+        </div>
+
+        <!-- Financial Section (Rendered when target is quote_sent or completed) -->
+        <div id="crm-financial-fields" style="display: none;">
+          <div class="form-group">
+            <label for="crm-quote-amount">Total Deal Value (₦) *</label>
+            <input type="number" id="crm-quote-amount" min="0" step="500" placeholder="e.g. 75000" />
+            <small style="color: var(--dash-muted); font-size: 0.78rem;">Total quote or agreed fee for this service</small>
+          </div>
+
+          <!-- Dual-Metric Breakdown (Workmanship vs Materials) -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label for="crm-workmanship-amount">Workmanship (₦)</label>
+              <input type="number" id="crm-workmanship-amount" min="0" step="500" placeholder="e.g. 35000" />
+            </div>
+            <div class="form-group">
+              <label for="crm-materials-amount">Materials (₦)</label>
+              <input type="number" id="crm-materials-amount" min="0" step="500" placeholder="e.g. 40000" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Completed Job Section (Rendered when target is completed) -->
+        <div id="crm-completed-fields" style="display: none;">
+          <div class="form-group">
+            <label for="crm-final-amount">Final Realized Revenue (₦) *</label>
+            <input type="number" id="crm-final-amount" min="0" step="500" placeholder="e.g. 75000" />
+            <small style="color: var(--dash-muted); font-size: 0.78rem;">Actual payment realized from client upon job completion</small>
+          </div>
+        </div>
+
+        <!-- Schedule Section (Rendered when target is scheduled) -->
+        <div id="crm-schedule-fields" style="display: none;">
+          <div class="form-group">
+            <label for="crm-scheduled-date">Scheduled Date & Time *</label>
+            <input type="datetime-local" id="crm-scheduled-date" />
+          </div>
+        </div>
+
+        <!-- Lost Reason Section (Rendered when target is lost) -->
+        <div id="crm-lost-fields" style="display: none;">
+          <div class="form-group">
+            <label for="crm-lost-reason">Lost Reason</label>
+            <select id="crm-lost-reason-select" class="form-control" style="background: var(--dash-card-bg); color: var(--dash-text); border: 1px solid var(--dash-border); padding: 8px 12px; border-radius: 6px; width: 100%;">
+              <option value="Price too high for client">Price too high for client</option>
+              <option value="Client hired another artisan">Client hired another artisan</option>
+              <option value="Schedule / timing conflict">Schedule / timing conflict</option>
+              <option value="Customer unresponsive">Customer unresponsive</option>
+              <option value="Out of service coverage area">Out of service coverage area</option>
+              <option value="Custom">Other (type notes below)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Private Notes Field -->
+        <div class="form-group">
+          <label for="crm-deal-notes">Private Notes (Max 500 chars)</label>
+          <textarea id="crm-deal-notes" rows="2" maxlength="500" placeholder="Private details, customer preferences, or site observations..."></textarea>
+        </div>
+
+        <div class="modal-form-actions">
+          <button type="button" class="btn btn-outline" id="btn-cancel-crm-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-crm-modal">Save & Advance →</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Phase 028: One-Tap WhatsApp Reply Drawer Modal -->
+  <div id="crm-wa-drawer-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card crm-modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.4rem;">💬</span>
+          <h3 class="modal-title" style="margin: 0;">WhatsApp Reply Templates</h3>
+        </div>
+        <button type="button" class="btn-modal-close" id="btn-close-wa-modal" aria-label="Close WhatsApp Drawer">✕</button>
+      </div>
+
+      <!-- Template Selector Tabs -->
+      <div class="crm-template-tabs" role="tablist">
+        <button type="button" class="crm-template-tab active" data-template-key="greeting">👋 Initial Greeting</button>
+        <button type="button" class="crm-template-tab" data-template-key="quote">💰 Formal Quote</button>
+        <button type="button" class="crm-template-tab" data-template-key="schedule">📅 Confirm Schedule</button>
+        <button type="button" class="crm-template-tab" data-template-key="review">⭐ Request Review</button>
+      </div>
+
+      <!-- Live Template Preview Box -->
+      <div class="crm-template-preview-box" style="margin-top: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 0.78rem; font-weight: 700; color: #34D399; text-transform: uppercase;">Message Preview</span>
+          <span id="crm-wa-char-count" style="font-size: 0.75rem; color: var(--dash-muted);">0 chars</span>
+        </div>
+        <textarea id="crm-wa-rendered-text" rows="5" class="crm-template-textarea" placeholder="Generated WhatsApp message will appear here..."></textarea>
+      </div>
+
+      <!-- Actions: 1-Click Copy & Open WhatsApp -->
+      <div style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap;">
+        <button type="button" class="btn btn-outline" id="btn-crm-copy-wa" style="flex: 1; min-width: 140px;">
+          📋 Copy to Clipboard
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-crm-open-wa" style="flex: 1.2; min-width: 160px; background: #25D366; border-color: #25D366; color: #000; font-weight: 700;">
+          💬 Open WhatsApp
+        </button>
+      </div>
+      <div style="margin-top: 10px; font-size: 0.75rem; color: var(--dash-muted); text-align: center;">
+        🔒 <em>Zero PII Invariant: Message text is formatted on-device. Customer phone numbers are never stored in PadiFix.</em>
+      </div>
     </div>
   </div>
 

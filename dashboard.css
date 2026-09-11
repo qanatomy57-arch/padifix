@@ -2102,3 +2102,402 @@ input:checked + .slider:before {
   color: #34D399 !important;
 }
 
+/* ==========================================================================
+   PADIFIX PHASE 028: JOB PIPELINE CRM, HORIZONTAL KANBAN & FINANCIAL RIBBON
+   ========================================================================== */
+
+/* View Switcher Toggle */
+.crm-view-switcher {
+  display: inline-flex;
+  align-items: center;
+  background: var(--dash-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.1));
+  border-radius: 9999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.btn-crm-view {
+  background: transparent;
+  border: none;
+  color: var(--dash-muted, #94A3B8);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.btn-crm-view:hover {
+  color: var(--dash-text, #F8FAFC);
+}
+
+.btn-crm-view.active {
+  background: var(--dash-card-bg, #1E293B);
+  color: var(--dash-text, #F8FAFC);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.15));
+}
+
+[data-theme="dark"] .btn-crm-view.active {
+  background: rgba(0, 168, 89, 0.2);
+  color: #34D399;
+  border-color: rgba(0, 168, 89, 0.4);
+}
+
+/* Pipeline Financial Ribbon */
+.crm-pipeline-ribbon {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 14px 0 20px;
+  padding: 12px 14px;
+  background: var(--dash-card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+}
+
+.crm-metric-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.05));
+  border-radius: 8px;
+}
+
+.crm-metric-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--dash-muted, #94A3B8);
+}
+
+.crm-metric-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--dash-text, #F8FAFC);
+  letter-spacing: -0.02em;
+}
+
+.crm-metric-val.pos {
+  color: #10B981;
+}
+
+.crm-metric-val.highlight {
+  color: #F59E0B;
+}
+
+/* Horizontal Scroll Kanban Board */
+.crm-kanban-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 16px 2px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.crm-kanban-board::-webkit-scrollbar {
+  height: 6px;
+}
+
+.crm-kanban-board::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
+}
+
+.crm-kanban-board::-webkit-scrollbar-thumb {
+  background: var(--dash-border, rgba(255, 255, 255, 0.15));
+  border-radius: 9999px;
+}
+
+/* Kanban Columns */
+.crm-kanban-column {
+  flex: 0 0 300px;
+  max-width: 320px;
+  min-width: 280px;
+  scroll-snap-align: start;
+  background: var(--dash-card-bg, #1E293B);
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.crm-col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--dash-border, rgba(255, 255, 255, 0.08));
+}
+
+.crm-col-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crm-col-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--dash-text, #F8FAFC);
+  margin: 0;
+}
+
+.crm-col-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--dash-text, #F8FAFC);
+}
+
+.crm-col-subtotal {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--dash-muted, #94A3B8);
+}
+
+/* Stage Pillar Accents */
+.crm-col-new { border-top: 3px solid #34D399; }
+.crm-col-in_discussion { border-top: 3px solid #38BDF8; }
+.crm-col-quote_sent { border-top: 3px solid #F59E0B; }
+.crm-col-scheduled { border-top: 3px solid #A855F7; }
+.crm-col-completed { border-top: 3px solid #10B981; }
+
+.crm-col-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 120px;
+}
+
+.crm-col-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--dash-muted, #94A3B8);
+  font-size: 0.78rem;
+  border: 1px dashed var(--dash-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+/* Deal Card In Kanban & List */
+.dash-lead-item.crm-deal-card {
+  margin-bottom: 0;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--dash-bg, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.08));
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dash-lead-item.crm-deal-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Financial & Schedule Badges */
+.crm-deal-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.crm-badge-money {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #F59E0B;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.crm-badge-money.won {
+  background: rgba(16, 185, 129, 0.16);
+  color: #10B981;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.crm-badge-schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(168, 85, 247, 0.14);
+  color: #C084FC;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 6px;
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.crm-client-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: var(--dash-text, #F8FAFC);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+/* Stage Progression Button */
+.btn-crm-advance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.15));
+  background: var(--dash-card-bg, #1E293B);
+  color: var(--dash-text, #F8FAFC);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-crm-advance:hover {
+  background: var(--dash-green, #00A859);
+  color: #FFFFFF;
+  border-color: var(--dash-green, #00A859);
+  box-shadow: 0 2px 8px rgba(0, 168, 89, 0.3);
+}
+
+/* One-Tap WhatsApp Reply Chips Bar */
+.crm-wa-quickbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dash-border, rgba(255, 255, 255, 0.08));
+}
+
+.crm-chip-wa {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid rgba(37, 211, 102, 0.3);
+  background: rgba(37, 211, 102, 0.08);
+  color: #25D366;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.crm-chip-wa:hover {
+  background: rgba(37, 211, 102, 0.2);
+  border-color: #25D366;
+  transform: translateY(-1px);
+}
+
+/* WhatsApp Drawer Modal Elements */
+.crm-modal-card {
+  max-width: 520px;
+  width: 92%;
+}
+
+.crm-template-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.crm-template-tab {
+  flex: 0 0 auto;
+  background: var(--dash-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.1));
+  color: var(--dash-muted, #94A3B8);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.crm-template-tab.active {
+  background: rgba(37, 211, 102, 0.15);
+  color: #25D366;
+  border-color: rgba(37, 211, 102, 0.4);
+}
+
+.crm-template-preview-box {
+  background: var(--dash-bg, #0F172A);
+  border: 1px solid var(--dash-border, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.crm-template-textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--dash-text, #F8FAFC);
+  font-size: 0.85rem;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+/* Mobile Viewport Responsiveness */
+@media (max-width: 640px) {
+  .crm-pipeline-ribbon {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .crm-kanban-column {
+    flex: 0 0 85vw;
+    max-width: 85vw;
+    min-width: 260px;
+  }
+
+  .crm-template-tabs {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .crm-template-tab {
+    scroll-snap-align: start;
+  }
+}
+

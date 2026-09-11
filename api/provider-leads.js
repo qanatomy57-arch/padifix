@@ -5,11 +5,13 @@
  *
  * Implements:
  * 1. Strict Supabase Auth JWT Bearer token authentication
- * 2. Multi-tenant isolation (Provider A cannot read or mutate Provider B's leads)
+ * 2. Multi-tenant isolation (Provider A cannot read or mutate Provider B's leads or deals)
  * 3. Authoritative monthly contact quota and Phase 014 soft-cap reporting
  * 4. Privacy-safe operational lead history (Zero consumer phone numbers or chat bodies)
- * 5. Lightweight lead status progression (new -> in_discussion -> quote_sent -> job_won)
- * 6. Sanitized private artisan notes (< 500 chars, plain text, XSS defense)
+ * 5. Full Lead Conversion & Job Pipeline CRM (new -> in_discussion -> quote_sent -> scheduled -> completed -> lost)
+ * 6. Dual-metric financial tracking (total quote, workmanship, materials, realized earnings) in Kobo
+ * 7. Real-time pipeline metrics aggregation (realized revenue, pipeline value, win rate)
+ * 8. Sanitized private artisan notes (< 500 chars, plain text, XSS defense)
  */
 
 const { withSentry } = require('../lib/sentry-server');
@@ -32,6 +34,18 @@ function formatRelativeTime(date) {
   return `${diffDays}d ago`;
 }
 
+function sanitizeText(val, maxLen = 100) {
+  if (val === null || val === undefined) return null;
+  if (typeof val !== 'string') return null;
+  const stripped = val
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<[^>]*>/g, '');
+  const clean = stripped.replace(/[\r\n\t]+/g, ' ').trim();
+  if (!clean) return null;
+  return clean.substring(0, maxLen);
+}
+
 const providerLeadsHandler = async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -51,7 +65,7 @@ const providerLeadsHandler = async (req, res) => {
   const querySince = req.query?.since || urlObj.searchParams.get('since');
   const queryLeadId = req.query?.lead_id || urlObj.searchParams.get('lead_id');
 
-  // GET: Fetch Authoritative Quota and Lead Inbox
+  // GET: Fetch Authoritative Quota, CRM Leads, and Pipeline Financial Metrics
   if (req.method === 'GET') {
     try {
       // 1. Authenticate Supabase JWT & verify provider ownership
@@ -77,7 +91,27 @@ const providerLeadsHandler = async (req, res) => {
 
       if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
         try {
-          let pgUrl = `${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.${providerId}&select=id,provider_id,channel,locality,status,intent_tag,notes,created_at&order=created_at.desc&limit=${cleanLimit}&offset=${cleanOffset}`;
+          const selectFields = [
+            'id',
+            'provider_id',
+            'channel',
+            'locality',
+            'status',
+            'intent_tag',
+            'notes',
+            'quote_amount_kobo',
+            'workmanship_amount_kobo',
+            'materials_amount_kobo',
+            'final_amount_kobo',
+            'scheduled_for',
+            'completed_at',
+            'lost_reason',
+            'client_display_name',
+            'created_at',
+            'updated_at'
+          ].join(',');
+
+          let pgUrl = `${SUPABASE_URL}/rest/v1/contact_events?provider_id=eq.${providerId}&select=${selectFields}&order=created_at.desc&limit=${cleanLimit}&offset=${cleanOffset}`;
           if (queryStatus) {
             pgUrl += `&status=eq.${encodeURIComponent(queryStatus)}`;
           }
@@ -109,7 +143,16 @@ const providerLeadsHandler = async (req, res) => {
               status: r.status,
               intent_tag: r.intent_tag || 'Artisan Service',
               notes: r.notes || null,
+              quote_amount_kobo: r.quote_amount_kobo ? Number(r.quote_amount_kobo) : null,
+              workmanship_amount_kobo: r.workmanship_amount_kobo ? Number(r.workmanship_amount_kobo) : null,
+              materials_amount_kobo: r.materials_amount_kobo ? Number(r.materials_amount_kobo) : null,
+              final_amount_kobo: r.final_amount_kobo ? Number(r.final_amount_kobo) : null,
+              scheduled_for: r.scheduled_for || null,
+              completed_at: r.completed_at || null,
+              lost_reason: r.lost_reason || null,
+              client_display_name: r.client_display_name || null,
               created_at: r.created_at,
+              updated_at: r.updated_at || r.created_at,
               relative_time: formatRelativeTime(r.created_at)
             }));
             pgSuccess = true;
@@ -139,6 +182,9 @@ const providerLeadsHandler = async (req, res) => {
         }
       }
 
+      // Compute Authoritative Pipeline CRM Metrics
+      const pipelineMetrics = LeadStore.calculateProviderPipelineMetrics(providerId, leads);
+
       return res.status(200).json({
         status: 'success',
         provider_id: providerId,
@@ -153,6 +199,7 @@ const providerLeadsHandler = async (req, res) => {
         soft_cap: quota.soft_cap,
         limit_reached: quota.limit_reached,
         usage_percentage: quota.usage_percentage,
+        pipeline_metrics: pipelineMetrics,
         leads: leads,
         pagination: {
           total: totalCount,
@@ -165,10 +212,23 @@ const providerLeadsHandler = async (req, res) => {
     }
   }
 
-  // PATCH: Update Lead Status & Private Notes
+  // PATCH: Update Lead Status, Financial Details, Scheduling, & Notes
   if (req.method === 'PATCH') {
     try {
-      const { lead_id, status, notes, provider_id } = req.body || {};
+      const {
+        lead_id,
+        status,
+        notes,
+        quote_amount_kobo,
+        workmanship_amount_kobo,
+        materials_amount_kobo,
+        final_amount_kobo,
+        scheduled_for,
+        completed_at,
+        lost_reason,
+        client_display_name,
+        provider_id
+      } = req.body || {};
 
       if (!lead_id || typeof lead_id !== 'string') {
         return res.status(400).json({ error: 'Missing or invalid required field: lead_id.' });
@@ -184,6 +244,31 @@ const providerLeadsHandler = async (req, res) => {
       const rawAuth = req.headers['authorization'] || req.headers['Authorization'] || '';
       const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
 
+      // Retrieve existing lead for tenant verification and lifecycle validation
+      let currentLead = null;
+      if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+        try {
+          const pgLeadRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(lead_id.trim())}&select=*`, {
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (pgLeadRes.ok) {
+            const rows = await pgLeadRes.json();
+            if (rows.length > 0) currentLead = rows[0];
+          }
+        } catch (e) {}
+      }
+      if (!currentLead) {
+        currentLead = LeadStore.getLeadById(lead_id.trim());
+      }
+
+      // Strict multi-tenant verification: Provider cannot mutate another provider's lead
+      if (currentLead && Number(currentLead.provider_id) !== Number(activeProviderId)) {
+        return res.status(403).json({ error: 'Forbidden: You do not have permission to update this lead.' });
+      }
+
       // Validate status if provided
       let normStatus = undefined;
       if (status !== undefined) {
@@ -192,10 +277,30 @@ const providerLeadsHandler = async (req, res) => {
         if (normStatus === 'contacted') {
           normStatus = 'in_discussion';
         }
-        if (!['new', 'in_discussion', 'quote_sent', 'job_won'].includes(normStatus)) {
+        if (!['new', 'in_discussion', 'quote_sent', 'scheduled', 'completed', 'job_won', 'lost'].includes(normStatus)) {
           return res.status(400).json({
-            error: `Invalid status: '${status}'. Allowed values: new, contacted, in_discussion, quote_sent, job_won.`
+            error: `Invalid status: '${status}'. Allowed values: new, contacted, in_discussion, quote_sent, scheduled, completed, job_won, lost.`
           });
+        }
+
+        // Enforce Server-Side Legal Lifecycle Transitions
+        const LEGAL_TRANSITIONS = {
+          new: ['new', 'in_discussion', 'lost'],
+          in_discussion: ['in_discussion', 'quote_sent', 'lost'],
+          quote_sent: ['quote_sent', 'scheduled', 'lost'],
+          scheduled: ['scheduled', 'completed', 'lost'],
+          completed: ['completed'],
+          job_won: ['job_won', 'completed'],
+          lost: ['lost', 'new', 'in_discussion']
+        };
+
+        if (currentLead && normStatus !== currentLead.status) {
+          const allowedTransitions = LEGAL_TRANSITIONS[currentLead.status] || [];
+          if (!allowedTransitions.includes(normStatus)) {
+            return res.status(400).json({
+              error: `Illegal lifecycle transition: cannot advance from '${currentLead.status}' to '${normStatus}'. Allowed next stages: ${allowedTransitions.join(', ')}.`
+            });
+          }
         }
       }
 
@@ -209,19 +314,103 @@ const providerLeadsHandler = async (req, res) => {
         }
       }
 
-      // Attempt PostgreSQL update on public.contact_events
+      // Validate financial amounts (must be non-negative integers if provided)
+      const parseAmount = (val, fieldName) => {
+        if (val === undefined) return undefined;
+        if (val === null || val === '') return null;
+        const num = Number(val);
+        if (isNaN(num) || num < 0 || !Number.isInteger(num)) {
+          throw new Error(`${fieldName} must be a non-negative integer representing Kobo.`);
+        }
+        return num;
+      };
+
+      let cleanQuoteKobo;
+      let cleanWorkmanshipKobo;
+      let cleanMaterialsKobo;
+      let cleanFinalKobo;
+
+      try {
+        cleanQuoteKobo = parseAmount(quote_amount_kobo, 'quote_amount_kobo');
+        cleanWorkmanshipKobo = parseAmount(workmanship_amount_kobo, 'workmanship_amount_kobo');
+        cleanMaterialsKobo = parseAmount(materials_amount_kobo, 'materials_amount_kobo');
+        cleanFinalKobo = parseAmount(final_amount_kobo, 'final_amount_kobo');
+      } catch (validationErr) {
+        return res.status(400).json({ error: validationErr.message });
+      }
+
+      // Validate financial split consistency
+      const effectiveQuote = cleanQuoteKobo !== undefined ? cleanQuoteKobo : (currentLead?.quote_amount_kobo ? Number(currentLead.quote_amount_kobo) : null);
+      const effectiveWorkmanship = cleanWorkmanshipKobo !== undefined ? cleanWorkmanshipKobo : (currentLead?.workmanship_amount_kobo ? Number(currentLead.workmanship_amount_kobo) : null);
+      const effectiveMaterials = cleanMaterialsKobo !== undefined ? cleanMaterialsKobo : (currentLead?.materials_amount_kobo ? Number(currentLead.materials_amount_kobo) : null);
+
+      const splitExists = (effectiveWorkmanship !== null && effectiveWorkmanship !== undefined) || (effectiveMaterials !== null && effectiveMaterials !== undefined);
+      if (splitExists) {
+        if (effectiveQuote === null || effectiveQuote === undefined) {
+          return res.status(400).json({ error: 'Inconsistent financial split: workmanship or materials specified without quote_amount_kobo.' });
+        }
+        const splitSum = (effectiveWorkmanship || 0) + (effectiveMaterials || 0);
+        if (splitSum !== effectiveQuote) {
+          return res.status(400).json({
+            error: `Inconsistent financial split: Workmanship (${effectiveWorkmanship || 0}) + Materials (${effectiveMaterials || 0}) = ${splitSum} kobo, which does not equal Quote (${effectiveQuote} kobo).`
+          });
+        }
+      }
+
+      // Validate timestamps if provided
+      let cleanScheduledFor = undefined;
+      if (scheduled_for !== undefined) {
+        if (scheduled_for === null || scheduled_for === '') {
+          cleanScheduledFor = null;
+        } else {
+          const d = new Date(scheduled_for);
+          if (isNaN(d.getTime())) {
+            return res.status(400).json({ error: 'scheduled_for must be a valid ISO date string.' });
+          }
+          cleanScheduledFor = d.toISOString();
+        }
+      }
+
+      let cleanCompletedAt = undefined;
+      if (completed_at !== undefined) {
+        if (completed_at === null || completed_at === '') {
+          cleanCompletedAt = null;
+        } else {
+          const d = new Date(completed_at);
+          if (isNaN(d.getTime())) {
+            return res.status(400).json({ error: 'completed_at must be a valid ISO date string.' });
+          }
+          cleanCompletedAt = d.toISOString();
+        }
+      }
+
+      const cleanLostReason = lost_reason !== undefined ? sanitizeText(lost_reason, 250) : undefined;
+      const cleanClientName = client_display_name !== undefined ? sanitizeText(client_display_name, 100) : undefined;
+
+      // Prepare updates payload
+      const updates = {};
+      if (normStatus !== undefined) updates.status = normStatus;
+      if (notes !== undefined) {
+        updates.notes = (notes === null || notes === '') ? null : String(notes).replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '').replace(/<[^>]*>/g, '').trim();
+      }
+      if (cleanQuoteKobo !== undefined) updates.quote_amount_kobo = cleanQuoteKobo;
+      if (cleanWorkmanshipKobo !== undefined) updates.workmanship_amount_kobo = cleanWorkmanshipKobo;
+      if (cleanMaterialsKobo !== undefined) updates.materials_amount_kobo = cleanMaterialsKobo;
+      if (cleanFinalKobo !== undefined) updates.final_amount_kobo = cleanFinalKobo;
+      if (cleanScheduledFor !== undefined) updates.scheduled_for = cleanScheduledFor;
+      if (cleanCompletedAt !== undefined) updates.completed_at = cleanCompletedAt;
+      if (cleanLostReason !== undefined) updates.lost_reason = cleanLostReason;
+      if (cleanClientName !== undefined) updates.client_display_name = cleanClientName;
+
+      // Attempt PostgreSQL update on public.contact_events (strictly tenant-scoped)
       let pgUpdated = false;
       let updatedLead = null;
 
       if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
         try {
-          const patchPayload = { updated_at: new Date().toISOString() };
-          if (normStatus !== undefined) patchPayload.status = normStatus;
-          if (notes !== undefined) {
-            patchPayload.notes = (notes === null || notes === '') ? null : String(notes).replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '').replace(/<[^>]*>/g, '').trim();
-          }
+          const patchPayload = { ...updates, updated_at: new Date().toISOString() };
 
-          const pgRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(lead_id.trim())}`, {
+          const pgRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(lead_id.trim())}&provider_id=eq.${activeProviderId}`, {
             method: 'PATCH',
             headers: {
               'apikey': SUPABASE_ANON_KEY,
@@ -245,6 +434,14 @@ const providerLeadsHandler = async (req, res) => {
                 status: r.status,
                 intent_tag: r.intent_tag,
                 notes: r.notes,
+                quote_amount_kobo: r.quote_amount_kobo ? Number(r.quote_amount_kobo) : null,
+                workmanship_amount_kobo: r.workmanship_amount_kobo ? Number(r.workmanship_amount_kobo) : null,
+                materials_amount_kobo: r.materials_amount_kobo ? Number(r.materials_amount_kobo) : null,
+                final_amount_kobo: r.final_amount_kobo ? Number(r.final_amount_kobo) : null,
+                scheduled_for: r.scheduled_for || null,
+                completed_at: r.completed_at || null,
+                lost_reason: r.lost_reason || null,
+                client_display_name: r.client_display_name || null,
                 created_at: r.created_at,
                 updated_at: r.updated_at
               };
@@ -253,30 +450,21 @@ const providerLeadsHandler = async (req, res) => {
         } catch (e) {}
       }
 
-      // If updated in PostgreSQL, sync in-memory store and return
-      if (pgUpdated && updatedLead) {
-        LeadStore.updateLead(activeProviderId, lead_id.trim(), { status: normStatus || status, notes });
-        return res.status(200).json({
-          status: 'success',
-          message: 'Lead updated successfully.',
-          lead: updatedLead
-        });
+      // Synchronize in-memory store (for test/offline mode)
+      const storeResult = LeadStore.updateLead(activeProviderId, lead_id.trim(), updates);
+
+      if (!pgUpdated && storeResult.error) {
+        return res.status(storeResult.statusCode).json({ error: storeResult.error });
       }
 
-      // Fallback to LeadStore for in-memory seed records
-      const result = LeadStore.updateLead(activeProviderId, lead_id.trim(), {
-        status: normStatus || status,
-        notes
-      });
-
-      if (result.error) {
-        return res.status(result.statusCode).json({ error: result.error });
-      }
+      const finalLead = updatedLead || storeResult.lead;
+      const updatedMetrics = LeadStore.calculateProviderPipelineMetrics(activeProviderId);
 
       return res.status(200).json({
         status: 'success',
-        message: 'Lead updated successfully.',
-        lead: result.lead
+        message: 'Lead pipeline status and details updated successfully.',
+        lead: finalLead,
+        pipeline_metrics: updatedMetrics
       });
     } catch (err) {
       return res.status(500).json({ error: 'Internal Server Error', message: err.message });

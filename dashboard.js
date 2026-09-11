@@ -351,7 +351,229 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Helper to construct lead card HTML with Phase 027 quick action chips
+  // ==========================================================================
+  // PHASE 028: ARTISAN LEAD CONVERSION & JOB PIPELINE CRM ENGINE
+  // ==========================================================================
+
+  let currentCrmView = (typeof localStorage !== 'undefined' && localStorage.getItem('padifix_leads_view_mode')) || 'kanban';
+  let activeDrawerLeadId = null;
+  let activeDrawerTemplateKey = 'greeting';
+
+  function initCrmViewSwitcher() {
+    const btnKanban = document.getElementById('btn-view-kanban');
+    const btnList = document.getElementById('btn-view-list');
+    if (!btnKanban || !btnList) return;
+
+    const setView = (mode) => {
+      currentCrmView = mode;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('padifix_leads_view_mode', mode);
+      }
+      if (mode === 'kanban') {
+        btnKanban.classList.add('active');
+        btnList.classList.remove('active');
+      } else {
+        btnList.classList.add('active');
+        btnKanban.classList.remove('active');
+      }
+      renderLeadsInbox(cachedLeads);
+    };
+
+    if (!btnKanban.dataset.bound) {
+      btnKanban.dataset.bound = 'true';
+      btnKanban.addEventListener('click', () => setView('kanban'));
+    }
+    if (!btnList.dataset.bound) {
+      btnList.dataset.bound = 'true';
+      btnList.addEventListener('click', () => setView('list'));
+    }
+
+    if (currentCrmView === 'list') {
+      btnList.classList.add('active');
+      btnKanban.classList.remove('active');
+    } else {
+      btnKanban.classList.add('active');
+      btnList.classList.remove('active');
+    }
+  }
+
+  function updatePipelineFinancialRibbon(leads) {
+    const list = Array.isArray(leads) ? leads : [];
+    let realizedKobo = 0;
+    let pipelineKobo = 0;
+    let wonCount = 0;
+    let lostCount = 0;
+    let activeCount = 0;
+
+    list.forEach(l => {
+      const st = l.status || 'new';
+      if (['new', 'in_discussion', 'quote_sent', 'scheduled'].includes(st)) {
+        activeCount++;
+      }
+      if (st === 'quote_sent' || st === 'scheduled') {
+        if (l.quote_amount_kobo) pipelineKobo += Number(l.quote_amount_kobo);
+      }
+      if (st === 'completed' || st === 'job_won') {
+        wonCount++;
+        const amt = l.final_amount_kobo || l.quote_amount_kobo || 0;
+        realizedKobo += Number(amt);
+      }
+      if (st === 'lost') {
+        lostCount++;
+      }
+    });
+
+    const resolvedCount = wonCount + lostCount;
+    const winRate = resolvedCount > 0 ? Math.round((wonCount / resolvedCount) * 100) : 0;
+    const avgDealKobo = wonCount > 0 ? Math.round(realizedKobo / wonCount) : 0;
+
+    const revEl = document.getElementById('crm-metric-revenue');
+    if (revEl) revEl.textContent = `₦${Math.round(realizedKobo / 100).toLocaleString()}`;
+
+    const pipeEl = document.getElementById('crm-metric-pipeline');
+    if (pipeEl) pipeEl.textContent = `₦${Math.round(pipelineKobo / 100).toLocaleString()}`;
+
+    const winEl = document.getElementById('crm-metric-winrate');
+    if (winEl) winEl.textContent = `${winRate}%`;
+
+    const avgEl = document.getElementById('crm-metric-avgdeal');
+    if (avgEl) avgEl.textContent = `₦${Math.round(avgDealKobo / 100).toLocaleString()}`;
+
+    const actEl = document.getElementById('crm-metric-active');
+    if (actEl) actEl.textContent = activeCount;
+  }
+
+  function generateWhatsAppTemplate(lead, templateKey) {
+    if (!lead) return '';
+    const providerName = currentProvider ? (currentProvider.business_name || currentProvider.full_name || 'Your Artisan') : 'PadiFix Verified Artisan';
+    const intent = lead.intent_tag || 'Artisan Service';
+    const locality = lead.locality || 'your area';
+    const profileUrl = typeof window !== 'undefined' ? `${window.location.origin}/profile.html?id=${lead.provider_id || (currentProvider ? currentProvider.id : '')}` : 'https://padifix.ng';
+
+    const quoteNgn = lead.quote_amount_kobo ? `₦${Math.round(lead.quote_amount_kobo / 100).toLocaleString()}` : 'To be determined';
+    const workNgn = lead.workmanship_amount_kobo ? `₦${Math.round(lead.workmanship_amount_kobo / 100).toLocaleString()}` : null;
+    const matNgn = lead.materials_amount_kobo ? `₦${Math.round(lead.materials_amount_kobo / 100).toLocaleString()}` : null;
+
+    let schedDate = 'an agreed date';
+    if (lead.scheduled_for) {
+      try {
+        schedDate = new Date(lead.scheduled_for).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      } catch (e) {}
+    }
+
+    switch (templateKey) {
+      case 'greeting':
+        return `Hello! Thank you for reaching out to ${providerName} for ${intent} in ${locality} via PadiFix.\n\nI am currently available to assist you. When would be the best time to inspect the work or discuss the details?`;
+      case 'quote':
+        let quoteMsg = `PadiFix Service Quote from ${providerName}:\n• Service: ${intent}\n• Locality: ${locality}\n• Total Estimate: ${quoteNgn}`;
+        if (workNgn || matNgn) {
+          quoteMsg += `\n  - Workmanship: ${workNgn || 'Included'}\n  - Materials: ${matNgn || 'Included'}`;
+        }
+        quoteMsg += `\n\nPayment terms: 50% commitment deposit before commencement, balance upon your full satisfaction.\nLet me know if this works for you!`;
+        return quoteMsg;
+      case 'schedule':
+        return `Confirmed: Scheduled appointment for ${intent} with ${providerName}.\n• Location: ${locality}\n• Date & Time: ${schedDate}\n\nI will arrive equipped with all necessary diagnostic tools. Please confirm if address is ready.`;
+      case 'review':
+        return `Hello! Thank you for choosing ${providerName} for your ${intent} via PadiFix.\n\nCould you please take 30 seconds to rate my workmanship and leave a quick review on my verified profile? It helps other clients find me: ${profileUrl}\n\nThank you for your business!`;
+      default:
+        return `Hello! Regarding your inquiry for ${intent} via PadiFix...`;
+    }
+  }
+
+  function openWhatsAppDrawer(leadId, templateKey = 'greeting') {
+    activeDrawerLeadId = leadId;
+    activeDrawerTemplateKey = templateKey;
+    const modal = document.getElementById('crm-wa-drawer-modal');
+    if (!modal) return;
+
+    const lead = cachedLeads.find(l => l.id === leadId);
+    if (!lead) return;
+
+    // Update active tab
+    modal.querySelectorAll('.crm-template-tab').forEach(tab => {
+      if (tab.dataset.templateKey === templateKey) {
+        tab.classList.add('active');
+      } else {
+        tab.classList.remove('active');
+      }
+    });
+
+    // Populate preview
+    const renderedMsg = generateWhatsAppTemplate(lead, templateKey);
+    const textarea = document.getElementById('crm-wa-rendered-text');
+    const charCount = document.getElementById('crm-wa-char-count');
+    if (textarea) textarea.value = renderedMsg;
+    if (charCount) charCount.textContent = `${renderedMsg.length} chars`;
+
+    modal.style.display = 'flex';
+  }
+
+  function openStageModal(leadId, targetStatus) {
+    const modal = document.getElementById('crm-stage-modal');
+    if (!modal) return;
+
+    const lead = cachedLeads.find(l => l.id === leadId);
+    if (!lead) return;
+
+    document.getElementById('crm-modal-lead-id').value = leadId;
+    document.getElementById('crm-modal-target-status').value = targetStatus;
+
+    const titleEl = document.getElementById('crm-modal-title');
+    const subEl = document.getElementById('crm-modal-subtitle');
+    const finSection = document.getElementById('crm-financial-fields');
+    const compSection = document.getElementById('crm-completed-fields');
+    const schedSection = document.getElementById('crm-schedule-fields');
+    const lostSection = document.getElementById('crm-lost-fields');
+
+    // Reset visibility
+    if (finSection) finSection.style.display = 'none';
+    if (compSection) compSection.style.display = 'none';
+    if (schedSection) schedSection.style.display = 'none';
+    if (lostSection) lostSection.style.display = 'none';
+
+    // Pre-fill existing lead fields
+    const clientNameInput = document.getElementById('crm-client-name');
+    if (clientNameInput) clientNameInput.value = lead.client_display_name || '';
+
+    const notesInput = document.getElementById('crm-deal-notes');
+    if (notesInput) notesInput.value = lead.notes || '';
+
+    const quoteInput = document.getElementById('crm-quote-amount');
+    const workInput = document.getElementById('crm-workmanship-amount');
+    const matInput = document.getElementById('crm-materials-amount');
+    const finalInput = document.getElementById('crm-final-amount');
+
+    if (quoteInput) quoteInput.value = lead.quote_amount_kobo ? Math.round(lead.quote_amount_kobo / 100) : '';
+    if (workInput) workInput.value = lead.workmanship_amount_kobo ? Math.round(lead.workmanship_amount_kobo / 100) : '';
+    if (matInput) matInput.value = lead.materials_amount_kobo ? Math.round(lead.materials_amount_kobo / 100) : '';
+    if (finalInput) finalInput.value = lead.final_amount_kobo ? Math.round(lead.final_amount_kobo / 100) : (lead.quote_amount_kobo ? Math.round(lead.quote_amount_kobo / 100) : '');
+
+    if (targetStatus === 'quote_sent') {
+      if (titleEl) titleEl.textContent = 'Send Quote & Record Estimate';
+      if (subEl) subEl.textContent = 'Enter estimated deal amount and optional labor/materials split.';
+      if (finSection) finSection.style.display = 'block';
+    } else if (targetStatus === 'scheduled') {
+      if (titleEl) titleEl.textContent = 'Schedule Customer Appointment';
+      if (subEl) subEl.textContent = 'Confirm site visit date and client appointment time.';
+      if (schedSection) schedSection.style.display = 'block';
+      if (finSection) finSection.style.display = 'block';
+    } else if (targetStatus === 'completed') {
+      if (titleEl) titleEl.textContent = 'Confirm Completed Job & Revenue';
+      if (subEl) subEl.textContent = 'Verify final realized payment amount received from customer.';
+      if (compSection) compSection.style.display = 'block';
+    } else if (targetStatus === 'lost') {
+      if (titleEl) titleEl.textContent = 'Mark Deal as Lost';
+      if (subEl) subEl.textContent = 'Record reason for cancellation to improve customer matching.';
+      if (lostSection) lostSection.style.display = 'block';
+    } else {
+      if (titleEl) titleEl.textContent = 'Update Deal Stage';
+      if (subEl) subEl.textContent = `Advance lead to ${targetStatus.replace('_', ' ').toUpperCase()}`;
+    }
+
+    modal.style.display = 'flex';
+  }
+
+  // Helper to construct lead card HTML with Phase 027 quick actions and Phase 028 CRM capabilities
   function createLeadCardHtml(lead, isNewlyArrived = false) {
     const isWa = lead.channel === 'whatsapp';
     const channelIcon = isWa ? '💬' : '📞';
@@ -362,9 +584,63 @@ document.addEventListener('DOMContentLoaded', async () => {
     const notes = lead.notes ? escapeHtml(lead.notes) : '';
     const status = lead.status || 'new';
     const newlyClass = isNewlyArrived ? ' newly-arrived' : '';
+    const clientName = lead.client_display_name ? escapeHtml(lead.client_display_name) : '';
+
+    // Financial badge
+    let moneyBadgeHtml = '';
+    if (lead.quote_amount_kobo) {
+      const isWon = status === 'completed' || status === 'job_won';
+      const quoteNgn = Math.round(lead.quote_amount_kobo / 100).toLocaleString();
+      let breakdownStr = '';
+      if (lead.workmanship_amount_kobo || lead.materials_amount_kobo) {
+        const w = lead.workmanship_amount_kobo ? `Labor: ₦${Math.round(lead.workmanship_amount_kobo / 100).toLocaleString()}` : '';
+        const m = lead.materials_amount_kobo ? `Mat: ₦${Math.round(lead.materials_amount_kobo / 100).toLocaleString()}` : '';
+        breakdownStr = ` title="${w}${w && m ? ' | ' : ''}${m}"`;
+      }
+      moneyBadgeHtml = `<span class="crm-badge-money ${isWon ? 'won' : ''}"${breakdownStr}>💰 ₦${quoteNgn}</span>`;
+    }
+
+    // Schedule badge
+    let scheduleBadgeHtml = '';
+    if (lead.scheduled_for) {
+      try {
+        const d = new Date(lead.scheduled_for);
+        const schedStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        scheduleBadgeHtml = `<span class="crm-badge-schedule" title="Scheduled Visit">🗓️ ${schedStr}</span>`;
+      } catch (e) {}
+    }
+
+    // Lost reason badge
+    let lostBadgeHtml = '';
+    if (status === 'lost' && lead.lost_reason) {
+      lostBadgeHtml = `<span class="crm-badge-money" style="background: rgba(239, 68, 68, 0.15); color: #EF4444; border-color: rgba(239, 68, 68, 0.3);">❌ ${escapeHtml(lead.lost_reason)}</span>`;
+    }
+
+    // Advance button text & target status
+    let advanceBtnText = '';
+    let advanceTarget = '';
+    if (status === 'new') {
+      advanceBtnText = 'Advance to In Discussion →';
+      advanceTarget = 'in_discussion';
+    } else if (status === 'in_discussion') {
+      advanceBtnText = 'Send Quote (Log ₦) →';
+      advanceTarget = 'quote_sent';
+    } else if (status === 'quote_sent') {
+      advanceBtnText = 'Schedule Job 🗓️ →';
+      advanceTarget = 'scheduled';
+    } else if (status === 'scheduled') {
+      advanceBtnText = 'Mark Completed 🎉';
+      advanceTarget = 'completed';
+    } else if (status === 'completed' || status === 'job_won') {
+      advanceBtnText = '⭐ Request Review';
+      advanceTarget = 'review';
+    } else if (status === 'lost') {
+      advanceBtnText = '🔄 Re-open Deal';
+      advanceTarget = 'new';
+    }
 
     return `
-      <div class="dash-lead-item${newlyClass}" id="lead-card-${escapeHtml(lead.id)}" data-lead-id="${escapeHtml(lead.id)}">
+      <div class="dash-lead-item crm-deal-card${newlyClass}" id="lead-card-${escapeHtml(lead.id)}" data-lead-id="${escapeHtml(lead.id)}" data-status="${status}">
         <div style="width: 100%;">
           <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px;">
             <div class="dash-lead-left">
@@ -374,7 +650,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               <div style="min-width: 0;">
                 <div class="dash-lead-name dash-lead-locality">📍 ${locality}</div>
                 <div class="dash-lead-service dash-lead-intent">${intent}</div>
-                ${notes ? `<div class="dash-lead-notes-drawer" id="notes-text-${escapeHtml(lead.id)}">📝 ${notes}</div>` : `<div id="notes-text-${escapeHtml(lead.id)}" style="display:none;"></div>`}
+                ${clientName ? `<div class="crm-client-tag">👤 ${clientName}</div>` : ''}
               </div>
             </div>
             <div class="dash-lead-right">
@@ -383,13 +659,51 @@ document.addEventListener('DOMContentLoaded', async () => {
                   <option value="new" ${status === 'new' ? 'selected' : ''}>New</option>
                   <option value="in_discussion" ${status === 'in_discussion' ? 'selected' : ''}>In Discussion</option>
                   <option value="quote_sent" ${status === 'quote_sent' ? 'selected' : ''}>Quote Sent</option>
-                  <option value="job_won" ${status === 'job_won' ? 'selected' : ''}>Job Won</option>
+                  <option value="scheduled" ${status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+                  <option value="completed" ${status === 'completed' || status === 'job_won' ? 'selected' : ''}>Completed</option>
+                  <option value="lost" ${status === 'lost' ? 'selected' : ''}>Lost</option>
                 </select>
                 <button type="button" class="dash-lead-notes-btn" data-lead-id="${escapeHtml(lead.id)}" title="Add or edit private note">✏️</button>
               </div>
               <span class="dash-lead-time">${time}</span>
             </div>
           </div>
+
+          <!-- Meta badges (financial, schedule, lost reason) -->
+          ${(moneyBadgeHtml || scheduleBadgeHtml || lostBadgeHtml) ? `
+            <div class="crm-deal-meta-row">
+              ${moneyBadgeHtml}
+              ${scheduleBadgeHtml}
+              ${lostBadgeHtml}
+            </div>
+          ` : ''}
+
+          <!-- Private notes drawer -->
+          ${notes ? `<div class="dash-lead-notes-drawer" id="notes-text-${escapeHtml(lead.id)}">📝 ${notes}</div>` : `<div id="notes-text-${escapeHtml(lead.id)}" style="display:none;"></div>`}
+
+          <!-- One-Tap Stage Advancement Primary Button -->
+          ${advanceBtnText ? `
+            <button type="button" class="btn-crm-advance" data-lead-id="${escapeHtml(lead.id)}" data-target-status="${advanceTarget}">
+              ${advanceBtnText}
+            </button>
+          ` : ''}
+
+          <!-- Phase 028: One-Tap WhatsApp Reply Chips -->
+          <div class="crm-wa-quickbar">
+            <button type="button" class="crm-chip-wa btn-wa-template" data-lead-id="${escapeHtml(lead.id)}" data-template="greeting" title="Send initial greeting on WhatsApp">
+              👋 Greet
+            </button>
+            <button type="button" class="crm-chip-wa btn-wa-template" data-lead-id="${escapeHtml(lead.id)}" data-template="quote" title="Send formal quote on WhatsApp">
+              💰 Quote
+            </button>
+            <button type="button" class="crm-chip-wa btn-wa-template" data-lead-id="${escapeHtml(lead.id)}" data-template="schedule" title="Confirm schedule on WhatsApp">
+              📅 Schedule
+            </button>
+            <button type="button" class="crm-chip-wa btn-wa-template" data-lead-id="${escapeHtml(lead.id)}" data-template="review" title="Request customer review on WhatsApp">
+              ⭐ Review
+            </button>
+          </div>
+
           <!-- PHASE 027 QUICK ACTIONS -->
           <div class="dash-lead-quick-actions">
             <button type="button" class="btn-quick-chip btn-chip-contacted" data-lead-id="${escapeHtml(lead.id)}" title="Mark this lead as contacted">
@@ -411,6 +725,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const leadsContainer = document.getElementById('recent-leads-list');
     if (!leadsContainer) return;
 
+    initCrmViewSwitcher();
+    updatePipelineFinancialRibbon(leads);
+
     if (!Array.isArray(leads) || leads.length === 0) {
       leadsContainer.innerHTML = `
         <div style="padding: 28px 16px; text-align: center; color: var(--dash-muted); font-size: 13.5px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px dashed var(--dash-border);">
@@ -423,7 +740,61 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    leadsContainer.innerHTML = leads.map(lead => createLeadCardHtml(lead, false)).join('');
+    if (currentCrmView === 'kanban') {
+      // Group into stages
+      const stages = [
+        { key: 'new', label: '📥 New Leads', accent: 'crm-col-new' },
+        { key: 'in_discussion', label: '💬 In Discussion', accent: 'crm-col-in_discussion' },
+        { key: 'quote_sent', label: '📝 Quoted', accent: 'crm-col-quote_sent' },
+        { key: 'scheduled', label: '🗓️ Scheduled', accent: 'crm-col-scheduled' },
+        { key: 'completed', label: '🎉 Completed', accent: 'crm-col-completed' }
+      ];
+
+      // If any leads are lost, add the lost column
+      const hasLost = leads.some(l => l.status === 'lost');
+      if (hasLost) {
+        stages.push({ key: 'lost', label: '❌ Lost / Closed', accent: 'crm-col-lost' });
+      }
+
+      const columnsHtml = stages.map(st => {
+        const colLeads = leads.filter(l => {
+          if (st.key === 'completed') return l.status === 'completed' || l.status === 'job_won';
+          return (l.status || 'new') === st.key;
+        });
+
+        let subtotalKobo = 0;
+        colLeads.forEach(l => {
+          const amt = (st.key === 'completed') ? (l.final_amount_kobo || l.quote_amount_kobo || 0) : (l.quote_amount_kobo || 0);
+          subtotalKobo += Number(amt);
+        });
+        const subtotalStr = subtotalKobo > 0 ? `₦${Math.round(subtotalKobo / 100).toLocaleString()}` : '';
+
+        const cardsHtml = colLeads.length > 0
+          ? colLeads.map(l => createLeadCardHtml(l, false)).join('')
+          : `<div class="crm-col-empty">No deals in this stage</div>`;
+
+        return `
+          <div class="crm-kanban-column ${st.accent}" data-stage="${st.key}">
+            <div class="crm-col-header">
+              <div class="crm-col-title-group">
+                <h4 class="crm-col-title">${st.label}</h4>
+                <span class="crm-col-count-badge">${colLeads.length}</span>
+              </div>
+              ${subtotalStr ? `<span class="crm-col-subtotal">${subtotalStr}</span>` : ''}
+            </div>
+            <div class="crm-col-cards" data-stage="${st.key}">
+              ${cardsHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      leadsContainer.innerHTML = `<div class="crm-kanban-board">${columnsHtml}</div>`;
+    } else {
+      // Compact List View
+      leadsContainer.innerHTML = leads.map(lead => createLeadCardHtml(lead, false)).join('');
+    }
+
     bindLeadControls();
   }
 
@@ -435,7 +806,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       select.addEventListener('change', async (e) => {
         const leadId = select.dataset.leadId;
         const newStatus = e.target.value;
-        await handleLeadStatusChange(leadId, newStatus, select);
+        if (['quote_sent', 'scheduled', 'completed', 'lost'].includes(newStatus)) {
+          openStageModal(leadId, newStatus);
+        } else {
+          await handleLeadStatusChange(leadId, newStatus, select);
+        }
       });
     });
 
@@ -446,6 +821,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', async () => {
         const leadId = btn.dataset.leadId;
         await handleLeadNotesPrompt(leadId);
+      });
+    });
+
+    // One-Tap Stage Advancement Button
+    document.querySelectorAll('.btn-crm-advance').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', async () => {
+        const leadId = btn.dataset.leadId;
+        const targetStatus = btn.dataset.targetStatus;
+        if (targetStatus === 'review') {
+          openWhatsAppDrawer(leadId, 'review');
+        } else if (['quote_sent', 'scheduled', 'completed', 'lost'].includes(targetStatus)) {
+          openStageModal(leadId, targetStatus);
+        } else {
+          await handleLeadStatusChange(leadId, targetStatus);
+        }
+      });
+    });
+
+    // WhatsApp Template Chips
+    document.querySelectorAll('.btn-wa-template').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', () => {
+        const leadId = btn.dataset.leadId;
+        const tmpl = btn.dataset.template || 'greeting';
+        openWhatsAppDrawer(leadId, tmpl);
       });
     });
 
@@ -523,16 +926,177 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
+    // Modal Events Binding
+    initCrmModals();
+
     // Initialize sound toggle button if present
     initSoundToggleButton();
   }
 
-  async function handleLeadStatusChange(leadId, newStatus, selectEl) {
+  function initCrmModals() {
+    // Close Stage Modal
+    const btnCloseStage = document.getElementById('btn-close-crm-modal');
+    const btnCancelStage = document.getElementById('btn-cancel-crm-modal');
+    const stageModal = document.getElementById('crm-stage-modal');
+
+    const closeStage = () => {
+      if (stageModal) stageModal.style.display = 'none';
+    };
+
+    if (btnCloseStage && !btnCloseStage.dataset.bound) {
+      btnCloseStage.dataset.bound = 'true';
+      btnCloseStage.addEventListener('click', closeStage);
+    }
+    if (btnCancelStage && !btnCancelStage.dataset.bound) {
+      btnCancelStage.dataset.bound = 'true';
+      btnCancelStage.addEventListener('click', closeStage);
+    }
+
+    // Submit Stage Form
+    const stageForm = document.getElementById('form-crm-stage');
+    if (stageForm && !stageForm.dataset.bound) {
+      stageForm.dataset.bound = 'true';
+      stageForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const leadId = document.getElementById('crm-modal-lead-id').value;
+        const targetStatus = document.getElementById('crm-modal-target-status').value;
+        const clientName = document.getElementById('crm-client-name')?.value || null;
+        const notes = document.getElementById('crm-deal-notes')?.value || null;
+
+        const extra = { client_display_name: clientName, notes };
+
+        const quoteVal = document.getElementById('crm-quote-amount')?.value;
+        const workVal = document.getElementById('crm-workmanship-amount')?.value;
+        const matVal = document.getElementById('crm-materials-amount')?.value;
+
+        if (quoteVal) extra.quote_amount_kobo = Math.round(Number(quoteVal) * 100);
+        if (workVal) extra.workmanship_amount_kobo = Math.round(Number(workVal) * 100);
+        if (matVal) extra.materials_amount_kobo = Math.round(Number(matVal) * 100);
+
+        if (targetStatus === 'quote_sent') {
+          if (quoteVal && (workVal || matVal)) {
+            const totalQ = Number(quoteVal) || 0;
+            const w = Number(workVal) || 0;
+            const m = Number(matVal) || 0;
+            if (w + m !== totalQ) {
+              showToast(`Workmanship (₦${w.toLocaleString()}) + Materials (₦${m.toLocaleString()}) must equal Total Quote (₦${totalQ.toLocaleString()}).`, 'error');
+              return;
+            }
+          }
+        }
+
+        if (targetStatus === 'completed') {
+          const finalVal = document.getElementById('crm-final-amount')?.value;
+          if (finalVal) {
+            extra.final_amount_kobo = Math.round(Number(finalVal) * 100);
+          } else if (quoteVal) {
+            extra.final_amount_kobo = Math.round(Number(quoteVal) * 100);
+          }
+          extra.completed_at = new Date().toISOString();
+        }
+
+        const schedVal = document.getElementById('crm-scheduled-date')?.value;
+        if (schedVal) {
+          extra.scheduled_for = new Date(schedVal).toISOString();
+        }
+
+        const lostSelect = document.getElementById('crm-lost-reason-select');
+        if (lostSelect && targetStatus === 'lost') {
+          extra.lost_reason = lostSelect.value;
+        }
+
+        closeStage();
+        await handleLeadStatusChange(leadId, targetStatus, null, extra);
+      });
+    }
+
+    // WhatsApp Drawer Tab Switching & Actions
+    const waModal = document.getElementById('crm-wa-drawer-modal');
+    const btnCloseWa = document.getElementById('btn-close-wa-modal');
+    const closeWa = () => {
+      if (waModal) waModal.style.display = 'none';
+    };
+
+    if (btnCloseWa && !btnCloseWa.dataset.bound) {
+      btnCloseWa.dataset.bound = 'true';
+      btnCloseWa.addEventListener('click', closeWa);
+    }
+
+    if (waModal && !waModal.dataset.tabsBound) {
+      waModal.dataset.tabsBound = 'true';
+      waModal.querySelectorAll('.crm-template-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          waModal.querySelectorAll('.crm-template-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          activeDrawerTemplateKey = tab.dataset.templateKey;
+          const lead = cachedLeads.find(l => l.id === activeDrawerLeadId);
+          if (lead) {
+            const text = generateWhatsAppTemplate(lead, activeDrawerTemplateKey);
+            const textarea = document.getElementById('crm-wa-rendered-text');
+            const charCount = document.getElementById('crm-wa-char-count');
+            if (textarea) textarea.value = text;
+            if (charCount) charCount.textContent = `${text.length} chars`;
+          }
+        });
+      });
+    }
+
+    // Copy WA Template Button
+    const btnCopyWa = document.getElementById('btn-crm-copy-wa');
+    if (btnCopyWa && !btnCopyWa.dataset.bound) {
+      btnCopyWa.dataset.bound = 'true';
+      btnCopyWa.addEventListener('click', async () => {
+        const textarea = document.getElementById('crm-wa-rendered-text');
+        const text = textarea ? textarea.value : '';
+        if (!text) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            textarea.select();
+            document.execCommand('copy');
+          }
+          showToast('📋 WhatsApp template copied to clipboard!', 'success');
+        } catch (e) {
+          showToast('Failed to copy to clipboard.', 'error');
+        }
+      });
+    }
+
+    // Open WA Button
+    const btnOpenWa = document.getElementById('btn-crm-open-wa');
+    if (btnOpenWa && !btnOpenWa.dataset.bound) {
+      btnOpenWa.dataset.bound = 'true';
+      btnOpenWa.addEventListener('click', () => {
+        const textarea = document.getElementById('crm-wa-rendered-text');
+        const text = textarea ? textarea.value : '';
+        if (!text) return;
+        const encoded = encodeURIComponent(text);
+        // Clean launch without storing PII
+        const waUrl = `https://wa.me/?text=${encoded}`;
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+        showToast('🚀 Opening WhatsApp...', 'info');
+      });
+    }
+  }
+
+  async function handleLeadStatusChange(leadId, newStatus, selectEl, extraFields = {}) {
     const targetSelect = selectEl || document.querySelector(`.dash-lead-status-select[data-lead-id="${leadId}"]`);
     const oldStatusClass = targetSelect ? (Array.from(targetSelect.classList).find(c => c.startsWith('status-')) || 'status-new') : 'status-new';
     if (targetSelect) {
       targetSelect.className = `dash-lead-status-select status-${newStatus}`;
       targetSelect.value = newStatus;
+    }
+
+    // Optimistic lead update
+    const lead = cachedLeads.find(l => l.id === leadId);
+    let prevLeadState = null;
+    if (lead) {
+      prevLeadState = { ...lead };
+      lead.status = newStatus;
+      Object.assign(lead, extraFields);
+      // Re-render inbox & ribbon optimistically
+      renderLeadsInbox(cachedLeads);
     }
 
     let token = null;
@@ -556,15 +1120,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    const patchPayload = {
+      lead_id: leadId,
+      status: newStatus,
+      provider_id: currentProvider ? currentProvider.id : undefined,
+      ...extraFields
+    };
+
     try {
       const res = await fetch('/api/provider-leads', {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({
-          lead_id: leadId,
-          status: newStatus,
-          provider_id: currentProvider ? currentProvider.id : undefined
-        })
+        body: JSON.stringify(patchPayload)
       });
 
       if (!res.ok) {
@@ -572,14 +1139,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error(err.error || `HTTP ${res.status}`);
       }
 
-      const lead = cachedLeads.find(l => l.id === leadId);
-      if (lead) lead.status = newStatus;
+      const resData = await res.json().catch(() => ({}));
+      if (resData.lead && lead) {
+        Object.assign(lead, resData.lead);
+      }
+
+      // Re-render to ensure authoritative server timestamps/formatting
+      renderLeadsInbox(cachedLeads);
 
       const displayStatus = newStatus.replace('_', ' ').toUpperCase();
-      showToast(`Lead status updated: ${displayStatus}`, 'success');
+      showToast(`Deal updated: ${displayStatus}`, 'success');
+
+      // Broadcast stage transition over private channel if channel is active
+      if (realtimeChannel && typeof realtimeChannel.send === 'function' && currentProvider) {
+        try {
+          realtimeChannel.send({
+            type: 'broadcast',
+            event: 'lead_stage_changed',
+            payload: {
+              type: 'lead_stage_changed',
+              lead_id: leadId,
+              status: newStatus,
+              updated_at: new Date().toISOString()
+            }
+          });
+        } catch (bErr) {}
+      }
     } catch (err) {
+      // Rollback optimistic update
+      if (lead && prevLeadState) {
+        Object.assign(lead, prevLeadState);
+        renderLeadsInbox(cachedLeads);
+      }
       if (targetSelect) targetSelect.className = `dash-lead-status-select ${oldStatusClass}`;
-      showToast(`Failed to update status: ${err.message}`, 'error');
+      showToast(`Failed to update deal: ${err.message}`, 'error');
     }
   }
 
@@ -648,6 +1241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast(`Failed to save notes: ${err.message}`, 'error');
     }
   }
+
 
   function renderFallbackLeadsAndQuota() {
     renderQuotaGauge({
@@ -855,14 +1449,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Prepend to DOM
     const leadsContainer = document.getElementById('recent-leads-list');
     if (leadsContainer) {
-      const emptyState = leadsContainer.querySelector('div[style*="text-align: center"]');
-      if (emptyState) {
-        leadsContainer.innerHTML = '';
+      const kanbanNewCards = leadsContainer.querySelector('.crm-col-new .crm-col-cards');
+      if (kanbanNewCards) {
+        const emptyState = kanbanNewCards.querySelector('.crm-col-empty');
+        if (emptyState) emptyState.remove();
+        const cardHtml = createLeadCardHtml(cleanLead, true);
+        kanbanNewCards.insertAdjacentHTML('afterbegin', cardHtml);
+        const countBadge = leadsContainer.querySelector('.crm-col-new .crm-col-count-badge');
+        if (countBadge) countBadge.textContent = (parseInt(countBadge.textContent, 10) || 0) + 1;
+      } else {
+        const emptyState = leadsContainer.querySelector('div[style*="text-align: center"]');
+        if (emptyState) {
+          leadsContainer.innerHTML = '';
+        }
+        const cardHtml = createLeadCardHtml(cleanLead, true);
+        leadsContainer.insertAdjacentHTML('afterbegin', cardHtml);
       }
-
-      const cardHtml = createLeadCardHtml(cleanLead, true);
-      leadsContainer.insertAdjacentHTML('afterbegin', cardHtml);
       bindLeadControls();
+      updatePipelineFinancialRibbon(cachedLeads);
     }
 
     // Sensory alerts
