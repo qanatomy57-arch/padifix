@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Rate Your Verified Service — PadiFix</title>
+  <meta name="description" content="Leave a verified review and rating for your completed artisan service on PadiFix." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  
+  <style>
+    :root {
+      --bg: #0B0F17;
+      --card-bg: #111827;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --fg: #F8FAFC;
+      --fg-muted: #94A3B8;
+      --green: #00A859;
+      --green-dark: #008746;
+      --green-glow: rgba(0, 168, 89, 0.2);
+      --gold: #F59E0B;
+      --gold-glow: rgba(245, 158, 11, 0.2);
+      --red: #EF4444;
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--fg);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      line-height: 1.5;
+    }
+
+    .review-container {
+      width: 100%;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 8px 0 40px;
+    }
+
+    /* Brand Header */
+    .brand-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .brand-logo-img {
+      height: 32px;
+      width: auto;
+      display: block;
+    }
+    .brand-secure-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 168, 89, 0.12);
+      border: 1px solid rgba(0, 168, 89, 0.25);
+      color: #34D399;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+
+    /* Loading & State Cards */
+    .state-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 36px 24px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3.5px solid rgba(0, 168, 89, 0.2);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 18px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Artisan Verified Job Card */
+    .artisan-header-card {
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.9), rgba(15, 23, 42, 0.9));
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+    .artisan-avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #00A859, #059669);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 800;
+      color: #FFFFFF;
+      flex-shrink: 0;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+    }
+    .artisan-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .artisan-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .artisan-name {
+      font-size: 17px;
+      font-weight: 800;
+      color: #FFFFFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .artisan-trade {
+      font-size: 13.5px;
+      color: #34D399;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .verified-job-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      background: rgba(0, 168, 89, 0.15);
+      border: 1px solid rgba(0, 168, 89, 0.3);
+      color: #6EE7B7;
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    /* Main Form */
+    .form-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .form-section {
+      margin-bottom: 24px;
+    }
+    .section-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #E2E8F0;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* 5-Star Selector */
+    .stars-selector {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      padding: 12px;
+      border-radius: 12px;
+      touch-action: manipulation;
+    }
+    .star-btn {
+      flex: 1;
+      height: 52px;
+      min-width: 44px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      color: #475569;
+      font-size: 26px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .star-btn:focus-visible {
+      outline: 2px solid var(--green);
+      outline-offset: 2px;
+    }
+    .star-btn.active {
+      color: #FBBF24;
+      border-color: rgba(245, 158, 11, 0.3);
+      background: rgba(245, 158, 11, 0.1);
+      transform: scale(1.05);
+    }
+    .mood-indicator {
+      text-align: center;
+      margin-top: 8px;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #FBBF24;
+    }
+
+    /* Praise Tags */
+    .praise-tags-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .praise-tag-btn {
+      min-height: 44px;
+      padding: 8px 14px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #CBD5E1;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .praise-tag-btn:focus-visible {
+      outline: 2px solid var(--green);
+      outline-offset: 2px;
+    }
+    .praise-tag-btn.active {
+      background: rgba(0, 168, 89, 0.2);
+      border-color: var(--green);
+      color: #34D399;
+    }
+
+    /* Form Inputs */
+    .input-group {
+      margin-bottom: 16px;
+    }
+    .input-label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--fg-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .text-input, .textarea-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #FFFFFF;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.2s ease;
+    }
+    .text-input:focus, .textarea-input:focus {
+      outline: none;
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px var(--green-glow);
+    }
+    .textarea-input {
+      min-height: 100px;
+      resize: vertical;
+    }
+    .char-counter {
+      text-align: right;
+      font-size: 11.5px;
+      color: var(--fg-muted);
+      margin-top: 4px;
+    }
+
+    /* Expandable Categories */
+    .expand-toggle-btn {
+      background: none;
+      border: none;
+      color: #34D399;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 0;
+    }
+    .category-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px dashed rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 10px;
+    }
+    .category-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .category-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #E2E8F0;
+    }
+    .mini-stars {
+      display: flex;
+      gap: 4px;
+    }
+    .mini-star-btn {
+      min-width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      color: #475569;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    .mini-star-btn.active {
+      color: #FBBF24;
+    }
+
+    /* Submit Button */
+    .btn-submit {
+      width: 100%;
+      min-height: 52px;
+      background: var(--green);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 10px;
+      font-size: 15.5px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px var(--green-glow);
+    }
+    .btn-submit:hover:not(:disabled) {
+      background: var(--green-dark);
+      transform: translateY(-1px);
+    }
+    .btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Success Celebration */
+    .success-celebration {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .celebrate-icon {
+      font-size: 54px;
+      display: inline-block;
+      animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes pop {
+      0% { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .celebrate-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: #FFFFFF;
+      margin: 12px 0 6px;
+    }
+    .celebrate-sub {
+      font-size: 14px;
+      color: var(--fg-muted);
+      margin-bottom: 24px;
+    }
+    .btn-view-profile {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: #FFFFFF;
+      padding: 12px 22px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="review-container">
+    
+    <!-- Navbar Header -->
+    <header class="brand-nav">
+      <a href="index.html" aria-label="PadiFix Home">
+        <img src="icons/padifix-logo-dark.png" alt="PadiFix" class="brand-logo-img" width="120" height="32" />
+      </a>
+      <div class="brand-secure-badge">
+        <span>🛡️</span>
+        <span>Verified Job Review</span>
+      </div>
+    </header>
+
+    <!-- State: Loading -->
+    <div class="state-card" id="state-loading">
+      <div class="spinner"></div>
+      <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">Validating Review Invitation</h2>
+      <p style="color: var(--fg-muted); font-size: 13.5px;">Connecting securely to PadiFix ledger...</p>
+    </div>
+
+    <!-- State: Error / Invalid Token -->
+    <div class="state-card" id="state-error" style="display: none;">
+      <div style="font-size: 44px; margin-bottom: 12px;">⚠️</div>
+      <h2 id="error-title" style="font-size: 20px; font-weight: 800; margin-bottom: 8px; color: #F87171;">Invalid Invitation</h2>
+      <p id="error-message" style="color: var(--fg-muted); font-size: 14px; margin-bottom: 20px;">
+        This review invitation is invalid, expired, or has already been fulfilled.
+      </p>
+      <a href="search.html" class="btn-view-profile" style="background: var(--green); border-color: var(--green);">
+        Browse Service Directory →
+      </a>
+    </div>
+
+    <!-- State: Active Review Form -->
+    <div id="state-form" style="display: none;">
+      
+      <!-- Artisan Identity Context Card -->
+      <section class="artisan-header-card">
+        <div class="artisan-avatar" id="artisan-avatar-wrap">
+          <span id="artisan-initials">--</span>
+        </div>
+        <div class="artisan-info">
+          <h1 class="artisan-name" id="artisan-name">Loading Artisan...</h1>
+          <div class="artisan-trade" id="artisan-trade">Specialist Artisan</div>
+          <div class="verified-job-badge" id="job-badge">
+            <span>✓</span>
+            <span id="job-description">Verified Completed Task</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Review Form -->
+      <form class="form-card" id="review-form" novalidate>
+        
+        <!-- 1. Star Rating -->
+        <div class="form-section">
+          <div class="section-title">
+            <span>How would you rate the service?</span>
+            <span style="color: var(--fg-muted); font-size: 12px;">Required</span>
+          </div>
+          <div class="stars-selector" id="stars-selector" role="radiogroup" aria-label="Rating from 1 to 5 stars">
+            <button type="button" class="star-btn" data-val="1" aria-label="1 star - Disappointing">★</button>
+            <button type="button" class="star-btn" data-val="2" aria-label="2 stars - Fair">★</button>
+            <button type="button" class="star-btn" data-val="3" aria-label="3 stars - Good">★</button>
+            <button type="button" class="star-btn" data-val="4" aria-label="4 stars - Very Good">★</button>
+            <button type="button" class="star-btn active" data-val="5" aria-label="5 stars - Exceptional">★</button>
+          </div>
+          <div class="mood-indicator" id="mood-text">🌟 Exceptional (5.0)</div>
+        </div>
+
+        <!-- 2. Praise Tags -->
+        <div class="form-section">
+          <div class="section-title">
+            <span>What stood out? (Tap all that apply)</span>
+            <span style="color: var(--fg-muted); font-size: 12px;">Optional</span>
+          </div>
+          <div class="praise-tags-grid" id="praise-grid">
+            <button type="button" class="praise-tag-btn" data-tag="Punctual">⏱️ Punctual</button>
+            <button type="button" class="praise-tag-btn" data-tag="Fair Price">💰 Fair Price</button>
+            <button type="button" class="praise-tag-btn" data-tag="Clean Finish">✨ Clean Finish</button>
+            <button type="button" class="praise-tag-btn" data-tag="Quality Work">🏆 Quality Work</button>
+            <button type="button" class="praise-tag-btn" data-tag="Honest & Reliable">🤝 Honest & Reliable</button>
+            <button type="button" class="praise-tag-btn" data-tag="Speedy Delivery">⚡ Speedy Delivery</button>
+          </div>
+        </div>
+
+        <!-- 3. Review Feedback Comment -->
+        <div class="form-section input-group">
+          <label for="rev-comment" class="input-label">Tell us about your experience</label>
+          <textarea id="rev-comment" class="textarea-input" placeholder="Explain how the job was handled, the artisan's punctuality, and whether you would recommend them..." maxlength="1000" required></textarea>
+          <div class="char-counter" id="char-counter">0 / 1000</div>
+        </div>
+
+        <!-- 4. Client Metadata -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="input-group">
+            <label for="client-name" class="input-label">Your Name</label>
+            <input type="text" id="client-name" class="text-input" placeholder="e.g. Alhaji Musa" maxlength="80" required />
+          </div>
+          <div class="input-group">
+            <label for="client-location" class="input-label">Your Location</label>
+            <input type="text" id="client-location" class="text-input" placeholder="e.g. Ikeja, Lagos" maxlength="80" />
+          </div>
+        </div>
+
+        <!-- 5. Optional Category Breakdown -->
+        <div class="form-section" style="margin-top: 8px;">
+          <button type="button" class="expand-toggle-btn" id="btn-toggle-categories" aria-expanded="false">
+            <span id="cat-toggle-arrow">▶</span>
+            <span>Detailed Category Ratings (Optional)</span>
+          </button>
+          
+          <div class="category-grid" id="category-grid" style="display: none;">
+            <div class="category-row">
+              <span class="category-label">Workmanship Quality</span>
+              <div class="mini-stars" data-field="quality">
+                <button type="button" class="mini-star-btn active" data-val="1">★</button>
+                <button type="button" class="mini-star-btn active" data-val="2">★</button>
+                <button type="button" class="mini-star-btn active" data-val="3">★</button>
+                <button type="button" class="mini-star-btn active" data-val="4">★</button>
+                <button type="button" class="mini-star-btn active" data-val="5">★</button>
+              </div>
+            </div>
+            <div class="category-row">
+              <span class="category-label">Punctuality & Reliability</span>
+              <div class="mini-stars" data-field="reliability">
+                <button type="button" class="mini-star-btn active" data-val="1">★</button>
+                <button type="button" class="mini-star-btn active" data-val="2">★</button>
+                <button type="button" class="mini-star-btn active" data-val="3">★</button>
+                <button type="button" class="mini-star-btn active" data-val="4">★</button>
+                <button type="button" class="mini-star-btn active" data-val="5">★</button>
+              </div>
+            </div>
+            <div class="category-row">
+              <span class="category-label">Communication & Courtesy</span>
+              <div class="mini-stars" data-field="communication">
+                <button type="button" class="mini-star-btn active" data-val="1">★</button>
+                <button type="button" class="mini-star-btn active" data-val="2">★</button>
+                <button type="button" class="mini-star-btn active" data-val="3">★</button>
+                <button type="button" class="mini-star-btn active" data-val="4">★</button>
+                <button type="button" class="mini-star-btn active" data-val="5">★</button>
+              </div>
+            </div>
+            <div class="category-row">
+              <span class="category-label">Fair Pricing & Value</span>
+              <div class="mini-stars" data-field="pricing">
+                <button type="button" class="mini-star-btn active" data-val="1">★</button>
+                <button type="button" class="mini-star-btn active" data-val="2">★</button>
+                <button type="button" class="mini-star-btn active" data-val="3">★</button>
+                <button type="button" class="mini-star-btn active" data-val="4">★</button>
+                <button type="button" class="mini-star-btn active" data-val="5">★</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submit CTA -->
+        <button type="submit" class="btn-submit" id="btn-submit-review">
+          <span>Publish Verified Review</span>
+          <span>→</span>
+        </button>
+
+      </form>
+
+    </div>
+
+    <!-- State: Success Celebration -->
+    <div class="state-card success-celebration" id="state-success" style="display: none;">
+      <div class="celebrate-icon">🎉</div>
+      <h2 class="celebrate-title">Review Published!</h2>
+      <p class="celebrate-sub">
+        Thank you for helping fellow Nigerians find trustworthy, verified artisans. Your feedback has been verified and posted.
+      </p>
+      <a href="#" class="btn-view-profile" id="btn-success-profile-link">
+        View Artisan's Profile ↗
+      </a>
+    </div>
+
+  </div>
+
+  <!-- Client-Side Controller -->
+  <script>
+    (function () {
+      'use strict';
+
+      const MOOD_MAP = {
+        1: '😡 Disappointing (1.0)',
+        2: '🙁 Fair (2.0)',
+        3: '😐 Good (3.0)',
+        4: '😊 Very Good (4.0)',
+        5: '🌟 Exceptional (5.0)'
+      };
+
+      // Extract token from query params
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+
+      const stateLoading = document.getElementById('state-loading');
+      const stateError = document.getElementById('state-error');
+      const stateForm = document.getElementById('state-form');
+      const stateSuccess = document.getElementById('state-success');
+
+      let currentLead = null;
+      let selectedOverallRating = 5;
+      const selectedPraiseTags = new Set();
+      const selectedCategoryRatings = {
+        quality: 5,
+        reliability: 5,
+        communication: 5,
+        pricing: 5
+      };
+
+      // 1. Validate Token on Load
+      async function validateInvitationToken() {
+        if (!token) {
+          showError('Missing Invitation Token', 'Please use the verified review link sent to you by your artisan.');
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/service-review?action=verify_token&token=${encodeURIComponent(token)}`);
+          const data = await res.json();
+
+          if (res.status === 409 || data.already_reviewed) {
+            showError('Review Already Submitted', 'Thank you! You have already submitted a verified review for this service interaction.');
+            return;
+          }
+
+          if (!res.ok || data.status !== 'valid' || !data.lead) {
+            showError('Invalid or Expired Invitation', data.error || 'This review link is invalid or has expired.');
+            return;
+          }
+
+          // Populate Form with Lead Context
+          currentLead = data.lead;
+          populateArtisanHeader(currentLead);
+
+          stateLoading.style.display = 'none';
+          stateForm.style.display = 'block';
+
+        } catch (err) {
+          showError('Connection Issue', 'Could not verify your invitation. Please check your internet connection and try again.');
+        }
+      }
+
+      function showError(title, message) {
+        stateLoading.style.display = 'none';
+        stateForm.style.display = 'none';
+        stateSuccess.style.display = 'none';
+        stateError.style.display = 'block';
+
+        document.getElementById('error-title').textContent = title;
+        document.getElementById('error-message').textContent = message;
+      }
+
+      function populateArtisanHeader(lead) {
+        const nameEl = document.getElementById('artisan-name');
+        const tradeEl = document.getElementById('artisan-trade');
+        const jobDescEl = document.getElementById('job-description');
+        const initialsEl = document.getElementById('artisan-initials');
+        const clientNameInput = document.getElementById('client-name');
+        const clientLocInput = document.getElementById('client-location');
+
+        if (nameEl) nameEl.textContent = lead.provider_name || 'Verified Artisan';
+        if (tradeEl) tradeEl.textContent = lead.trade || 'Specialist Artisan';
+        if (jobDescEl) jobDescEl.textContent = `Verified Task: ${lead.job_description} in ${lead.locality}`;
+
+        if (initialsEl && lead.provider_name) {
+          const parts = lead.provider_name.split(' ').filter(Boolean);
+          initialsEl.textContent = parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].substring(0, 2).toUpperCase();
+        }
+
+        if (clientNameInput && lead.client_display_name) {
+          clientNameInput.value = lead.client_display_name;
+        }
+        if (clientLocInput && lead.locality) {
+          clientLocInput.value = lead.locality;
+        }
+      }
+
+      // 2. Star Picker Interaction
+      const starBtns = document.querySelectorAll('#stars-selector .star-btn');
+      const moodText = document.getElementById('mood-text');
+
+      function setRating(val) {
+        selectedOverallRating = Math.max(1, Math.min(5, val));
+        starBtns.forEach((b, idx) => {
+          b.classList.toggle('active', (idx + 1) <= selectedOverallRating);
+        });
+
+        if (moodText) {
+          moodText.textContent = MOOD_MAP[selectedOverallRating] || `${selectedOverallRating}.0`;
+        }
+
+        // Auto-sync category subratings to overall star unless manually modified
+        Object.keys(selectedCategoryRatings).forEach(k => {
+          selectedCategoryRatings[k] = selectedOverallRating;
+          const subBtns = document.querySelectorAll(`.mini-stars[data-field="${k}"] .mini-star-btn`);
+          subBtns.forEach((sb, sIdx) => {
+            sb.classList.toggle('active', (sIdx + 1) <= selectedOverallRating);
+          });
+        });
+      }
+
+      starBtns.forEach((btn, idx) => {
+        btn.addEventListener('click', () => {
+          const val = parseInt(btn.dataset.val, 10);
+          setRating(val);
+        });
+
+        btn.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const newVal = Math.max(1, selectedOverallRating - 1);
+            setRating(newVal);
+            if (starBtns[newVal - 1]) starBtns[newVal - 1].focus();
+          } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const newVal = Math.min(5, selectedOverallRating + 1);
+            setRating(newVal);
+            if (starBtns[newVal - 1]) starBtns[newVal - 1].focus();
+          }
+        });
+      });
+
+      // 3. Praise Tags Interaction
+      document.querySelectorAll('.praise-tag-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tag = btn.dataset.tag;
+          if (selectedPraiseTags.has(tag)) {
+            selectedPraiseTags.delete(tag);
+            btn.classList.remove('active');
+          } else {
+            selectedPraiseTags.add(tag);
+            btn.classList.add('active');
+          }
+        });
+      });
+
+      // 4. Character Counter
+      const commentInput = document.getElementById('rev-comment');
+      const charCounter = document.getElementById('char-counter');
+      if (commentInput && charCounter) {
+        commentInput.addEventListener('input', () => {
+          const len = commentInput.value.length;
+          charCounter.textContent = `${len} / 1000`;
+          charCounter.style.color = len > 900 ? '#F87171' : 'var(--fg-muted)';
+        });
+      }
+
+      // 5. Expandable Categories Toggle
+      const btnToggleCat = document.getElementById('btn-toggle-categories');
+      const catGrid = document.getElementById('category-grid');
+      const catArrow = document.getElementById('cat-toggle-arrow');
+
+      if (btnToggleCat && catGrid) {
+        btnToggleCat.addEventListener('click', () => {
+          const isHidden = catGrid.style.display === 'none';
+          catGrid.style.display = isHidden ? 'grid' : 'none';
+          btnToggleCat.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+          if (catArrow) catArrow.textContent = isHidden ? '▼' : '▶';
+        });
+      }
+
+      // Category Sub-Stars Interaction
+      document.querySelectorAll('.mini-stars').forEach(wrap => {
+        const field = wrap.dataset.field;
+        const btns = wrap.querySelectorAll('.mini-star-btn');
+
+        btns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            const val = parseInt(btn.dataset.val, 10);
+            selectedCategoryRatings[field] = val;
+            btns.forEach((b, idx) => {
+              b.classList.toggle('active', (idx + 1) <= val);
+            });
+          });
+        });
+      });
+
+      // 6. Form Submission
+      const form = document.getElementById('review-form');
+      const submitBtn = document.getElementById('btn-submit-review');
+
+      if (form) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+
+          const cleanComment = (commentInput ? commentInput.value : '').trim();
+          const clientName = (document.getElementById('client-name')?.value || '').trim();
+          const clientLoc = (document.getElementById('client-location')?.value || '').trim();
+
+          if (!clientName || clientName.length < 2) {
+            alert('Please enter your name (minimum 2 characters).');
+            document.getElementById('client-name')?.focus();
+            return;
+          }
+
+          if (!cleanComment) {
+            alert('Please enter a brief feedback comment about the job.');
+            commentInput?.focus();
+            return;
+          }
+
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span>Publishing Review...</span>';
+
+          const payload = {
+            action: 'submit_review',
+            review_token: token,
+            rating: selectedOverallRating,
+            quality_rating: selectedCategoryRatings.quality,
+            reliability_rating: selectedCategoryRatings.reliability,
+            communication_rating: selectedCategoryRatings.communication,
+            pricing_rating: selectedCategoryRatings.pricing,
+            comment: cleanComment,
+            customer_name: clientName,
+            author_location: clientLoc,
+            praise_tags: Array.from(selectedPraiseTags)
+          };
+
+          try {
+            const res = await fetch('/api/service-review', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            if (res.status === 409) {
+              showError('Duplicate Review', 'You have already submitted a review for this service interaction.');
+              return;
+            }
+
+            if (!res.ok || data.status !== 'success') {
+              alert(data.error || 'Failed to submit review. Please try again.');
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = '<span>Publish Verified Review</span> <span>→</span>';
+              return;
+            }
+
+            // Success Transition
+            stateForm.style.display = 'none';
+            stateSuccess.style.display = 'block';
+
+            const profileLink = document.getElementById('btn-success-profile-link');
+            if (profileLink && currentLead) {
+              profileLink.href = `profile.html?id=${currentLead.provider_id}`;
+            }
+
+          } catch (err) {
+            alert('A network error occurred while submitting your review. Please try again.');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Publish Verified Review</span> <span>→</span>';
+          }
+        });
+      }
+
+      // Initialize
+      validateInvitationToken();
+
+    })();
+  </script>
+</body>
+</html>

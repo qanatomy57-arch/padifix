@@ -881,24 +881,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 4000);
   }
 
-  function renderReviews(filter = 'all') {
+  let cachedAuthoritativeReviews = null;
+
+  async function fetchAuthoritativeReviews() {
+    try {
+      const res = await fetch(`/api/service-review?provider_id=${encodeURIComponent(provider.id)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.reviews)) {
+          cachedAuthoritativeReviews = data.reviews;
+          return data.reviews;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  async function renderReviews(filter = 'all') {
     currentReviewFilter = filter;
     
-    // Fetch live reviews from LokatorDB.reviews if available
-    const liveReviews = (typeof LokatorDB !== 'undefined' && LokatorDB.reviews)
+    // 1. Fetch live authoritative reviews from PostgreSQL API if not yet loaded
+    if (!cachedAuthoritativeReviews) {
+      await fetchAuthoritativeReviews();
+    }
+
+    const liveReviews = cachedAuthoritativeReviews || ((typeof LokatorDB !== 'undefined' && LokatorDB.reviews)
       ? LokatorDB.reviews.getProviderReviews(provider.id)
-      : (provider.reviews || []);
+      : (provider.reviews || []));
 
-    const summary = (typeof LokatorDB !== 'undefined' && LokatorDB.reviews)
-      ? LokatorDB.reviews.getReviewSummary(provider.id)
-      : {
-          averageRating: provider.rating || 5.0,
-          totalCount: liveReviews.length,
-          distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
-        };
+    // Compute distribution and summary
+    let sumRating = 0;
+    const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    liveReviews.forEach(r => {
+      const star = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
+      distribution[star] = (distribution[star] || 0) + 1;
+      sumRating += Number(r.rating || 5);
+    });
 
-    const reviewsCount = summary.totalCount || liveReviews.length;
-    const avgRating = summary.averageRating || provider.rating || 0;
+    const reviewsCount = liveReviews.length;
+    const avgRating = reviewsCount > 0 ? Number((sumRating / reviewsCount).toFixed(1)) : (provider.rating || 0);
 
     const scoreBig = document.getElementById('score-big-val');
     if (scoreBig) scoreBig.textContent = reviewsCount > 0 ? avgRating.toFixed(1) : 'New';
@@ -918,7 +939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (metricRating) metricRating.textContent = reviewsCount > 0 ? `★ ${avgRating.toFixed(1)}` : '★ New';
 
     // Histogram
-    const dist = summary.distribution || { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const dist = distribution;
     for (let s = 1; s <= 5; s++) {
       const cntVal = dist[s] || 0;
       const pct = reviewsCount > 0 ? Math.round((cntVal / reviewsCount) * 100) : 0;
@@ -953,7 +974,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const safeRevId = r.id || Date.now();
         const dateStr = r.date || (r.created_at ? new Date(r.created_at).toLocaleDateString() : 'Recent');
         const jobType = r.job_type || r.serviceType || 'Verified Task';
-        const isVerifiedClient = r.is_verified_client !== false && r.isVerifiedCustomer !== false;
+        const isVerifiedClient = Boolean(r.is_verified_customer === true || r.is_verified_client === true || r.trust_level === 'VERIFIED_CUSTOMER');
         const reply = r.provider_reply;
         const tags = Array.isArray(r.praise_tags) ? r.praise_tags : [];
         const photos = Array.isArray(r.photos) ? r.photos : [];
@@ -1014,9 +1035,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             ` : ''}
 
             <div class="review-item-footer">
-              <span style="display: inline-flex; align-items: center; gap: 4px; color: ${isVerifiedClient ? '#006B3F' : 'var(--fg-muted)'}; font-weight: 600; font-size: 12px;">
-                ${isVerifiedClient 
-                  ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Verified Customer' 
+              <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; ${isVerifiedClient ? 'color: #006B3F; background: rgba(0, 107, 63, 0.1); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(0, 107, 63, 0.25);' : 'color: var(--fg-muted);'}">
+                ${isVerifiedClient
+                  ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#006B3F" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Verified Customer'
                   : '💬 Customer Review'}
               </span>
               <div style="display: flex; gap: 8px; align-items: center;">
@@ -1365,6 +1386,50 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       try {
+        let apiErrorMsg = null;
+        try {
+          const apiRes = await fetch('/api/service-review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider_id: provider.id,
+              author_name: author,
+              author_location: location,
+              rating: selectedOverallRating,
+              comment: comment,
+              category_ratings: {
+                quality: selectedSubRatings.quality || 5,
+                reliability: selectedSubRatings.professionalism || 5,
+                communication: selectedSubRatings.communication || 5,
+                pricing: selectedSubRatings.pricing || 5
+              },
+              praise_tags: Array.from(selectedPraiseTags)
+            })
+          });
+
+          if (apiRes.status === 403) {
+            const errJson = await apiRes.json().catch(() => ({}));
+            apiErrorMsg = errJson.error || 'Artisans are not permitted to review their own profile.';
+          } else if (apiRes.status === 409) {
+            const errJson = await apiRes.json().catch(() => ({}));
+            apiErrorMsg = errJson.error || 'Duplicate review detected. You have already submitted this feedback.';
+          } else if (!apiRes.ok) {
+            const errJson = await apiRes.json().catch(() => ({}));
+            apiErrorMsg = errJson.error || 'Could not submit review. Please try again.';
+          }
+        } catch (netErr) {
+          console.warn('[Profile Review] Network error contacting API:', netErr);
+        }
+
+        if (apiErrorMsg) {
+          showProfileToast(apiErrorMsg, 'error');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Publish Review';
+          }
+          return;
+        }
+
         const reviewRecord = {
           provider_id: provider.id,
           customer_name: author,
@@ -1382,8 +1447,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           comment: comment,
           job_type: service,
           date: dateOption,
-          is_verified_client: isVerifiedChecked,
-          isVerifiedCustomer: isVerifiedChecked,
+          is_verified_client: false, // direct public profile reviews are unverified
+          is_verified_customer: false,
           helpfulCount: 0,
           created_at: new Date().toISOString()
         };
@@ -1392,24 +1457,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           LokatorDB.reviews.addReview(reviewRecord);
         }
 
-        if (typeof LokatorTelemetry !== 'undefined') {
-          LokatorTelemetry.trackEvent('provider_review_submitted', {
-            rating: selectedOverallRating,
-            quality: selectedSubRatings.quality,
-            professionalism: selectedSubRatings.professionalism,
-            communication: selectedSubRatings.communication,
-            pricing: selectedSubRatings.pricing,
-            punctuality: selectedSubRatings.punctuality,
-            job_completed: true,
-            has_photos: attachedPhotos.length > 0,
-            praise_tags_count: selectedPraiseTags.size,
-            provider_id: provider.id,
-            page: 'profile'
-          });
-        }
-
-        // Re-render UI
-        renderReviews(currentReviewFilter);
+        cachedAuthoritativeReviews = null; // Invalidate cache so live reviews reload
+        await renderReviews(currentReviewFilter);
         reviewForm.reset();
         selectedOverallRating = 5;
         selectedHiredStatus = 'completed';

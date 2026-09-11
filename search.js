@@ -1035,14 +1035,21 @@ document.addEventListener("DOMContentLoaded", () => {
           displayTrade = provider.primary_category_slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         }
 
-        // Truthful Rating & Review Count
-        const safeReviewsCount = parseInt(provider.reviewsCount || 0, 10);
+        // Truthful Rating & Review Count (Phase 029: Authoritative Metrics & Verified Badges)
+        const safeReviewsCount = parseInt(provider.reviewsCount != null ? provider.reviewsCount : (provider.reviews_count || 0), 10);
+        const safeVerifiedCount = parseInt(provider.verifiedReviewsCount != null ? provider.verifiedReviewsCount : (provider.verified_reviews_count || 0), 10);
         const hasReviews = safeReviewsCount > 0 && provider.rating != null && Number(provider.rating) > 0;
         const safeRating = hasReviews ? Number(provider.rating).toFixed(1) : 'New';
+
+        let reviewsSubText = `${safeReviewsCount} review${safeReviewsCount === 1 ? '' : 's'}`;
+        if (safeVerifiedCount > 0) {
+          reviewsSubText = `${safeReviewsCount} reviews • ${safeVerifiedCount} Verified`;
+        }
+
         const ratingHtml = hasReviews
           ? `<span class="meta-rating-num">${safeRating}</span>
              <span class="meta-rating-star">★</span>
-             <span class="meta-reviews-count">(${safeReviewsCount} review${safeReviewsCount === 1 ? '' : 's'})</span>`
+             <span class="meta-reviews-count">(${reviewsSubText})</span>`
           : `<span class="meta-rating-num" style="color: #059669; font-weight: 700;">★ New</span>
              <span class="meta-reviews-count">(0 reviews)</span>`;
 

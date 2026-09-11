@@ -473,14 +473,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return quoteMsg;
       case 'schedule':
         return `Confirmed: Scheduled appointment for ${intent} with ${providerName}.\n• Location: ${locality}\n• Date & Time: ${schedDate}\n\nI will arrive equipped with all necessary diagnostic tools. Please confirm if address is ready.`;
-      case 'review':
-        return `Hello! Thank you for choosing ${providerName} for your ${intent} via PadiFix.\n\nCould you please take 30 seconds to rate my workmanship and leave a quick review on my verified profile? It helps other clients find me: ${profileUrl}\n\nThank you for your business!`;
+      case 'review': {
+        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : 'https://padifix.ng';
+        const reviewUrl = lead.review_token
+          ? `${origin}/review.html?token=${encodeURIComponent(lead.review_token)}`
+          : `${origin}/review.html`;
+        return `Hello! Thank you for choosing ${providerName} for your ${intent} via PadiFix.\n\nCould you please take 30 seconds to rate my completed workmanship and leave a quick review? Here is your direct review link:\n${reviewUrl}\n\nThank you for your business!`;
+      }
       default:
         return `Hello! Regarding your inquiry for ${intent} via PadiFix...`;
     }
   }
 
-  function openWhatsAppDrawer(leadId, templateKey = 'greeting') {
+  async function openWhatsAppDrawer(leadId, templateKey = 'greeting') {
     activeDrawerLeadId = leadId;
     activeDrawerTemplateKey = templateKey;
     const modal = document.getElementById('crm-wa-drawer-modal');
@@ -488,6 +493,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const lead = cachedLeads.find(l => l.id === leadId);
     if (!lead) return;
+
+    // Phase 029: If requesting review on a completed lead and token is not yet stored, request it from API
+    if (templateKey === 'review' && (lead.status === 'completed' || lead.status === 'job_won') && !lead.review_token) {
+      try {
+        const authHeaders = { 'Content-Type': 'application/json' };
+        if (supabaseSession && supabaseSession.access_token) {
+          authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+        }
+        const res = await fetch('/api/provider-leads?action=request_review', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ lead_id: leadId })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.review_token) {
+            lead.review_token = data.review_token;
+            lead.review_requested_at = data.review_requested_at;
+          }
+        }
+      } catch (err) {
+        console.warn('[CRM] Could not request review token from API:', err);
+      }
+    }
 
     // Update active tab
     modal.querySelectorAll('.crm-template-tab').forEach(tab => {
@@ -1007,6 +1036,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         closeStage();
         await handleLeadStatusChange(leadId, targetStatus, null, extra);
+        if (targetStatus === 'completed') {
+          openCompletionReviewPrompt(leadId);
+        }
+      });
+    }
+
+    // Post-Completion Review Prompt Modal Wiring (Section 18)
+    const compModal = document.getElementById('crm-completion-review-modal');
+    const btnCancelComp = document.getElementById('btn-cancel-completion-modal');
+    const btnReqRevFromComp = document.getElementById('btn-request-review-from-completion');
+    if (btnCancelComp && !btnCancelComp.dataset.bound) {
+      btnCancelComp.dataset.bound = 'true';
+      btnCancelComp.addEventListener('click', () => {
+        if (compModal) compModal.style.display = 'none';
+      });
+    }
+    if (btnReqRevFromComp && !btnReqRevFromComp.dataset.bound) {
+      btnReqRevFromComp.dataset.bound = 'true';
+      btnReqRevFromComp.addEventListener('click', () => {
+        if (compModal) compModal.style.display = 'none';
+        if (activeCompletionLeadId) {
+          openWhatsAppDrawer(activeCompletionLeadId, 'review');
+        }
       });
     }
 
@@ -1025,12 +1077,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (waModal && !waModal.dataset.tabsBound) {
       waModal.dataset.tabsBound = 'true';
       waModal.querySelectorAll('.crm-template-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
+        tab.addEventListener('click', async () => {
           waModal.querySelectorAll('.crm-template-tab').forEach(t => t.classList.remove('active'));
           tab.classList.add('active');
           activeDrawerTemplateKey = tab.dataset.templateKey;
           const lead = cachedLeads.find(l => l.id === activeDrawerLeadId);
           if (lead) {
+            if (activeDrawerTemplateKey === 'review' && (lead.status === 'completed' || lead.status === 'job_won') && !lead.review_token) {
+              try {
+                const authHeaders = { 'Content-Type': 'application/json' };
+                if (supabaseSession && supabaseSession.access_token) {
+                  authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+                }
+                const res = await fetch('/api/provider-leads?action=request_review', {
+                  method: 'POST',
+                  headers: authHeaders,
+                  body: JSON.stringify({ lead_id: lead.id })
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.review_token) {
+                    lead.review_token = data.review_token;
+                    lead.review_requested_at = data.review_requested_at;
+                  }
+                }
+              } catch (e) {}
+            }
             const text = generateWhatsAppTemplate(lead, activeDrawerTemplateKey);
             const textarea = document.getElementById('crm-wa-rendered-text');
             const charCount = document.getElementById('crm-wa-char-count');
@@ -3715,49 +3787,156 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // ============================================================================
-  // PHASE 10.18: REPUTATION & REVIEWS DESK (PROVIDER DASHBOARD)
+  // PHASE 029: POST-COMPLETION REVIEW PROMPT & DASHBOARD REVIEWS MANAGEMENT
   // ============================================================================
-  function renderDashboardReviews() {
+  let activeCompletionLeadId = null;
+  function openCompletionReviewPrompt(leadId) {
+    activeCompletionLeadId = leadId;
+    const modal = document.getElementById('crm-completion-review-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  let currentDashReviewFilter = 'all';
+  let cachedDashReviews = null;
+
+  async function fetchAuthoritativeDashboardReviews(providerId) {
+    try {
+      const res = await fetch(`/api/service-review?provider_id=${encodeURIComponent(providerId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.reviews)) {
+          return {
+            reviews: data.reviews,
+            reviews_count: data.reviews_count || data.reviews.length,
+            verified_reviews_count: data.verified_reviews_count || 0,
+            average_rating: data.average_rating || 5.0
+          };
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  async function renderDashboardReviews() {
     const listEl = document.getElementById('all-reviews-list');
     if (!listEl || !currentProvider) return;
 
-    const reviews = (typeof LokatorDB !== 'undefined' && LokatorDB.reviews)
-      ? LokatorDB.reviews.getProviderReviews(currentProvider.id)
-      : (currentProvider.reviews || []);
+    // Fetch authoritative data from API
+    let apiData = null;
+    if (!cachedDashReviews) {
+      apiData = await fetchAuthoritativeDashboardReviews(currentProvider.id);
+      if (apiData) {
+        cachedDashReviews = apiData.reviews;
+      }
+    }
 
-    if (reviews.length === 0) {
+    const reviews = cachedDashReviews || ((typeof LokatorDB !== 'undefined' && LokatorDB.reviews)
+      ? LokatorDB.reviews.getProviderReviews(currentProvider.id)
+      : (currentProvider.reviews || []));
+
+    // Calculate metrics
+    let verifiedCount = 0;
+    let sumRating = 0;
+    reviews.forEach(r => {
+      sumRating += Number(r.rating || 5);
+      if (r.is_verified_customer || r.trust_level === 'VERIFIED_CUSTOMER') {
+        verifiedCount++;
+      }
+    });
+    const totalCount = reviews.length;
+    const avgRating = totalCount > 0 ? Number((sumRating / totalCount).toFixed(1)) : 5.0;
+
+    // Update Summary Ribbon in #tab-reviews
+    const scoreEl = document.getElementById('dash-rev-avg-score');
+    const starsEl = document.getElementById('dash-rev-avg-stars');
+    const totalEl = document.getElementById('dash-rev-total-count');
+    const verEl = document.getElementById('dash-rev-verified-count');
+    const profLink = document.getElementById('dash-reviews-profile-link');
+
+    if (scoreEl) scoreEl.textContent = totalCount > 0 ? avgRating.toFixed(1) : 'New';
+    if (starsEl) starsEl.textContent = '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating));
+    if (totalEl) totalEl.textContent = String(totalCount);
+    if (verEl) verEl.textContent = String(verifiedCount);
+    if (profLink) profLink.href = `profile.html?id=${currentProvider.id}`;
+
+    // Filter Buttons Wiring
+    document.querySelectorAll('.btn-rev-filter').forEach(btn => {
+      if (!btn.dataset.bound) {
+        btn.dataset.bound = 'true';
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.btn-rev-filter').forEach(b => {
+            b.classList.remove('active');
+            b.style.background = 'rgba(255,255,255,0.06)';
+            b.style.color = 'var(--dash-text)';
+          });
+          btn.classList.add('active');
+          btn.style.background = '#00A859';
+          btn.style.color = '#fff';
+          currentDashReviewFilter = btn.dataset.filter || 'all';
+          renderDashboardReviews();
+        });
+      }
+    });
+
+    // Apply active filter
+    let filteredReviews = [...reviews];
+    if (currentDashReviewFilter === '5star') {
+      filteredReviews = filteredReviews.filter(r => Math.round(Number(r.rating || 5)) === 5);
+    } else if (currentDashReviewFilter === 'with_reply') {
+      filteredReviews = filteredReviews.filter(r => Boolean(r.provider_reply || r.response));
+    }
+
+    if (filteredReviews.length === 0) {
       listEl.innerHTML = `
         <div style="text-align: center; padding: 40px 20px; color: var(--dash-muted);">
           <div style="font-size: 32px; margin-bottom: 10px;">💬</div>
-          <h3>No Customer Reviews Yet</h3>
-          <p style="font-size: 13px; max-width: 420px; margin: 6px auto 16px;">When clients hire you and leave verified ratings, they will appear here. You can respond directly to thank them or clarify project details.</p>
+          <h3>${totalCount === 0 ? 'No Customer Reviews Yet' : 'No Reviews Match Filter'}</h3>
+          <p style="font-size: 13px; max-width: 420px; margin: 6px auto 16px;">
+            ${totalCount === 0
+              ? 'When clients hire you and leave verified ratings, they will appear here. You can respond directly to thank them or clarify project details.'
+              : 'Try selecting "All Reviews" to view your entire feedback history.'}
+          </p>
           <a href="profile.html?id=${currentProvider.id}" target="_blank" class="btn btn-outline btn-sm">View Your Public Profile ↗</a>
         </div>
       `;
       return;
     }
 
-    listEl.innerHTML = reviews.map(r => {
+    listEl.innerHTML = filteredReviews.map(r => {
       const safeRevId = r.id;
-      const author = r.customer_name || r.author || 'Verified Client';
+      const author = r.customer_name || r.author || 'Customer Review';
       const safeRating = Math.max(1, Math.min(5, Number(r.rating) || 5));
       const starsStr = '★'.repeat(safeRating) + '☆'.repeat(5 - safeRating);
       const dateStr = r.date || (r.created_at ? new Date(r.created_at).toLocaleDateString() : 'Recent');
       const jobType = r.job_type || r.serviceType || 'General Service';
       const comment = r.comment || '';
-      const reply = r.provider_reply;
+      const reply = r.provider_reply || (r.response ? { text: r.response.comment || r.response.text, date: r.response.date || 'Recent' } : null);
+      const isVerified = Boolean(r.is_verified_customer || r.trust_level === 'VERIFIED_CUSTOMER');
+      const tags = Array.isArray(r.praise_tags) ? r.praise_tags : [];
 
       return `
         <div class="dash-review-card" id="dash-rev-${safeRevId}" style="background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 18px; margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
             <div>
-              <strong style="color: #fff; font-size: 14.5px;">${escapeHtml(author)}</strong>
-              <div style="font-size: 12px; color: var(--dash-muted); margin-top: 2px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="color: #fff; font-size: 14.5px;">${escapeHtml(author)}</strong>
+                ${isVerified
+                  ? `<span style="background: rgba(0, 168, 89, 0.15); color: #34D399; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(0, 168, 89, 0.3);">✓ Verified Customer Job</span>`
+                  : `<span style="color: var(--dash-muted); font-size: 11px;">💬 Customer Review</span>`}
+              </div>
+              <div style="font-size: 12px; color: var(--dash-muted); margin-top: 4px;">
                 <span>🛠️ ${escapeHtml(jobType)}</span> • <span>${escapeHtml(dateStr)}</span>
               </div>
             </div>
             <div style="color: #FBBF24; font-size: 14px; letter-spacing: 1px;">${starsStr}</div>
           </div>
+
+          ${tags.length > 0 ? `
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0;">
+              ${tags.map(t => `<span style="background: rgba(0, 107, 63, 0.2); color: #34D399; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 10px; border: 1px solid rgba(0, 107, 63, 0.4);">${escapeHtml(t)}</span>`).join('')}
+            </div>
+          ` : ''}
+
           <p style="color: #CBD5E1; font-size: 13.5px; line-height: 1.5; margin: 10px 0;">${escapeHtml(comment)}</p>
           
           <!-- Reply Display or Reply Box -->
@@ -3794,9 +3973,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
           if (typeof LokatorDB !== 'undefined' && LokatorDB.reviews) {
-            LokatorDB.reviews.replyToReview(revId, text, currentProvider.id);
+            await LokatorDB.reviews.replyToReview(revId, text, currentProvider.id);
             showToast('Response posted publicly!');
-            renderDashboardReviews();
+            cachedDashReviews = null;
+            await renderDashboardReviews();
           }
         } catch (err) {
           showToast('Failed to post reply: ' + err.message, 'error');

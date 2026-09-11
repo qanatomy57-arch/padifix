@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-11T21:24:02.640Z",
+  "timestamp": "2026-09-11T22:25:48.144Z",
   "totalGates": 8,
   "passedGates": 8,
   "failedGates": 0,
@@ -16,14 +16,14 @@
       "gate": 2,
       "title": "POST /api/contact-meter (call) dispatches lead and logs notification",
       "passed": true,
-      "detail": "HTTP 200, contact allowed: true, latest notification ID: 503d882e-9479-4fed-9008-1959e0489e13",
+      "detail": "HTTP 200, contact allowed: true, latest notification ID: 3e298129-5995-4baa-9be1-3e7e57ba7199",
       "error": null
     },
     {
       "gate": 3,
       "title": "Simulated Termii success records status=\"sent\" and termii_message_id",
       "passed": true,
-      "detail": "delivered: true, status: sent, termii_message_id: sim_test_1789161835155, db verified: true",
+      "detail": "delivered: true, status: sent, termii_message_id: sim_test_1789165542317, db verified: true",
       "error": null
     },
     {

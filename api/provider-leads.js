@@ -49,7 +49,7 @@ function sanitizeText(val, maxLen = 100) {
 const providerLeadsHandler = async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
   if (req.method === 'OPTIONS') {
@@ -107,6 +107,8 @@ const providerLeadsHandler = async (req, res) => {
             'completed_at',
             'lost_reason',
             'client_display_name',
+            'review_token',
+            'review_requested_at',
             'created_at',
             'updated_at'
           ].join(',');
@@ -133,8 +135,12 @@ const providerLeadsHandler = async (req, res) => {
           if (pgRes.ok) {
             const rows = await pgRes.json();
             const contentRange = pgRes.headers.get('content-range');
-            const parsedCount = contentRange ? parseInt(contentRange.split('/')[1], 10) : rows.length;
-            totalCount = isNaN(parsedCount) ? rows.length : parsedCount;
+            if (contentRange) {
+              const total = contentRange.split('/')[1];
+              if (total && total !== '*') totalCount = parseInt(total, 10);
+            } else {
+              totalCount = rows.length;
+            }
             leads = rows.map(r => ({
               id: r.id,
               provider_id: Number(r.provider_id),
@@ -151,6 +157,8 @@ const providerLeadsHandler = async (req, res) => {
               completed_at: r.completed_at || null,
               lost_reason: r.lost_reason || null,
               client_display_name: r.client_display_name || null,
+              review_token: r.review_token || null,
+              review_requested_at: r.review_requested_at || null,
               created_at: r.created_at,
               updated_at: r.updated_at || r.created_at,
               relative_time: formatRelativeTime(r.created_at)
@@ -399,8 +407,13 @@ const providerLeadsHandler = async (req, res) => {
       if (cleanFinalKobo !== undefined) updates.final_amount_kobo = cleanFinalKobo;
       if (cleanScheduledFor !== undefined) updates.scheduled_for = cleanScheduledFor;
       if (cleanCompletedAt !== undefined) updates.completed_at = cleanCompletedAt;
+      if (normStatus === 'completed' && !updates.completed_at) {
+        updates.completed_at = new Date().toISOString();
+      }
       if (cleanLostReason !== undefined) updates.lost_reason = cleanLostReason;
       if (cleanClientName !== undefined) updates.client_display_name = cleanClientName;
+      if (req.body?.review_requested_at !== undefined) updates.review_requested_at = req.body.review_requested_at;
+      if (req.body?.review_token !== undefined) updates.review_token = req.body.review_token;
 
       // Attempt PostgreSQL update on public.contact_events (strictly tenant-scoped)
       let pgUpdated = false;
@@ -442,6 +455,8 @@ const providerLeadsHandler = async (req, res) => {
                 completed_at: r.completed_at || null,
                 lost_reason: r.lost_reason || null,
                 client_display_name: r.client_display_name || null,
+                review_token: r.review_token || null,
+                review_requested_at: r.review_requested_at || null,
                 created_at: r.created_at,
                 updated_at: r.updated_at
               };
@@ -471,7 +486,70 @@ const providerLeadsHandler = async (req, res) => {
     }
   }
 
-  return res.status(405).json({ error: 'Method Not Allowed. Supported methods: GET, PATCH, OPTIONS.' });
+  // POST: Review Request Dispatch & Quick Operations
+  if (req.method === 'POST') {
+    try {
+      const { action = 'request_review', lead_id, provider_id } = req.body || {};
+      if (action === 'request_review') {
+        const auth = await verifyProviderAuth(req, provider_id || queryProviderId);
+        if (!auth.valid) {
+          return res.status(auth.statusCode).json({ error: auth.error });
+        }
+        const activeProviderId = auth.providerId;
+        if (!lead_id) {
+          return res.status(400).json({ error: 'Missing required field: lead_id.' });
+        }
+
+        const rawAuth = req.headers['authorization'] || req.headers['Authorization'] || '';
+        const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
+
+        const recRes = LeadStore.recordReviewRequested(activeProviderId, String(lead_id).trim());
+        if (recRes.error) {
+          return res.status(recRes.statusCode || 400).json({ error: recRes.error });
+        }
+
+        if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+          try {
+            await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(String(lead_id).trim())}&provider_id=eq.${activeProviderId}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                review_token: recRes.review_token,
+                review_requested_at: recRes.review_requested_at,
+                updated_at: new Date().toISOString()
+              })
+            });
+          } catch (e) {}
+        }
+
+        let origin = 'https://padifix.ng';
+        if (req.headers && (req.headers['origin'] || req.headers['referer'])) {
+          try {
+            const parsed = new URL(req.headers['origin'] || req.headers['referer']);
+            origin = parsed.origin;
+          } catch (e) {}
+        }
+        const reviewUrl = `${origin}/review.html?token=${recRes.review_token}`;
+
+        return res.status(200).json({
+          status: 'success',
+          lead_id: String(lead_id).trim(),
+          review_token: recRes.review_token,
+          review_url: reviewUrl,
+          review_requested_at: recRes.review_requested_at
+        });
+      }
+      return res.status(400).json({ error: `Unknown action: '${action}'.` });
+    } catch (err) {
+      return res.status(500).json({ error: 'Internal Server Error', message: err.message });
+    }
+  }
+
+  return res.status(405).json({ error: 'Method Not Allowed. Supported methods: GET, PATCH, POST, OPTIONS.' });
 };
 
 module.exports = withSentry(providerLeadsHandler, 'provider_leads');

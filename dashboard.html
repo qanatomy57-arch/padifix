@@ -736,11 +736,48 @@
       <!-- ===== TAB 7: REVIEWS ===== -->
       <div class="dash-tab-panel" id="tab-reviews">
         <div class="dash-card-section">
-          <div class="dash-section-header">
+          <div class="dash-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
-              <h2>All Customer Reviews & Ratings</h2>
-              <p>Public verified reviews appearing on your profile</p>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.4rem;">⭐</span>
+                <h2 style="margin: 0; font-size: 1.15rem; color: var(--dash-text);">All Customer Reviews & Ratings</h2>
+              </div>
+              <p style="margin: 4px 0 0 0; color: var(--dash-muted); font-size: 13px;">Authoritative reviews and verified job ratings appearing on your public profile</p>
             </div>
+            <div>
+              <a href="#" id="dash-reviews-profile-link" target="_blank" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                <span>View Public Profile</span> ↗
+              </a>
+            </div>
+          </div>
+
+          <!-- Reviews Metrics Summary Ribbon (Phase 029) -->
+          <div class="dash-kpi-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 18px 0;">
+            <div class="dash-kpi-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--dash-border); border-radius: 10px; padding: 16px;">
+              <div class="dash-kpi-label" style="font-size: 12px; color: var(--dash-muted); font-weight: 600; text-transform: uppercase;">Average Rating</div>
+              <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 6px;">
+                <span id="dash-rev-avg-score" style="font-size: 1.8rem; font-weight: 800; color: #FBBF24;">5.0</span>
+                <span id="dash-rev-avg-stars" style="color: #FBBF24; font-size: 1rem;">★★★★★</span>
+              </div>
+            </div>
+            <div class="dash-kpi-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--dash-border); border-radius: 10px; padding: 16px;">
+              <div class="dash-kpi-label" style="font-size: 12px; color: var(--dash-muted); font-weight: 600; text-transform: uppercase;">Total Reviews</div>
+              <div id="dash-rev-total-count" style="font-size: 1.8rem; font-weight: 800; color: var(--dash-text); margin-top: 6px;">0</div>
+            </div>
+            <div class="dash-kpi-card" style="background: rgba(0, 168, 89, 0.05); border: 1px solid rgba(0, 168, 89, 0.25); border-radius: 10px; padding: 16px;">
+              <div class="dash-kpi-label" style="font-size: 12px; color: #34D399; font-weight: 600; text-transform: uppercase;">Verified Customer Jobs</div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                <span id="dash-rev-verified-count" style="font-size: 1.8rem; font-weight: 800; color: #34D399;">0</span>
+                <span style="font-size: 11px; background: rgba(0, 168, 89, 0.15); color: #34D399; padding: 2px 6px; border-radius: 10px; font-weight: 700;">Job Verified</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reviews Filter Chips -->
+          <div class="dash-rev-filter-bar" style="display: flex; gap: 8px; margin: 16px 0; border-bottom: 1px solid var(--dash-border); padding-bottom: 12px; flex-wrap: wrap;">
+            <button type="button" class="btn-rev-filter active" data-filter="all" style="background: #00A859; color: #fff; border: none; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer;">All Reviews</button>
+            <button type="button" class="btn-rev-filter" data-filter="5star" style="background: rgba(255,255,255,0.06); color: var(--dash-text); border: 1px solid var(--dash-border); padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer;">5-Star Only ★</button>
+            <button type="button" class="btn-rev-filter" data-filter="with_reply" style="background: rgba(255,255,255,0.06); color: var(--dash-text); border: 1px solid var(--dash-border); padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer;">With My Reply 👑</button>
           </div>
 
           <div class="dash-reviews-list" id="all-reviews-list">
@@ -1626,6 +1663,25 @@
       </div>
       <div style="margin-top: 10px; font-size: 0.75rem; color: var(--dash-muted); text-align: center;">
         🔒 <em>Zero PII Invariant: Message text is formatted on-device. Customer phone numbers are never stored in PadiFix.</em>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 029: Post-Completion Review Prompt Modal (Section 18) -->
+  <div id="crm-completion-review-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card crm-modal-card" style="max-width: 440px; text-align: center;">
+      <div style="font-size: 2.5rem; margin-bottom: 8px;">🎉</div>
+      <h3 class="modal-title" style="margin: 0 0 6px 0; font-size: 1.25rem;">Job Completed!</h3>
+      <p style="font-size: 0.9rem; color: var(--dash-muted); margin: 0 0 18px 0; line-height: 1.45;">
+        Congratulations on finishing this job! Would you like to request a verified customer review to boost your search rank and profile credibility?
+      </p>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button type="button" class="btn btn-outline" id="btn-cancel-completion-modal" style="min-width: 110px;">
+          Maybe Later
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-request-review-from-completion" style="min-width: 170px; background: #00A859; border-color: #00A859; color: #fff; font-weight: 700;">
+          ⭐ Request Client Review
+        </button>
       </div>
     </div>
   </div>

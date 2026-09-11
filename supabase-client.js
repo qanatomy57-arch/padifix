@@ -1615,7 +1615,7 @@
       // Calculate real distances if customer coords are present
       list = this._sanitizeProvidersList(list, userLat, userLng, services);
 
-      // Phase 010: Plan-based visibility boost (Relevance, location, and reputation remain predominant)
+      // Phase 029: Plan-based visibility & Bounded Verified-Review Ranking Boost
       list.forEach(p => {
         const planKey = String(p.subscription_plan || p.plan_id || 'FREE').toUpperCase();
         let planBoost = 0;
@@ -1623,7 +1623,13 @@
         else if (planKey === 'PRO') planBoost = 15;
         else if (planKey === 'BASIC') planBoost = 5;
         p._planBoost = planBoost;
-        p._effectiveScore = (p._searchScore || 0) * (1 + planBoost / 100) + planBoost;
+
+        // Bounded deterministic verified review boost (max 10 points, e.g. min(10, count * 1.5))
+        const verifiedCount = Number(p.verified_reviews_count != null ? p.verified_reviews_count : (p.verifiedReviewsCount || 0));
+        const verifiedBoost = Math.min(10, verifiedCount * 1.5);
+        p._verifiedBoost = verifiedBoost;
+
+        p._effectiveScore = (p._searchScore || 0) * (1 + (planBoost + verifiedBoost) / 100) + planBoost + verifiedBoost;
         if (planKey === 'PRO' || planKey === 'PREMIUM') {
           p.is_featured_plan = true;
         }
@@ -1634,8 +1640,16 @@
         if (searchIntent.cleanQuery && (a._effectiveScore || 0) !== (b._effectiveScore || 0)) {
           return (b._effectiveScore || 0) - (a._effectiveScore || 0);
         }
-        if (sortBy === 'rating-desc') return b.rating - a.rating;
-        if (sortBy === 'reviews-desc') return b.reviews_count - a.reviews_count;
+        if (sortBy === 'rating-desc') {
+          const diff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
+          if (Math.abs(diff) > 0.05) return diff;
+          // When ratings are equal, tie-break by verified reviews count
+          const vA = Number(a.verified_reviews_count != null ? a.verified_reviews_count : (a.verifiedReviewsCount || 0));
+          const vB = Number(b.verified_reviews_count != null ? b.verified_reviews_count : (b.verifiedReviewsCount || 0));
+          if (vB !== vA) return vB - vA;
+          return (Number(b.reviews_count || b.reviewsCount || 0)) - (Number(a.reviews_count || a.reviewsCount || 0));
+        }
+        if (sortBy === 'reviews-desc') return (b.reviews_count || b.reviewsCount || 0) - (a.reviews_count || a.reviewsCount || 0);
         if (sortBy === 'experience-desc') return b.experience_years - a.experience_years;
         if (a.distanceKm != null && b.distanceKm != null) {
           // If distances are virtually identical (< 1km) and plans differ, gently favor plan boost
@@ -1729,6 +1743,8 @@
         copy.trade = p.trade || p.trade_title || p.service || p.category || 'Professional Artisan';
         copy.rating = Number(p.rating != null ? p.rating : 5.0);
         copy.reviewsCount = Number(p.reviewsCount != null ? p.reviewsCount : (p.reviews_count || 0));
+        copy.verifiedReviewsCount = Number(p.verifiedReviewsCount != null ? p.verifiedReviewsCount : (p.verified_reviews_count || 0));
+        copy.verified_reviews_count = copy.verifiedReviewsCount;
         copy.experienceYrs = Number(p.experienceYrs != null ? p.experienceYrs : (p.experience_years || 3));
         copy.completedJobs = Number(p.completedJobs != null ? p.completedJobs : (p.completed_jobs || 15));
         copy.isVerified = Boolean(p.isVerified || p.is_verified);
@@ -10178,12 +10194,33 @@
       return { success: true, review: newReview };
     },
 
-    /**
-     * Post an official artisan response to a client review
-     */
-    replyToReview(reviewId, responseText, providerId = null) {
+    async replyToReview(reviewId, responseText, providerId = null) {
       if (!reviewId || !responseText || !responseText.trim()) {
         throw new Error('Review ID and response text are required.');
+      }
+
+      // Sync with authoritative backend API if available
+      if (typeof fetch !== 'undefined') {
+        try {
+          const authHeaders = { 'Content-Type': 'application/json' };
+          if (supabaseInstance && supabaseInstance.auth) {
+            const sess = await supabaseInstance.auth.getSession().catch(() => null);
+            if (sess && sess.data && sess.data.session) {
+              authHeaders['Authorization'] = `Bearer ${sess.data.session.access_token}`;
+            }
+          }
+          await fetch('/api/service-review', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({
+              action: 'provider_response',
+              review_id: reviewId,
+              response_text: responseText.trim()
+            })
+          });
+        } catch (e) {
+          console.warn('[replyToReview] Failed to sync with /api/service-review:', e);
+        }
       }
 
       const reviews = getLocalStore(DB_REVIEWS_KEY, []);
