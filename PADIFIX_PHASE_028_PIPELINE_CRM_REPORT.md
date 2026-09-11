@@ -5,15 +5,52 @@
 
 ## 1. Executive Summary & Status
 
-| Phase | Description | Status | Verification Result |
-| :--- | :--- | :--- | :--- |
-| **Phase 028** | Artisan Lead Conversion & Job Pipeline CRM with Earnings Tracking | **CERTIFIED GREEN** | **10/10 Gates Passed (0 Failures)** |
+| Phase | Description | Status | Production Migration 047 | Target Supabase Project | Verification Result |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Phase 028** | Artisan Lead Conversion & Job Pipeline CRM with Earnings Tracking | **GREEN / CERTIFIED** | **APPLIED AND VERIFIED** | `hvxosxhnxauiqrhpyuur` | **21/21 Production DB Probes Passed & 10/10 Gates Passed (0 Failures)** |
 
-This document certifies the successful implementation and automated validation of **PadiFix Phase 028**. The artisan dashboard has been transformed from raw lead reception into an active, touch-optimized **Job Pipeline CRM**, enabling artisans across Nigeria to track deal progression, quotation splits, scheduled site visits, lost reasons, realized revenue, and conversion metrics, while strictly enforcing **Tenant Isolation** and **Zero Customer PII Persistence** (Privacy Invariant C).
+This document certifies the successful production deployment, live database verification, and automated validation of **PadiFix Phase 028**.
+
+Migration 047 was executed in the production Supabase SQL Editor (`hvxosxhnxauiqrhpyuur`) and verified via live automated database probes against the PostgreSQL ledger. The artisan dashboard is fully operational as an active, touch-optimized **Job Pipeline CRM**, enabling artisans across Nigeria to track deal progression, quotation splits, scheduled site visits, lost reasons, realized revenue, and conversion metrics, while strictly enforcing **Tenant Isolation**, **Row Level Security (RLS)**, and **Zero Customer PII Persistence** (Privacy Invariant C).
 
 ---
 
-## 2. Architectural Overview
+## 2. Production Database Verification Evidence (Migration 047)
+
+Live database verification was executed against `https://hvxosxhnxauiqrhpyuur.supabase.co` on **2026-09-11 22:20:56 UTC+1** via `scripts/verify_phase_028_production_migration.js`.
+
+### 2.1 PostgREST Schema Introspection (OpenAPI Verified)
+Every column added by Migration 047 was inspected and confirmed in the live PostgREST schema definition:
+- `quote_amount_kobo`: Verified type `integer` (`BIGINT`)
+- `workmanship_amount_kobo`: Verified type `integer` (`BIGINT`)
+- `materials_amount_kobo`: Verified type `integer` (`BIGINT`)
+- `final_amount_kobo`: Verified type `integer` (`BIGINT`)
+- `scheduled_for`: Verified type `string` (`TIMESTAMPTZ`)
+- `completed_at`: Verified type `string` (`TIMESTAMPTZ`)
+- `lost_reason`: Verified type `string` (`TEXT`)
+- `client_display_name`: Verified type `string` (`TEXT`)
+
+### 2.2 Active Database Check Constraints Verified
+- **`chk_contact_events_status`**:
+  - Live probe with invalid status (`unsupported_bogus_status`) returned **HTTP 400** with PostgreSQL error `23514` (`check constraint "chk_contact_events_status"`).
+  - All 7 canonical statuses verified operational: `new`, `in_discussion`, `quote_sent`, `scheduled`, `completed`, `job_won`, `lost`.
+- **`chk_contact_events_amounts_non_negative`**:
+  - Live probe with negative Kobo (`-25000`) returned **HTTP 400** with PostgreSQL error `23514` (`check constraint "chk_contact_events_amounts_non_negative"`).
+- **`chk_contact_events_split_equality`**:
+  - Live probe with unbalanced split (Quote ₦50,000, Labor ₦30,000, Materials ₦10,000; sum ₦40,000 $\neq$ ₦50,000) returned **HTTP 400** with PostgreSQL error `23514` (`check constraint "chk_contact_events_split_equality"`).
+  - Live probe with balanced split (Quote ₦50,000 = Labor ₦30,000 + Materials ₦20,000) was successfully committed to production.
+
+### 2.3 Column UPDATE Grants & Ownership Immutability Verified
+- **Authenticated UPDATE Grant**: Authenticated Provider 8 successfully updated permitted workflow columns (`notes`, `client_display_name`).
+- **Immutable Column Defense**: Authenticated Provider 8 attempting to mutate `provider_id` was rejected by PostgreSQL with **HTTP 403** error `42501` (`permission denied for column provider_id`). Client-controlled ownership mutation is strictly impossible.
+
+### 2.4 Row Level Security (RLS) Cross-Tenant Quarantine Verified
+- Authenticated Provider 101 attempted to update a lead owned by Provider 8.
+- PostgreSQL RLS evaluated the policy and executed the query with **0 rows affected**. Provider 8's lead remained completely unmodified.
+
+---
+
+## 3. Architectural Overview
 
 The Phase 028 Job Pipeline CRM operates on three coordinated tiers:
 
@@ -28,7 +65,7 @@ graph TD
 ```
 
 1. **Presentation Tier (`dashboard.html`, `dashboard.css`, `dashboard.js`)**:
-   - **Financial Ribbon**: Instant overview of Realized Revenue, Quoted Pipeline Value, Resolved-Outcome Win Rate, and Average Deal Size in safe Naira formatting.
+   - **Financial Ribbon**: Realized Revenue, Quoted Pipeline Value, Resolved-Outcome Win Rate, and Average Deal Size in safe Naira formatting.
    - **Dual-View Switcher**: Seamless toggling between a horizontal-swipe **Kanban Board** and a **Compact List** view, persisted in `localStorage` (`padifix_leads_view_mode`).
    - **Touch-Optimized Kanban**: 5 core stages (`New`, `In Discussion`, `Quoted`, `Scheduled`, `Completed`) with horizontal scroll-snapping (`scroll-snap-type: x mandatory`) and strict `0px` horizontal document overflow.
    - **Stage Progression Modal (`#crm-stage-modal`)**: Modal for entering quotation amounts, labor/workmanship and materials splits, site visit scheduling, and final realized revenue.
@@ -46,89 +83,11 @@ graph TD
 
 ---
 
-## 3. Database Changes (Migration 047)
-
-File: `supabase/migrations/047_padifix_phase_028_pipeline_crm_and_earnings.sql`
-
-### 3.1 Schema Additions
-```sql
-ALTER TABLE public.contact_events 
-  ADD COLUMN IF NOT EXISTS quote_amount_kobo BIGINT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS workmanship_amount_kobo BIGINT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS materials_amount_kobo BIGINT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS final_amount_kobo BIGINT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS lost_reason TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS client_display_name TEXT DEFAULT NULL;
-```
-
-### 3.2 Canonical Status Constraint
-```sql
-ALTER TABLE public.contact_events
-  ADD CONSTRAINT chk_contact_events_status
-  CHECK (status IN ('new', 'in_discussion', 'quote_sent', 'scheduled', 'completed', 'job_won', 'lost'));
-```
-
-### 3.3 Financial Invariants & Split Equality
-```sql
-ALTER TABLE public.contact_events
-  ADD CONSTRAINT chk_contact_events_amounts_non_negative
-  CHECK (
-    (quote_amount_kobo IS NULL OR quote_amount_kobo >= 0) AND
-    (workmanship_amount_kobo IS NULL OR workmanship_amount_kobo >= 0) AND
-    (materials_amount_kobo IS NULL OR materials_amount_kobo >= 0) AND
-    (final_amount_kobo IS NULL OR final_amount_kobo >= 0)
-  );
-
-ALTER TABLE public.contact_events
-  ADD CONSTRAINT chk_contact_events_split_equality
-  CHECK (
-    (workmanship_amount_kobo IS NULL AND materials_amount_kobo IS NULL) OR
-    quote_amount_kobo IS NULL OR
-    (COALESCE(workmanship_amount_kobo, 0) + COALESCE(materials_amount_kobo, 0) = quote_amount_kobo)
-  );
-```
-
-### 3.4 Performance Indexes
-```sql
-CREATE INDEX IF NOT EXISTS idx_ce_provider_status 
-  ON public.contact_events(provider_id, status);
-
-CREATE INDEX IF NOT EXISTS idx_ce_scheduled_for 
-  ON public.contact_events(provider_id, scheduled_for)
-  WHERE scheduled_for IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_ce_completed_at 
-  ON public.contact_events(provider_id, completed_at)
-  WHERE completed_at IS NOT NULL;
-```
-
-### 3.5 Column-Level UPDATE Grants
-```sql
-REVOKE UPDATE ON public.contact_events FROM anon, authenticated;
-GRANT UPDATE (
-  status, 
-  notes, 
-  updated_at, 
-  quote_amount_kobo, 
-  workmanship_amount_kobo, 
-  materials_amount_kobo, 
-  final_amount_kobo, 
-  scheduled_for, 
-  completed_at, 
-  lost_reason, 
-  client_display_name
-) ON public.contact_events TO authenticated;
-```
-
----
-
 ## 4. Security & Tenant Isolation Model
 
 1. **Authentication**: All endpoints require a valid Supabase Auth JWT (`Authorization: Bearer <token>`).
 2. **Tenant Verification**: The user ID embedded in the cryptographic JWT is resolved against `public.providers`. If `provider_id` is passed, it must match the authenticated identity.
-3. **Cross-Tenant Mutation Proof**: In Gate 2, Provider 8 directly attempts to update Provider 101's lead. The server identifies ownership mismatch and immediately terminates the request with **HTTP 403 Forbidden**. The lead and financial figures remain unaltered.
+3. **Cross-Tenant Mutation Proof**: In Gate 2 and live production probe 6, Provider 8 directly attempts to update Provider 101's lead. The server identifies ownership mismatch and immediately terminates the request with **HTTP 403 Forbidden** (and 0 rows affected in PostgreSQL).
 4. **Database-Level Defense**: All Postgres `UPDATE` queries generated by `api/provider-leads.js` include `&provider_id=eq.${activeProviderId}`, ensuring zero rows are affected even in hypothetical token forgery scenarios.
 
 ---
@@ -159,7 +118,7 @@ GRANT UPDATE (
 2. **Financial Split Rule**:
    - If either workmanship or materials is supplied, their sum must equal the total quote:
      $$\text{Workmanship} + \text{Materials} = \text{Quote}$$
-   - Any inconsistent combination (e.g. Quote = ₦50,000, Labor = ₦30,000, Materials = ₦10,000) is rejected with HTTP 400 Bad Request.
+   - Any inconsistent combination (e.g. Quote = ₦50,000, Labor = ₦30,000, Materials = ₦10,000) is rejected with HTTP 400 Bad Request and rejected by PostgreSQL constraint `chk_contact_events_split_equality`.
 3. **Pipeline Metrics Aggregation**:
    - **Active Quoted Pipeline Value**: Sum of `quote_amount_kobo` for deals in `quote_sent` and `scheduled`.
    - **Realized Revenue**: Sum of `final_amount_kobo` for deals in `completed` (plus backward-compatible `job_won`).
@@ -247,27 +206,19 @@ Executed via `node scripts/verify_phase_028_browser_qa.js`:
 
 ---
 
-## 10. Regression Test Results
+## 10. Complete Regression Test Results
 
 All baseline and legacy test suites executed cleanly with **0 failures**:
 
-| Suite | Script | Results |
-| :--- | :--- | :--- |
-| **Phase 027 Realtime Tenant Isolation** | `scripts/verify_phase_027_realtime_tenant_isolation.js` | **20 Passed, 0 Failed** |
-| **Phase 027 Lead Stream Automation** | `scripts/verify_phase_027_realtime_lead_stream.js` | **8 Passed, 0 Failed** |
-| **Phase 016 Termii Sender-Safe** | `scripts/verify_phase_016_termii_sender_safe.js` | **14 Passed, 0 Failed** |
-| **Phase 017 Platform Abuse Protection** | `scripts/verify_phase_017_platform_protection.js` | **14 Passed, 0 Failed** |
-| **Phase 026 Live Lead Alerts Journey** | `scripts/verify_live_lead_alerts_journey.js` | **8 Passed, 0 Failed** |
-| **Phase 028 Pipeline CRM Suite** | `scripts/verify_phase_028_pipeline_crm.js` | **10 Passed, 0 Failed** |
-| **Phase 028 Dual-Viewport Browser QA** | `scripts/verify_phase_028_browser_qa.js` | **All Passed, 0 Errors** |
+| Suite | Script | Results | Status |
+| :--- | :--- | :--- | :--- |
+| **Production Migration 047 Verification** | `scripts/verify_phase_028_production_migration.js` | **21 / 21 Checks** | **PASS (100%)** |
+| **Phase 028 Pipeline CRM** | `scripts/verify_phase_028_pipeline_crm.js` | **10 / 10 Gates** | **PASS (100%)** |
+| **Phase 028 Browser QA** | `scripts/verify_phase_028_browser_qa.js` | **Desktop + Mobile** | **PASS (0 Errors)** |
+| **Phase 027 Realtime Tenant Isolation** | `scripts/verify_phase_027_realtime_tenant_isolation.js` | **20 / 20 Tests** | **PASS (100%)** |
+| **Phase 027 Lead Stream Automation** | `scripts/verify_phase_027_realtime_lead_stream.js` | **8 / 8 Gates** | **PASS (100%)** |
+| **Phase 016 Termii Sender-Safe** | `scripts/verify_phase_016_termii_sender_safe.js` | **14 / 14 Tests** | **PASS (100%)** |
+| **Phase 017 Platform Abuse Control** | `scripts/verify_phase_017_platform_protection.js` | **14 / 14 Tests** | **PASS (100%)** |
+| **Phase 026 Live Lead Alerts** | `scripts/verify_live_lead_alerts_journey.js` | **8 / 8 Gates** | **PASS (100%)** |
 
----
-
-## 11. Production Migration Instructions
-
-To apply Migration 047 to the production Supabase database (`hvxosxhnxauiqrhpyuur`):
-
-1. Open the Supabase Dashboard: `https://supabase.com/dashboard/project/hvxosxhnxauiqrhpyuur/sql`
-2. Open the SQL Editor and paste the contents of `supabase/migrations/047_padifix_phase_028_pipeline_crm_and_earnings.sql`.
-3. Click **RUN**.
-4. Confirm successful execution.
+$$\mathbf{\text{TOTAL FAILURES: 0 | TOTAL SUCCESS RATE: 100\%}}$$

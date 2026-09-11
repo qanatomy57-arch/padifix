@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-11T21:08:42.067Z",
+  "timestamp": "2026-09-11T21:23:15.773Z",
   "totalGates": 8,
   "passedGates": 8,
   "failedGates": 0,
@@ -9,7 +9,7 @@
       "gate": 1,
       "title": "Broadcast Emission on Contact Event",
       "passed": true,
-      "detail": "Canonical UUID: 2e0abd30-298a-4c4c-8fe1-62bea1409d37 emitted after persistence to artisan-leads:8",
+      "detail": "Canonical UUID: a17f3af9-8428-4804-bbdc-e6512feecc06 emitted after persistence to artisan-leads:8",
       "error": null
     },
     {
@@ -30,7 +30,7 @@
       "gate": 4,
       "title": "DOM Hydration & Canonical Deduplication",
       "passed": true,
-      "detail": "Event 9f2084d0-5181-42c7-b1f8-1ea7070f7dea processed: exactly 1 card, 1 KPI increment, 1 chime, 1 toast.",
+      "detail": "Event cf157254-3b84-48e9-8119-7c9e55a9200b processed: exactly 1 card, 1 KPI increment, 1 chime, 1 toast.",
       "error": null
     },
     {
@@ -51,7 +51,7 @@
       "gate": 7,
       "title": "Adaptive Polling Fallback & Recovery",
       "passed": true,
-      "detail": "Offline lead lead_1789160921160_38c2c78f7133 successfully recovered via polling cursor; late socket push deduplicated.",
+      "detail": "Offline lead lead_1789161794370_e2f09d99045b successfully recovered via polling cursor; late socket push deduplicated.",
       "error": null
     },
     {

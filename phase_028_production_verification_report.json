@@ -1,0 +1,136 @@
+{
+  "timestamp": "2026-09-11T21:20:55.983Z",
+  "project_ref": "hvxosxhnxauiqrhpyuur",
+  "totalChecks": 21,
+  "passedChecks": 21,
+  "failedChecks": 0,
+  "status": "PRODUCTION_CERTIFIED_GREEN",
+  "results": [
+    {
+      "name": "PostgREST OpenAPI Specification Accessible",
+      "passed": true,
+      "detail": "Retrieved OpenAPI spec from https://hvxosxhnxauiqrhpyuur.supabase.co/rest/v1/",
+      "error": null
+    },
+    {
+      "name": "Production Column: quote_amount_kobo",
+      "passed": true,
+      "detail": "Type: integer",
+      "error": null
+    },
+    {
+      "name": "Production Column: workmanship_amount_kobo",
+      "passed": true,
+      "detail": "Type: integer",
+      "error": null
+    },
+    {
+      "name": "Production Column: materials_amount_kobo",
+      "passed": true,
+      "detail": "Type: integer",
+      "error": null
+    },
+    {
+      "name": "Production Column: final_amount_kobo",
+      "passed": true,
+      "detail": "Type: integer",
+      "error": null
+    },
+    {
+      "name": "Production Column: scheduled_for",
+      "passed": true,
+      "detail": "Type: string",
+      "error": null
+    },
+    {
+      "name": "Production Column: completed_at",
+      "passed": true,
+      "detail": "Type: string",
+      "error": null
+    },
+    {
+      "name": "Production Column: lost_reason",
+      "passed": true,
+      "detail": "Type: string",
+      "error": null
+    },
+    {
+      "name": "Production Column: client_display_name",
+      "passed": true,
+      "detail": "Type: string",
+      "error": null
+    },
+    {
+      "name": "Provider A (ID 8) Authenticated Token",
+      "passed": true,
+      "detail": "Token length: 980",
+      "error": null
+    },
+    {
+      "name": "Provider B (ID 101) Authenticated Token",
+      "passed": true,
+      "detail": "Token length: 1019",
+      "error": null
+    },
+    {
+      "name": "Query Production contact_events with All 8 CRM Columns",
+      "passed": true,
+      "detail": "HTTP 200 OK. Retrieved 3 rows successfully.",
+      "error": null
+    },
+    {
+      "name": "Seed Production Test Lead for Constraint Probing",
+      "passed": true,
+      "detail": "Lead ID: e14f692c-1744-4f47-a104-69599696d460",
+      "error": null
+    },
+    {
+      "name": "Production Constraint: chk_contact_events_status Rejects Invalid Status",
+      "passed": true,
+      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (e14f692c-1744-4f47-a104-69599696d460, 8, whatsapp, ",
+      "error": null
+    },
+    {
+      "name": "Production Constraint: chk_contact_events_amounts_non_negative Rejects Negative Amounts",
+      "passed": true,
+      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (e14f692c-1744-4f47-a104-69599696d460, 8, whatsapp, ",
+      "error": null
+    },
+    {
+      "name": "Production Constraint: chk_contact_events_split_equality Rejects Mismatched Split",
+      "passed": true,
+      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (e14f692c-1744-4f47-a104-69599696d460, 8, whatsapp, ",
+      "error": null
+    },
+    {
+      "name": "Production Constraint: chk_contact_events_split_equality Accepts Balanced Split",
+      "passed": true,
+      "detail": "Saved Quote: ₦50k = Labor ₦30k + Materials ₦20k",
+      "error": null
+    },
+    {
+      "name": "Production Status Vocabulary: All 7 Canonical Statuses Permitted",
+      "passed": true,
+      "detail": "Permits: new, in_discussion, quote_sent, scheduled, completed, job_won, lost",
+      "error": null
+    },
+    {
+      "name": "Authenticated Column UPDATE Grant (notes, client_display_name)",
+      "passed": true,
+      "detail": "Provider A updated successfully. Rows: 1",
+      "error": null
+    },
+    {
+      "name": "Immutable Column Security: provider_id Mutation Blocked for Authenticated Provider",
+      "passed": true,
+      "detail": "HTTP 403 (Tamper blocked): {\"code\":\"42501\",\"details\":null,\"hint\":\"Grant the required privileges to the current role with: GRANT",
+      "error": null
+    },
+    {
+      "name": "Production RLS: Provider B Cannot Mutate Provider A Deal (0 Rows Affected)",
+      "passed": true,
+      "detail": "RLS successfully quarantined Provider A row: 0 rows modified.",
+      "error": null
+    }
+  ]
+}
