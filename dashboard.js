@@ -980,7 +980,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const channelName = `artisan-leads:${providerId}`;
       realtimeChannel = client.channel(channelName, {
-        config: { broadcast: { self: false } }
+        config: {
+          private: true,
+          broadcast: { self: false }
+        }
       });
 
       realtimeChannel.on('broadcast', { event: 'new_lead' }, (msg) => {

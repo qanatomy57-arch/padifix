@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-11T17:30:16.453Z",
+  "timestamp": "2026-09-11T20:25:06.503Z",
   "totalGates": 8,
   "passedGates": 8,
   "failedGates": 0,
@@ -9,21 +9,21 @@
       "gate": 1,
       "title": "POST /api/contact-meter (whatsapp) dispatches lead and logs notification",
       "passed": true,
-      "detail": "HTTP 200, notifications in DB: 3, latest status: pending_sender_approval, channel: sms",
+      "detail": "HTTP 200, notifications in DB: 3, latest status: sent, channel: sms",
       "error": null
     },
     {
       "gate": 2,
       "title": "POST /api/contact-meter (call) dispatches lead and logs notification",
       "passed": true,
-      "detail": "HTTP 200, contact allowed: true, latest notification ID: f23a964a-3385-487b-867d-ae3922097082",
+      "detail": "HTTP 200, contact allowed: true, latest notification ID: 4cf937d4-dc9e-4cbc-b2eb-128664927b30",
       "error": null
     },
     {
       "gate": 3,
       "title": "Simulated Termii success records status=\"sent\" and termii_message_id",
       "passed": true,
-      "detail": "delivered: true, status: sent, termii_message_id: sim_test_1789147810495, db verified: true",
+      "detail": "delivered: true, status: sent, termii_message_id: sim_test_1789158298755, db verified: true",
       "error": null
     },
     {
@@ -37,7 +37,7 @@
       "gate": 5,
       "title": "Zero customer PII confirmed across all notification records and SMS bodies",
       "passed": true,
-      "detail": "Audited 10 canonical records. PII leaks detected: 0",
+      "detail": "Audited 11 canonical records. PII leaks detected: 0",
       "error": null
     },
     {
