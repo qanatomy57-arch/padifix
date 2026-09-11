@@ -425,10 +425,22 @@ async function runBrowserVerification() {
     results.mobile.checks.noHorizontalOverflow = !mobileOverflow;
     console.log(`[Mobile] Horizontal Overflow: ${mobileOverflow ? 'FAIL (overflow detected)' : 'PASS (none)'}`);
 
-    // Capture Mobile Screenshot
+    // Capture Mobile Overview Screenshot (showing fixed high-contrast completeness checklist)
+    const mobileOverviewPath = path.join(ARTIFACT_DIR, 'phase_027_dashboard_mobile_overview.png');
+    await pageM.screenshot({ path: mobileOverviewPath });
+    console.log(`[Mobile] Overview screenshot saved: ${mobileOverviewPath}`);
+
+    // Scroll to the Recent Leads section header so Phase 027 lead stream, status pill, sound toggle, and quick actions are directly visible
+    const statusPill = await pageM.$('#realtime-stream-status');
+    if (statusPill) {
+      await statusPill.scrollIntoViewIfNeeded();
+      await pageM.waitForTimeout(600);
+    }
+
+    // Capture Mobile Screenshot of the Real-Time Lead Stream
     const mobileScreenshotPath = path.join(ARTIFACT_DIR, 'phase_027_dashboard_mobile.png');
     await pageM.screenshot({ path: mobileScreenshotPath });
-    console.log(`[Mobile] Screenshot saved: ${mobileScreenshotPath}`);
+    console.log(`[Mobile] Lead stream screenshot saved: ${mobileScreenshotPath}`);
 
     results.mobile.passed = Object.values(results.mobile.checks).every(Boolean);
     await mobileContext.close();

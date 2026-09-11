@@ -2066,3 +2066,39 @@ input:checked + .slider:before {
 [data-theme="dark"] .dash-sub-box p {
   color: #94A3B8 !important;
 }
+
+/* Profile Completeness Missing Items Buttons (Adaptive Light & Dark Contrast) */
+.dash-missing-item-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--dash-border, #E2EBE2);
+  color: var(--dash-text, #111827) !important;
+  background: var(--dash-bg, #F4F7F4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.dash-missing-item-btn:hover {
+  background: var(--dash-green-light, #E8F5E9);
+  border-color: var(--dash-green, #006B3F);
+  color: var(--dash-green, #006B3F) !important;
+}
+
+[data-theme="dark"] .dash-missing-item-btn {
+  border-color: #334155;
+  color: #F8FAFC !important;
+  background: #1E293B;
+}
+
+[data-theme="dark"] .dash-missing-item-btn:hover {
+  background: rgba(0, 168, 89, 0.15);
+  border-color: #00A859;
+  color: #34D399 !important;
+}
+

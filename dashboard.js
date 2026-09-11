@@ -870,7 +870,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const tradeTitle = cleanLead.intent_tag || (currentProvider.trade_title || 'Service');
     const channelLabel = isWa ? 'WhatsApp' : 'Phone Call';
-    showToast(`⚡ New Lead: Customer inquired for ${escapeHtml(tradeTitle)} in ${escapeHtml(cleanLead.locality)} via ${channelLabel}`, 'success');
+    showToast(`⚡ New Lead: Customer inquired for ${tradeTitle} in ${cleanLead.locality} via ${channelLabel}`, 'success');
 
     // Increment KPIs
     incrementLeadKpis(cleanLead.channel);
@@ -1151,8 +1151,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
       } else {
         missingGrid.innerHTML = compData.missingItems.map(item => `
-          <button type="button" class="btn btn-outline btn-sm dash-missing-item-btn" data-target-tab="${escapeHtml(item.actionTab)}" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 6px 12px; border-radius: 8px; border-color: rgba(255,255,255,0.15); color: #F1F5F9; cursor: pointer; background: rgba(255,255,255,0.03);">
-            <span>+</span> <span>${escapeHtml(item.label)}</span>
+          <button type="button" class="dash-missing-item-btn" data-target-tab="${escapeHtml(item.actionTab)}">
+            <span style="font-weight: 700; color: var(--dash-green, #006B3F);">+</span> <span>${escapeHtml(item.label)}</span>
           </button>
         `).join('');
 
