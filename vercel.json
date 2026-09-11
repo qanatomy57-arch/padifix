@@ -3,6 +3,26 @@
     {
       "source": "/api/admin-analytics",
       "destination": "/api/admin-compliance?__route=admin-analytics"
+    },
+    {
+      "source": "/services/:trade/:state/:lga",
+      "destination": "/api/landing-page?trade=:trade&state=:state&lga=:lga"
+    },
+    {
+      "source": "/services/:trade/:state",
+      "destination": "/api/landing-page?trade=:trade&state=:state"
+    },
+    {
+      "source": "/services/:trade",
+      "destination": "/api/landing-page?trade=:trade"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap?section=index"
+    },
+    {
+      "source": "/sitemap-:section.xml",
+      "destination": "/api/sitemap?section=:section"
     }
   ]
 }

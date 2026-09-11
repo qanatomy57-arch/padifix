@@ -141,6 +141,8 @@ async function runSuite() {
   console.log('🚀 PADIFIX PHASE 029 — VERIFIED REVIEW ENGINE VERIFICATION SUITE');
   console.log('========================================================================\n');
 
+  const testNonce = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+
   // --------------------------------------------------------------------------
   // GATE 1: Migration 048 DDL & Production Objects Definition
   // --------------------------------------------------------------------------
@@ -295,8 +297,8 @@ async function runSuite() {
         action: 'submit_review',
         provider_id: 8,
         is_verified_customer: true, // Forgery attempt
-        customer_name: 'Unverified Reviewer 5',
-        customer_identifier: 'client_anon_5',
+        customer_name: `Unverified Reviewer ${testNonce}`,
+        customer_identifier: `client_anon_${testNonce}`,
         rating: 4,
         comment: 'Nice job overall.'
       }
@@ -383,8 +385,8 @@ async function runSuite() {
       body: {
         action: 'submit_review',
         provider_id: 101,
-        customer_name: 'Colleague Reviewer',
-        customer_identifier: 'provider_colleague_8',
+        customer_name: `Colleague Reviewer ${testNonce}`,
+        customer_identifier: `provider_colleague_${testNonce}`,
         rating: 4,
         comment: 'Good electrical installations done for my site.'
       }
@@ -408,8 +410,8 @@ async function runSuite() {
       body: {
         action: 'submit_review',
         provider_id: 8,
-        customer_name: 'Gbenga T.',
-        customer_identifier: 'client_gbenga_t',
+        customer_name: `Gbenga T. ${testNonce}`,
+        customer_identifier: `client_gbenga_${testNonce}`,
         rating: 5,
         comment: 'Fixed the leak quickly.'
       }
@@ -482,8 +484,8 @@ async function runSuite() {
       body: {
         provider_id: 8,
         rating: 5,
-        customer_name: 'Praise Tag User',
-        customer_identifier: 'tag_test_user',
+        customer_name: `Praise Tag User ${testNonce}`,
+        customer_identifier: `tag_test_${testNonce}`,
         comment: 'Praise tag test',
         praise_tags: ['Punctual', '<script>alert(1)</script>', 'Unapproved Custom Tag', 'Clean Finish']
       }
@@ -500,8 +502,8 @@ async function runSuite() {
       body: {
         provider_id: 8,
         rating: 5,
-        customer_name: 'XSS Sanitization User',
-        customer_identifier: 'xss_sanitization_test',
+        customer_name: `XSS Sanitization User ${testNonce}`,
+        customer_identifier: `xss_test_${testNonce}`,
         comment: 'Great work! <script>window.location="http://evil.com"</script> Clean finish.'
       }
     });

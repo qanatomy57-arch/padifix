@@ -1,13 +1,27 @@
 # ==============================================================================
 # PadiFix — Nigeria's Local-Services Marketplace
-# https://padifix.vercel.app
+# https://padifix.ng
 # ==============================================================================
 
 User-agent: *
 Allow: /
+Allow: /services/
+Allow: /search.html
+Allow: /profile.html
 Disallow: /admin.html
 Disallow: /dashboard.html
 Disallow: /analytics.html
+Disallow: /api/provider-leads
+Disallow: /api/paystack-init
+Disallow: /api/paystack-webhook
 
-# XML Sitemap
+# Search Engine Crawl Directives
+User-agent: Googlebot
+Allow: /
+Allow: /services/
+Allow: /api/landing-page
+Allow: /api/sitemap
+
+# XML Sitemaps
+Sitemap: https://padifix.ng/sitemap.xml
 Sitemap: https://padifix.vercel.app/sitemap.xml
