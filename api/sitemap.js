@@ -12,7 +12,7 @@
 const { withSentry } = require('../lib/sentry-server');
 const { TRADE_TAXONOMY } = require('../lib/seo-utils');
 
-const ORIGIN = 'https://padifix.ng';
+const ORIGIN = process.env.SITE_ORIGIN || 'https://padifix.vercel.app';
 const TODAY = new Date().toISOString().split('T')[0];
 
 const NIGERIAN_STATES = [
