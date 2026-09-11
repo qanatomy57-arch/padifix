@@ -9,4 +9,7 @@ test_*.js
 schema.sql
 .git
 .github
+# Consolidated into other handlers to stay within 12-function Hobby limit
 api/admin-analytics.js
+api/sitemap.js
+api/receipt-resend.js

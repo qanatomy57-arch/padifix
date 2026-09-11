@@ -78,6 +78,15 @@ const CANONICAL_PLANS = {
 };
 
 const paystackVerifyHandler = async (req, res) => {
+  // ── Consolidated Route: Receipt Resend ──────────────────────────
+  // Vercel rewrite: /api/receipt-resend → /api/paystack-verify?__route=receipt-resend
+  // This avoids exceeding the 12-function Hobby plan limit.
+  const routeOverride = req.query?.__route || (req.url && new URL(req.url, 'http://localhost').searchParams.get('__route'));
+  if (routeOverride === 'receipt-resend') {
+    const receiptResendHandler = require('./receipt-resend');
+    return receiptResendHandler(req, res);
+  }
+
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');

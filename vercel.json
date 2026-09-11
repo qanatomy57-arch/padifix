@@ -5,6 +5,10 @@
       "destination": "/api/admin-compliance?__route=admin-analytics"
     },
     {
+      "source": "/api/receipt-resend",
+      "destination": "/api/paystack-verify?__route=receipt-resend"
+    },
+    {
       "source": "/services/:trade/:state/:lga",
       "destination": "/api/landing-page?trade=:trade&state=:state&lga=:lga"
     },
@@ -18,11 +22,11 @@
     },
     {
       "source": "/sitemap.xml",
-      "destination": "/api/sitemap?section=index"
+      "destination": "/api/landing-page?__route=sitemap&section=index"
     },
     {
       "source": "/sitemap-:section.xml",
-      "destination": "/api/sitemap?section=:section"
+      "destination": "/api/landing-page?__route=sitemap&section=:section"
     }
   ]
 }

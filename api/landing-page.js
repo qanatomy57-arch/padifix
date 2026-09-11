@@ -777,8 +777,17 @@ ${JSON.stringify(jsonLd, null, 2)}
  * Serverless Landing Page Handler
  */
 const landingPageHandler = async (req, res) => {
+  // ── Consolidated Route: Sitemap Engine ──────────────────────────
+  // Vercel rewrite: /sitemap.xml → /api/landing-page?__route=sitemap&section=index
+  // This avoids exceeding the 12-function Hobby plan limit.
+  const routeOverride = req.query?.__route || new URL(req.url || '/', 'http://localhost').searchParams.get('__route');
+  if (routeOverride === 'sitemap') {
+    const sitemapHandler = require('./sitemap');
+    return sitemapHandler(req, res);
+  }
+
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method Not Allowed. Only GET is supported.' });
+    return res.status(405).send('<h1>405 Method Not Allowed</h1>');
   }
 
   try {
