@@ -380,7 +380,10 @@ const telemetryHandler = async (req, res) => {
       const rawPath = String(evt.page_path || evt.path || 'home').trim().toLowerCase().split('?')[0].substring(0, 64);
       const pagePath = rawPath || 'home';
 
-      const rawDevice = String(evt.device_class || 'desktop').toLowerCase();
+      const rawProps = { ...(evt.properties || evt.props || {}) };
+      const rawDevice = String(evt.device_class || rawProps.device_class || 'desktop').toLowerCase();
+      delete rawProps.device_class;
+
       if (!['desktop', 'tablet', 'mobile'].includes(rawDevice)) {
         return res.status(400).json({
           error: `Invalid device_class '${rawDevice}'. Must be desktop, tablet, or mobile`
@@ -388,7 +391,7 @@ const telemetryHandler = async (req, res) => {
       }
 
       // Validate properties against event-specific allowlist
-      const propResult = validateEventProperties(eventName, evt.properties || evt.props || {});
+      const propResult = validateEventProperties(eventName, rawProps);
       if (!propResult.valid) {
         return res.status(400).json({ error: propResult.error });
       }

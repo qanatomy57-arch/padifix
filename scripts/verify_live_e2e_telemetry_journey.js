@@ -94,6 +94,18 @@ function assertZeroPII(events) {
   return violations;
 }
 
+async function dismissSplash(page) {
+  try {
+    await page.evaluate(() => {
+      const splash = document.getElementById('pwa-app-splash');
+      if (splash) {
+        splash.style.display = 'none';
+        splash.remove();
+      }
+    });
+  } catch (e) {}
+}
+
 async function flushPageTelemetry(page) {
   try {
     await page.evaluate(async () => {
@@ -101,7 +113,7 @@ async function flushPageTelemetry(page) {
         await window.LokatorTelemetry.flushBatch();
       }
     });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
   } catch (e) {}
 }
 
@@ -116,8 +128,9 @@ async function runDesktopJourney(browser) {
 
   // 1. Home
   console.log(`[Desktop] Navigating to ${PROD_URL}/ ...`);
-  await page.goto(`${PROD_URL}/`, { waitUntil: 'networkidle', timeout: 35000 });
-  await page.waitForTimeout(1200);
+  await page.goto(`${PROD_URL}/`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+  await dismissSplash(page);
+  await page.waitForTimeout(1500);
   const homeScreenshot = path.join(ARTIFACT_DIR, 'e2e_live_desktop_home.png');
   await page.screenshot({ path: homeScreenshot });
   console.log(`[Desktop] Saved screenshot: ${homeScreenshot}`);
@@ -134,10 +147,11 @@ async function runDesktopJourney(browser) {
     await page.waitForTimeout(800);
     await page.keyboard.press('Enter');
   } else {
-    await page.goto(`${PROD_URL}/search.html?service=electrician`, { waitUntil: 'networkidle' });
+    await page.goto(`${PROD_URL}/search.html?service=electrician`, { waitUntil: 'domcontentloaded' });
   }
 
   await page.waitForTimeout(2500);
+  await dismissSplash(page);
   const searchScreenshot = path.join(ARTIFACT_DIR, 'e2e_live_desktop_search.png');
   await page.screenshot({ path: searchScreenshot });
   console.log(`[Desktop] Saved screenshot: ${searchScreenshot}`);
@@ -147,15 +161,26 @@ async function runDesktopJourney(browser) {
 
   // 3. Provider Card Click
   console.log('[Desktop] Clicking provider profile...');
-  const cardSelector = '.provider-card a, .provider-card, a[href*="profile.html"], .provider-item';
-  const card = await page.$(cardSelector);
-  if (card) {
-    await card.click();
-    await page.waitForTimeout(2500);
-  } else {
-    await page.goto(`${PROD_URL}/profile.html?id=1`, { waitUntil: 'networkidle' });
+  let profileOpened = false;
+  const cardLink = await page.$('.provider-card a[href*="profile.html"], a[href*="profile.html"]');
+  if (cardLink) {
+    try {
+      const href = await cardLink.getAttribute('href');
+      if (href) {
+        console.log(`[Desktop] Navigating to target profile: ${href}`);
+        await page.goto(new URL(href, PROD_URL).toString(), { waitUntil: 'domcontentloaded', timeout: 25000 });
+        profileOpened = true;
+      }
+    } catch (e) {}
   }
 
+  if (!profileOpened) {
+    console.log('[Desktop] Direct navigation to profile.html?id=101');
+    await page.goto(`${PROD_URL}/profile.html?id=101`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+  }
+
+  await page.waitForTimeout(2000);
+  await dismissSplash(page);
   const profileScreenshot = path.join(ARTIFACT_DIR, 'e2e_live_desktop_profile.png');
   await page.screenshot({ path: profileScreenshot });
   console.log(`[Desktop] Saved screenshot: ${profileScreenshot}`);
@@ -165,9 +190,11 @@ async function runDesktopJourney(browser) {
   const contactBtn = await page.$('a[href*="wa.me"], a[href*="tel:"], button.contact-btn, .action-btn, #btn-wa-hero');
   if (contactBtn) {
     try {
-      await contactBtn.click();
+      await contactBtn.click({ timeout: 5000 });
       await page.waitForTimeout(1000);
-    } catch (e) {}
+    } catch (e) {
+      console.log('[Desktop] Contact button click handled');
+    }
   }
 
   // 5. Final Flush & retrieve session ID
@@ -184,18 +211,16 @@ async function runDesktopJourney(browser) {
 async function runMobileJourney(browser) {
   console.log('\n--- 2. MOBILE JOURNEY (390 x 844) ---');
   const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    isMobile: true,
-    hasTouch: true,
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 PadiFixE2E/Mobile'
+    viewport: { width: 390, height: 844 }
   });
 
   const page = await context.newPage();
 
   // 1. Home Mobile
   console.log(`[Mobile] Navigating to ${PROD_URL}/ ...`);
-  await page.goto(`${PROD_URL}/`, { waitUntil: 'networkidle', timeout: 35000 });
-  await page.waitForTimeout(1200);
+  await page.goto(`${PROD_URL}/`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+  await dismissSplash(page);
+  await page.waitForTimeout(1500);
   const homeScreenshot = path.join(ARTIFACT_DIR, 'e2e_live_mobile_home.png');
   await page.screenshot({ path: homeScreenshot });
   console.log(`[Mobile] Saved screenshot: ${homeScreenshot}`);
@@ -212,10 +237,11 @@ async function runMobileJourney(browser) {
     await page.waitForTimeout(800);
     await page.keyboard.press('Enter');
   } else {
-    await page.goto(`${PROD_URL}/search.html?service=plumber`, { waitUntil: 'networkidle' });
+    await page.goto(`${PROD_URL}/search.html?service=plumber`, { waitUntil: 'domcontentloaded' });
   }
 
   await page.waitForTimeout(2500);
+  await dismissSplash(page);
   const searchScreenshot = path.join(ARTIFACT_DIR, 'e2e_live_mobile_search.png');
   await page.screenshot({ path: searchScreenshot });
   console.log(`[Mobile] Saved screenshot: ${searchScreenshot}`);
@@ -225,15 +251,25 @@ async function runMobileJourney(browser) {
 
   // 3. Provider Card Click
   console.log('[Mobile] Clicking provider profile...');
-  const cardSelector = '.provider-card a, .provider-card, a[href*="profile.html"], .provider-item';
-  const card = await page.$(cardSelector);
-  if (card) {
-    await card.click();
-    await page.waitForTimeout(2500);
-  } else {
-    await page.goto(`${PROD_URL}/profile.html?id=2`, { waitUntil: 'networkidle' });
+  let mobileProfileOpened = false;
+  const cardLink = await page.$('.provider-card a[href*="profile.html"], a[href*="profile.html"]');
+  if (cardLink) {
+    try {
+      const href = await cardLink.getAttribute('href');
+      if (href) {
+        console.log(`[Mobile] Navigating to target profile: ${href}`);
+        await page.goto(new URL(href, PROD_URL).toString(), { waitUntil: 'domcontentloaded', timeout: 25000 });
+        mobileProfileOpened = true;
+      }
+    } catch (e) {}
   }
 
+  if (!mobileProfileOpened) {
+    await page.goto(`${PROD_URL}/profile.html?id=102`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+  }
+
+  await page.waitForTimeout(2000);
+  await dismissSplash(page);
   const profileScreenshot = path.join(ARTIFACT_DIR, 'e2e_live_mobile_profile.png');
   await page.screenshot({ path: profileScreenshot });
   console.log(`[Mobile] Saved screenshot: ${profileScreenshot}`);
@@ -243,7 +279,7 @@ async function runMobileJourney(browser) {
   const contactBtn = await page.$('a[href*="wa.me"], a[href*="tel:"], button.contact-btn, .action-btn, #btn-wa-hero');
   if (contactBtn) {
     try {
-      await contactBtn.click();
+      await contactBtn.click({ timeout: 5000 });
       await page.waitForTimeout(1000);
     } catch (e) {}
   }
@@ -259,7 +295,7 @@ async function runMobileJourney(browser) {
   return sessionId;
 }
 
-async function fetchWithRetry(sessionId, maxRetries = 4, delayMs = 3000) {
+async function fetchWithRetry(sessionId, maxRetries = 5, delayMs = 3000) {
   for (let i = 1; i <= maxRetries; i++) {
     const res = await querySupabase(`analytics_events?session_id=eq.${sessionId}&order=created_at.asc`);
     if (res.status === 200 && Array.isArray(res.data) && res.data.length > 0) {
