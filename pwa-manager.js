@@ -787,7 +787,9 @@
         provider_id: Number(leadData.provider_id),
         channel: leadData.channel || 'whatsapp',
         timestamp: leadData.timestamp || Date.now(),
-        idempotency_key: leadData.idempotency_key || `idem_${leadData.provider_id}_${leadData.channel || 'whatsapp'}_${eventId}`
+        idempotency_key: leadData.idempotency_key || `idem_${leadData.provider_id}_${leadData.channel || 'whatsapp'}_${eventId}`,
+        locality: leadData.locality ? String(leadData.locality).trim() : undefined,
+        intent_tag: leadData.intent_tag ? String(leadData.intent_tag).trim() : (leadData.trade ? String(leadData.trade).trim() : undefined)
       };
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {

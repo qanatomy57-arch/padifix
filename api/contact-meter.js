@@ -518,7 +518,7 @@ const contactMeterHandler = async (req, res) => {
     // Contact intent/event persistence happens BEFORE abuse/SMS side-effects.
     // In production, public.consume_contact_entitlement enforces atomic row-locked metering.
     // --------------------------------------------------------------------------
-    let pgResult = { success: true, isDuplicate: false };
+    let pgResult = { success: true, isDuplicate: false, eventId: null };
     let rpcEntitlement = null;
 
     if (!effectiveInject?.forceMemoryQuota && SUPABASE_URL && SUPABASE_ANON_KEY) {
@@ -536,7 +536,7 @@ const contactMeterHandler = async (req, res) => {
         pgResult = {
           success: true,
           isDuplicate: Boolean(rpcEntitlement.is_duplicate),
-          eventId: rpcEntitlement.event_id
+          eventId: rpcEntitlement.event_id || null
         };
       }
     }
@@ -553,6 +553,9 @@ const contactMeterHandler = async (req, res) => {
         session_token
       });
     }
+
+    // Canonical UUID for contact event & lead notification audit trail
+    const canonicalEventId = (rpcEntitlement && rpcEntitlement.event_id) || pgResult.eventId || crypto.randomUUID();
 
     LeadStore.logContactLead({
       provider_id: provId,
@@ -681,7 +684,7 @@ const contactMeterHandler = async (req, res) => {
 
       if (pairLimitStatus.allowed) {
         dispatchArtisanLeadAlert({
-          contactEventId: rpcEntitlement.event_id || effectiveKey,
+          contactEventId: canonicalEventId,
           providerId: provId,
           locality,
           intentTag: intent_tag,
@@ -795,7 +798,7 @@ const contactMeterHandler = async (req, res) => {
 
       if (pairLimitStatus.allowed) {
         dispatchArtisanLeadAlert({
-          contactEventId: pgResult.eventId || effectiveKey,
+          contactEventId: canonicalEventId,
           providerId: provId,
           locality,
           intentTag: intent_tag,

@@ -1090,8 +1090,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const isSponsored = Boolean(provider.is_sponsored || provider.isSponsored);
 
+        const providerLoc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || '';
+
         return `
-          <article class="provider-item-card ${provider.isVerified ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(displayTrade)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
+          <article class="provider-item-card ${provider.isVerified ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(displayTrade)}" data-provider-location="${escapeHtml(providerLoc)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
             <div class="provider-card-main-row">
               <!-- Avatar Column -->
               <div class="provider-avatar-col">
@@ -1167,6 +1169,34 @@ document.addEventListener("DOMContentLoaded", () => {
           const isSponsored = card.dataset.isSponsored === 'true';
 
           if (e.target.closest('.call-btn')) {
+            const card = e.target.closest('.provider-item-card');
+            const provLoc = card ? (card.dataset.providerLocation || card.querySelector('.provider-location-row')?.textContent?.replace('📍', '').trim() || '') : '';
+            // Phase 026: Non-blocking asynchronous lead metering for direct Call
+            if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
+            const attemptCacheKeyCall = `${providerId}_call`;
+            const nowTimeCall = Date.now();
+            let idemKeyCall;
+            const cachedAttemptCall = window._padifixContactAttempts.get(attemptCacheKeyCall);
+            if (cachedAttemptCall && (nowTimeCall - cachedAttemptCall.time) < 30000) {
+              idemKeyCall = cachedAttemptCall.key;
+            } else {
+              const evtId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
+              idemKeyCall = `idem_${providerId}_call_${evtId}`;
+              window._padifixContactAttempts.set(attemptCacheKeyCall, { key: idemKeyCall, time: nowTimeCall });
+            }
+
+            if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
+              PadiFixPWA.dispatchContactLead({
+                provider_id: providerId,
+                channel: 'call',
+                idempotency_key: idemKeyCall,
+                locality: provLoc,
+                intent_tag: trade
+              }).catch(() => {});
+            }
+
             if (typeof LokatorTelemetry !== 'undefined') {
               LokatorTelemetry.trackEvent('call_clicked', {
                 providerId,
@@ -1184,6 +1214,7 @@ document.addEventListener("DOMContentLoaded", () => {
           } else if (e.target.closest('.message-btn')) {
             const card = e.target.closest('.provider-item-card');
             const provName = card ? (card.querySelector('.provider-title-name')?.textContent || '').trim() : '';
+            const provLoc = card ? (card.dataset.providerLocation || card.querySelector('.provider-location-row')?.textContent?.replace('📍', '').trim() || '') : '';
             // Phase 014: Cryptographic attempt UUID with 30s duplicate-tap debounce
             if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
             const attemptCacheKey = `${providerId}_whatsapp`;
@@ -1200,12 +1231,14 @@ document.addEventListener("DOMContentLoaded", () => {
               window._padifixContactAttempts.set(attemptCacheKey, { key: idemKey, time: nowTime });
             }
 
-            // Phase 014: Dispatch contact meter asynchronously via PWA outbox dispatcher
+            // Phase 014 / Phase 026: Dispatch contact meter asynchronously via PWA outbox dispatcher
             if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
               PadiFixPWA.dispatchContactLead({
                 provider_id: providerId,
                 channel: 'whatsapp',
-                idempotency_key: idemKey
+                idempotency_key: idemKey,
+                locality: provLoc,
+                intent_tag: trade
               }).catch(() => {});
             }
 

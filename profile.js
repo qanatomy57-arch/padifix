@@ -334,50 +334,55 @@ document.addEventListener('DOMContentLoaded', async () => {
   let heroTelUrl = getTelUrl();
   let heroWaUrl = getWaUrl();
 
-  // Phase 010 / Phase 014: Server-side contact metering with idempotency, soft-cap, and PWA outbox
+  // Phase 010 / Phase 014 / Phase 026: Server-side contact metering & real-time artisan lead alert dispatch
   function checkOrMeterContact(channel, e) {
-    if (channel === 'whatsapp') {
-      // Phase 014 Product Invariant — Zero-Friction Consumer Guarantee:
-      // CONSUMERS MUST NEVER BE BLOCKED FROM CONTACTING AN ARTISAN ON WHATSAPP.
+    const normChannel = channel === 'call' ? 'call' : 'whatsapp';
 
-      // 1. Record minimal recent contact locally for 24-48h review follow-up
-      try {
-        const rawContacts = localStorage.getItem('padifix_recent_contacts') || '[]';
-        let recentList = JSON.parse(rawContacts);
-        recentList = recentList.filter(c => String(c.provider_id) !== String(provider.id));
-        recentList.unshift({
-          provider_id: provider.id,
-          provider_name: provider.name || '',
-          trade: provider.trade || '',
-          contacted_at: Date.now()
-        });
-        localStorage.setItem('padifix_recent_contacts', JSON.stringify(recentList.slice(0, 20)));
-      } catch (err) {}
+    // 1. Record minimal recent contact locally for 24-48h review follow-up
+    try {
+      const rawContacts = localStorage.getItem('padifix_recent_contacts') || '[]';
+      let recentList = JSON.parse(rawContacts);
+      recentList = recentList.filter(c => String(c.provider_id) !== String(provider.id));
+      recentList.unshift({
+        provider_id: provider.id,
+        provider_name: provider.name || '',
+        trade: provider.trade || '',
+        contacted_at: Date.now()
+      });
+      localStorage.setItem('padifix_recent_contacts', JSON.stringify(recentList.slice(0, 20)));
+    } catch (err) {}
 
-      // 2. Asynchronous non-blocking lead metering / offline queueing
-      // Phase 014: Cryptographic attempt UUID with 30s duplicate-tap debounce
-      if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
-      const attemptCacheKey = `${provider.id}_whatsapp`;
-      const nowTime = Date.now();
-      let idemKey;
-      const cachedAttempt = window._padifixContactAttempts.get(attemptCacheKey);
-      if (cachedAttempt && (nowTime - cachedAttempt.time) < 30000) {
-        idemKey = cachedAttempt.key;
-      } else {
-        const evtId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
-        idemKey = `idem_${provider.id}_whatsapp_${evtId}`;
-        window._padifixContactAttempts.set(attemptCacheKey, { key: idemKey, time: nowTime });
-      }
+    // 2. Cryptographic attempt UUID with 30s duplicate-tap debounce
+    if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
+    const attemptCacheKey = `${provider.id}_${normChannel}`;
+    const nowTime = Date.now();
+    let idemKey;
+    const cachedAttempt = window._padifixContactAttempts.get(attemptCacheKey);
+    if (cachedAttempt && (nowTime - cachedAttempt.time) < 30000) {
+      idemKey = cachedAttempt.key;
+    } else {
+      const evtId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ('evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
+      idemKey = `idem_${provider.id}_${normChannel}_${evtId}`;
+      window._padifixContactAttempts.set(attemptCacheKey, { key: idemKey, time: nowTime });
+    }
 
-      if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
-        PadiFixPWA.dispatchContactLead({
-          provider_id: provider.id,
-          channel: 'whatsapp',
-          idempotency_key: idemKey
-        }).catch(() => {});
-      } else if (typeof LokatorDB !== 'undefined' && LokatorDB.contactMeter) {
+    // 3. Asynchronous non-blocking lead metering & Termii alert dispatch (Phase 026)
+    // Non-blocking invariant: consumer contact action is never blocked or delayed
+    if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
+      PadiFixPWA.dispatchContactLead({
+        provider_id: provider.id,
+        channel: normChannel,
+        idempotency_key: idemKey,
+        locality: providerLocation,
+        intent_tag: provider.trade
+      }).catch(() => {});
+    }
+
+    if (normChannel === 'whatsapp') {
+      // Consumer is NEVER blocked on WhatsApp
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.contactMeter) {
         let visitorSession = sessionStorage.getItem('padifix_visitor_session');
         if (!visitorSession) {
           visitorSession = 'vis_' + Math.random().toString(36).substring(2, 9);
@@ -392,12 +397,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         } catch (mErr) {}
       }
-
-      // Consumer is NEVER blocked on WhatsApp
       return true;
     }
 
-    // Direct phone call or other channels retain standard flow
+    // Direct phone call retains standard flow
     if (typeof LokatorDB !== 'undefined' && LokatorDB.contactMeter) {
       let visitorSession = sessionStorage.getItem('padifix_visitor_session');
       if (!visitorSession) {
@@ -406,7 +409,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       const meterRes = LokatorDB.contactMeter.meterContact(provider.id, channel, {
-        session_token: visitorSession
+        session_token: visitorSession,
+        idempotency_key: idemKey
       });
 
       if (!meterRes.allowed && meterRes.limit_reached) {
@@ -459,7 +463,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (typeof PadiFixPWA !== 'undefined' && PadiFixPWA.dispatchContactLead) {
           const res = await PadiFixPWA.dispatchContactLead({
             provider_id: provider.id,
-            channel: channel
+            channel: channel,
+            locality: providerLocation,
+            intent_tag: provider.trade
           });
           if (res && res.contact) {
             if (res.contact.phone) provider.phone = res.contact.phone;
@@ -521,22 +527,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnCallHero.style.display = 'inline-flex';
     if (heroTelUrl) btnCallHero.href = heroTelUrl;
     btnCallHero.addEventListener('click', async (e) => {
-      if (!provider.phone) {
-        e.preventDefault();
-        const prevText = btnCallHero.innerHTML;
-        btnCallHero.innerHTML = `Connecting...`;
-        const res = await ensureContactUnlocked('call');
-        btnCallHero.innerHTML = prevText;
-        if (res && res.limitReached) {
-          showContactLimitModal();
-          return;
-        }
-        if (res && res.phone) {
-          window.location.href = `tel:${res.phone}`;
-        }
-        return;
-      }
-      if (!checkOrMeterContact('call', e)) return;
+      // Phase 026 Invariant A: Non-blocking asynchronous lead alert dispatch for Call
+      checkOrMeterContact('call', e);
+
       if (typeof LokatorTelemetry !== 'undefined') {
         LokatorTelemetry.trackEvent('phone_clicked', {
           providerId: provider.id,
@@ -556,6 +549,22 @@ document.addEventListener('DOMContentLoaded', async () => {
           state: provider.state || stateParam
         }).catch(() => {});
       }
+
+      // If phone coordinate needs unmasking fallback
+      if (!provider.phone && !heroTelUrl) {
+        e.preventDefault();
+        const prevText = btnCallHero.innerHTML;
+        btnCallHero.innerHTML = `Connecting...`;
+        const res = await ensureContactUnlocked('call');
+        btnCallHero.innerHTML = prevText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
+        }
+        if (res && res.phone) {
+          window.location.href = `tel:${res.phone}`;
+        }
+      }
     });
   }
 
@@ -564,25 +573,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnWaHero.style.display = 'inline-flex';
     if (heroWaUrl) btnWaHero.href = heroWaUrl;
     btnWaHero.addEventListener('click', async (e) => {
-      if (!provider.phone && !provider.whatsapp_number) {
-        e.preventDefault();
-        const prevText = btnWaHero.innerHTML;
-        btnWaHero.innerHTML = `Opening WhatsApp...`;
-        const res = await ensureContactUnlocked('whatsapp');
-        btnWaHero.innerHTML = prevText;
-        if (res && res.limitReached) {
-          showContactLimitModal();
-          return;
-        }
-        const targetWa = (res && res.whatsapp) ? res.whatsapp : (res && res.phone ? res.phone : null);
-        if (targetWa) {
-          const num = targetWa.replace(/\D/g, '');
-          const encodedMsg = encodeURIComponent(`Hello ${provider.name}, I found your verified profile on PadiFix and would like to inquire about your ${provider.trade} services.`);
-          window.open(`https://wa.me/${num}?text=${encodedMsg}`, '_blank', 'noopener,noreferrer');
-        }
-        return;
-      }
-      if (!checkOrMeterContact('whatsapp', e)) return;
+      // Phase 026 Invariant A: Non-blocking asynchronous lead alert dispatch for WhatsApp
+      checkOrMeterContact('whatsapp', e);
+
       if (typeof LokatorTelemetry !== 'undefined') {
         LokatorTelemetry.trackEvent('whatsapp_clicked', {
           providerId: provider.id,
@@ -601,6 +594,25 @@ document.addEventListener('DOMContentLoaded', async () => {
           city: provider.city,
           state: provider.state || stateParam
         }).catch(() => {});
+      }
+
+      // If whatsapp coordinate needs unmasking fallback
+      if (!provider.phone && !provider.whatsapp_number && !heroWaUrl) {
+        e.preventDefault();
+        const prevText = btnWaHero.innerHTML;
+        btnWaHero.innerHTML = `Opening WhatsApp...`;
+        const res = await ensureContactUnlocked('whatsapp');
+        btnWaHero.innerHTML = prevText;
+        if (res && res.limitReached) {
+          showContactLimitModal();
+          return;
+        }
+        const targetWa = (res && res.whatsapp) ? res.whatsapp : (res && res.phone ? res.phone : null);
+        if (targetWa) {
+          const num = targetWa.replace(/\D/g, '');
+          const encodedMsg = encodeURIComponent(`Hello ${provider.name}, I found your verified profile on PadiFix and would like to inquire about your ${provider.trade} services.`);
+          window.open(`https://wa.me/${num}?text=${encodedMsg}`, '_blank', 'noopener,noreferrer');
+        }
       }
     });
   }
@@ -899,8 +911,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const scoreSub = document.getElementById('score-sub-text');
     if (scoreSub) scoreSub.textContent = reviewsCount > 0 ? `Based on ${reviewsCount} verified review${reviewsCount === 1 ? '' : 's'}` : 'No customer reviews yet';
 
-    if (heroRatingVal) heroRatingVal.textContent = reviewsCount > 0 ? avgRating.toFixed(1) : 'New';
-    if (heroReviewsCount) heroReviewsCount.textContent = String(reviewsCount);
+    const heroRatingValEl = document.getElementById('hero-rating-val');
+    if (heroRatingValEl) heroRatingValEl.textContent = reviewsCount > 0 ? avgRating.toFixed(1) : 'New';
+    const heroReviewsCountEl = document.getElementById('hero-reviews-count');
+    if (heroReviewsCountEl) heroReviewsCountEl.textContent = String(reviewsCount);
     if (metricRating) metricRating.textContent = reviewsCount > 0 ? `★ ${avgRating.toFixed(1)}` : '★ New';
 
     // Histogram
@@ -1639,7 +1653,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     sidebarCallBtn.style.display = 'inline-flex';
     if (heroTelUrl) sidebarCallBtn.href = heroTelUrl;
     sidebarCallBtn.addEventListener('click', async (e) => {
-      if (!provider.phone) {
+      // Phase 026 Invariant A: Non-blocking asynchronous lead alert dispatch for Sidebar Call
+      checkOrMeterContact('call', e);
+
+      if (!provider.phone && !heroTelUrl) {
         e.preventDefault();
         const origText = sidebarCallBtn.innerHTML;
         sidebarCallBtn.innerHTML = `Connecting...`;
@@ -1652,9 +1669,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (res && res.phone) {
           window.location.href = `tel:${res.phone}`;
         }
-        return;
       }
-      if (!checkOrMeterContact('call', e)) return;
     });
   }
 
@@ -1929,7 +1944,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     stickyCallBtn.style.display = 'inline-flex';
     if (heroTelUrl) stickyCallBtn.href = heroTelUrl;
     stickyCallBtn.addEventListener('click', async (e) => {
-      if (!provider.phone) {
+      // Phase 026 Invariant A: Non-blocking asynchronous lead alert dispatch for Mobile Sticky Call
+      checkOrMeterContact('call', e);
+
+      if (typeof LokatorTelemetry !== 'undefined') {
+        LokatorTelemetry.trackEvent('call_clicked', {
+          providerId: provider.id,
+          trade: provider.trade,
+          surface: 'profile_mobile_sticky'
+        });
+      }
+
+      if (!provider.phone && !heroTelUrl) {
         e.preventDefault();
         const origText = stickyCallBtn.innerHTML;
         stickyCallBtn.innerHTML = `Connecting...`;
@@ -1942,15 +1968,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (res && res.phone) {
           window.location.href = `tel:${res.phone}`;
         }
-        return;
-      }
-      if (!checkOrMeterContact('call', e)) return;
-      if (typeof LokatorTelemetry !== 'undefined') {
-        LokatorTelemetry.trackEvent('call_clicked', {
-          providerId: provider.id,
-          trade: provider.trade,
-          surface: 'profile_mobile_sticky'
-        });
       }
     });
   }

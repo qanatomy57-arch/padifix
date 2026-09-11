@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-09-11T17:30:16.453Z",
+  "totalGates": 8,
+  "passedGates": 8,
+  "failedGates": 0,
+  "status": "CERTIFIED_GREEN",
+  "gateResults": [
+    {
+      "gate": 1,
+      "title": "POST /api/contact-meter (whatsapp) dispatches lead and logs notification",
+      "passed": true,
+      "detail": "HTTP 200, notifications in DB: 3, latest status: pending_sender_approval, channel: sms",
+      "error": null
+    },
+    {
+      "gate": 2,
+      "title": "POST /api/contact-meter (call) dispatches lead and logs notification",
+      "passed": true,
+      "detail": "HTTP 200, contact allowed: true, latest notification ID: f23a964a-3385-487b-867d-ae3922097082",
+      "error": null
+    },
+    {
+      "gate": 3,
+      "title": "Simulated Termii success records status=\"sent\" and termii_message_id",
+      "passed": true,
+      "detail": "delivered: true, status: sent, termii_message_id: sim_test_1789147810495, db verified: true",
+      "error": null
+    },
+    {
+      "gate": 4,
+      "title": "Unapproved Sender ID safely records pending_sender_approval without calling Termii wire",
+      "passed": true,
+      "detail": "status: pending_sender_approval, reason: SENDER_ID_APPROVAL_PENDING, db record verified: true",
+      "error": null
+    },
+    {
+      "gate": 5,
+      "title": "Zero customer PII confirmed across all notification records and SMS bodies",
+      "passed": true,
+      "detail": "Audited 10 canonical records. PII leaks detected: 0",
+      "error": null
+    },
+    {
+      "gate": 6,
+      "title": "UUID integrity verified: valid UUID retained, malformed string safely converted to null",
+      "passed": true,
+      "detail": "validLogged: true, malformedLogged: true, DB contact_event_id was null: true",
+      "error": null
+    },
+    {
+      "gate": 7,
+      "title": "RPC 404 fallback works: falls back to memory quota without false exhaustion, enforces cap",
+      "passed": true,
+      "detail": "Req 1: true (count 1), Req 2: true (count 2), Req 3: false (exhausted: true)",
+      "error": null
+    },
+    {
+      "gate": 8,
+      "title": "Non-blocking client flow certified: Call & WhatsApp launch natively without blocking on API",
+      "passed": true,
+      "detail": "profile.js normalized: true, search.js call dispatch: true, pwa-manager forwards: true",
+      "error": null
+    }
+  ]
+}
