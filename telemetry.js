@@ -351,7 +351,7 @@
      * Flushes queued telemetry batch to serverless /api/telemetry endpoint
      */
     flushBatch() {
-      if (inMemoryBatch.length === 0) return;
+      if (inMemoryBatch.length === 0) return Promise.resolve(null);
       const itemsToSend = inMemoryBatch.splice(0, MAX_BATCH_SIZE);
 
       try {
@@ -365,7 +365,7 @@
         const bodyStr = JSON.stringify(itemsToSend);
 
         if (typeof fetch === 'function') {
-          fetch(endpoint, {
+          return fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -376,10 +376,12 @@
         } else if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
           const blob = new Blob([bodyStr], { type: 'application/json' });
           navigator.sendBeacon(endpoint, blob);
+          return Promise.resolve(true);
         }
       } catch (e) {
         // Fail silently
       }
+      return Promise.resolve(null);
     },
 
     /**
@@ -528,10 +530,16 @@
     // 2. Track page_view event on DOM ready
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        LokatorTelemetry.trackEvent('page_view', { title: document.title });
+        LokatorTelemetry.trackEvent('page_view', {
+          title: (document.title || '').substring(0, 100),
+          normalized_page: normalizePage(window.location.pathname)
+        });
       });
     } else {
-      LokatorTelemetry.trackEvent('page_view', { title: document.title });
+      LokatorTelemetry.trackEvent('page_view', {
+        title: (document.title || '').substring(0, 100),
+        normalized_page: normalizePage(window.location.pathname)
+      });
     }
 
     // 3. Emit web_vitals_summary and flush queue on page unload / hide

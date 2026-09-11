@@ -86,8 +86,9 @@ const FORBIDDEN_SECURITY_KEYS = new Set([
 // Canonical Event Property Allowlist
 const EVENT_PROPERTY_ALLOWLIST = {
   page_view: {
-    maxProperties: 3,
+    maxProperties: 4,
     allowed: {
+      title: { type: 'string', maxLen: 128 },
       normalized_page: { type: 'string', maxLen: 32 },
       referrer_type: { type: 'string', maxLen: 32 }
     }
@@ -119,13 +120,94 @@ const EVENT_PROPERTY_ALLOWLIST = {
     }
   },
   web_vitals_summary: {
-    maxProperties: 6,
+    maxProperties: 10,
     allowed: {
+      page: { type: 'string', maxLen: 32 },
+      device_class: { type: 'string', maxLen: 16 },
       lcp: { type: 'number', min: 0, max: 60000 },
+      lcp_ms: { type: 'number', min: 0, max: 60000 },
       inp: { type: 'number', min: 0, max: 60000 },
+      inp_ms: { type: 'number', min: 0, max: 60000 },
       cls: { type: 'number', min: 0, max: 10 },
       ttfb: { type: 'number', min: 0, max: 60000 },
-      fcp: { type: 'number', min: 0, max: 60000 }
+      ttfb_ms: { type: 'number', min: 0, max: 60000 },
+      fcp: { type: 'number', min: 0, max: 60000 },
+      fcp_ms: { type: 'number', min: 0, max: 60000 },
+      dom_ready_ms: { type: 'number', min: 0, max: 60000 }
+    }
+  },
+  hero_search_submitted: {
+    maxProperties: 6,
+    allowed: {
+      service: { type: 'string', maxLen: 64 },
+      location: { type: 'string', maxLen: 64 },
+      state: { type: 'string', maxLen: 32 },
+      lga: { type: 'string', maxLen: 40 }
+    }
+  },
+  search_result_viewed: {
+    maxProperties: 8,
+    allowed: {
+      totalCount: { type: 'number', min: 0, max: 10000 },
+      page: { type: 'number', min: 1, max: 1000 },
+      category: { type: 'string', maxLen: 40 },
+      state: { type: 'string', maxLen: 32 },
+      lga: { type: 'string', maxLen: 40 },
+      city: { type: 'string', maxLen: 40 }
+    }
+  },
+  search_no_results: {
+    maxProperties: 8,
+    allowed: {
+      query: { type: 'string', maxLen: 64 },
+      category: { type: 'string', maxLen: 40 },
+      state: { type: 'string', maxLen: 32 },
+      lga: { type: 'string', maxLen: 40 },
+      city: { type: 'string', maxLen: 40 }
+    }
+  },
+  provider_profile_viewed: {
+    maxProperties: 8,
+    allowed: {
+      providerId: { type: 'number', min: 1 },
+      trade: { type: 'string', maxLen: 40 },
+      category: { type: 'string', maxLen: 40 },
+      city: { type: 'string', maxLen: 40 },
+      state: { type: 'string', maxLen: 32 },
+      lga: { type: 'string', maxLen: 40 },
+      verificationStatus: { type: 'string', maxLen: 32 }
+    }
+  },
+  phone_clicked: {
+    maxProperties: 8,
+    allowed: {
+      providerId: { type: 'number', min: 1 },
+      trade: { type: 'string', maxLen: 40 },
+      category: { type: 'string', maxLen: 40 },
+      city: { type: 'string', maxLen: 40 },
+      state: { type: 'string', maxLen: 32 },
+      lga: { type: 'string', maxLen: 40 },
+      verificationStatus: { type: 'string', maxLen: 32 }
+    }
+  },
+  whatsapp_clicked: {
+    maxProperties: 8,
+    allowed: {
+      providerId: { type: 'number', min: 1 },
+      trade: { type: 'string', maxLen: 40 },
+      category: { type: 'string', maxLen: 40 },
+      city: { type: 'string', maxLen: 40 },
+      state: { type: 'string', maxLen: 32 },
+      lga: { type: 'string', maxLen: 40 },
+      verificationStatus: { type: 'string', maxLen: 32 }
+    }
+  },
+  provider_share_clicked: {
+    maxProperties: 4,
+    allowed: {
+      providerId: { type: 'number', min: 1 },
+      trade: { type: 'string', maxLen: 40 },
+      channel: { type: 'string', maxLen: 32 }
     }
   },
   client_error: {
