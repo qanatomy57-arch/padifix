@@ -26,6 +26,11 @@ const LeadStore = require('../lib/lead-store');
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+function getAdminAuthKey() {
+  return SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+}
 
 // Fallback in-memory cache for local offline/mock test runners
 const memoryReviewFallback = new Map();
@@ -167,12 +172,13 @@ async function fetchReviewsFromPostgres(providerId) {
  */
 async function insertReviewToPostgres({ providerId, authorName, authorLocation, rating, comment, categoryRatings, praiseTags, interactionToken, isVerified }) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return { success: false, fallback: true };
+  const adminKey = getAdminAuthKey();
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/reviews`, {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': adminKey,
+        'Authorization': `Bearer ${adminKey}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
       },
@@ -269,12 +275,13 @@ const serviceReviewHandler = async (req, res) => {
         // 1. Resolve lead from LeadStore or PostgreSQL
         let lead = LeadStore.getLeadByReviewToken(cleanToken);
 
-        if (!lead && SUPABASE_URL && SUPABASE_ANON_KEY) {
+        if (!lead && SUPABASE_URL) {
           try {
+            const adminKey = getAdminAuthKey();
             const pgLeadRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?review_token=eq.${encodeURIComponent(cleanToken)}&select=*&limit=1`, {
               headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                'apikey': adminKey,
+                'Authorization': `Bearer ${adminKey}`
               }
             });
             if (pgLeadRes.ok) {
@@ -293,12 +300,13 @@ const serviceReviewHandler = async (req, res) => {
 
         // 2. Check if a review has already been submitted for this token
         let isAlreadyReviewed = memoryTokensFallback.has(cleanToken);
-        if (!isAlreadyReviewed && SUPABASE_URL && SUPABASE_ANON_KEY) {
+        if (!isAlreadyReviewed && SUPABASE_URL) {
           try {
+            const adminKey = getAdminAuthKey();
             const pgCheck = await fetch(`${SUPABASE_URL}/rest/v1/reviews?interaction_token=eq.${encodeURIComponent(cleanToken)}&select=id&limit=1`, {
               headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                'apikey': adminKey,
+                'Authorization': `Bearer ${adminKey}`
               }
             });
             if (pgCheck.ok) {
@@ -436,12 +444,13 @@ const serviceReviewHandler = async (req, res) => {
         // Resolve lead authoritatively
         let matchedLead = LeadStore.getLeadByReviewToken(cleanToken);
 
-        if (!matchedLead && SUPABASE_URL && SUPABASE_ANON_KEY) {
+        if (!matchedLead && SUPABASE_URL) {
           try {
+            const adminKey = getAdminAuthKey();
             const pgLeadRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?review_token=eq.${encodeURIComponent(cleanToken)}&select=*&limit=1`, {
               headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                'apikey': adminKey,
+                'Authorization': `Bearer ${adminKey}`
               }
             });
             if (pgLeadRes.ok) {

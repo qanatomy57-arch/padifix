@@ -412,8 +412,6 @@ const providerLeadsHandler = async (req, res) => {
       }
       if (cleanLostReason !== undefined) updates.lost_reason = cleanLostReason;
       if (cleanClientName !== undefined) updates.client_display_name = cleanClientName;
-      if (req.body?.review_requested_at !== undefined) updates.review_requested_at = req.body.review_requested_at;
-      if (req.body?.review_token !== undefined) updates.review_token = req.body.review_token;
 
       // Attempt PostgreSQL update on public.contact_events (strictly tenant-scoped)
       let pgUpdated = false;

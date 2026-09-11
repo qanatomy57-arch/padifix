@@ -10,6 +10,7 @@ Phase 029 implements the verified post-service customer review and rating loop f
 - **Repository**: `C:\All workspace\PadiFix project\lokator`
 - **Target Supabase Project**: `hvxosxhnxauiqrhpyuur`
 - **Baseline Phase 028 Commit**: `ff3432773865205d44bfd41bd105a49dcf43dba7`
+- **Phase 029 Implementation Commit**: `2aae2b65f3b27b0e9b7a8b944b91d60c0f2e9083`
 
 ---
 
@@ -32,12 +33,13 @@ Phase 029 implements the verified post-service customer review and rating loop f
    - `review_requested_at TIMESTAMPTZ`: Timestamp recorded upon artisan review dispatch.
    - `uq_contact_events_review_token`: Strict unique constraint on `public.contact_events`.
    - `idx_contact_events_review_token` & `idx_contact_events_review_requested`: Performance indexes.
-   - Granular column-level `GRANT UPDATE` for `authenticated` role maintaining strict tenant isolation.
+   - Server-controlled security: `review_token` cannot be mutated via generic client PATCH calls.
 2. **Lead Store Engine (`lib/lead-store.js`)**:
    - `recordReviewRequested(providerId, leadId)`: Idempotent token generation ensuring 1 active token per completed lead.
    - `getLeadByReviewToken(token)`: Authoritative lead resolver verifying `status = 'completed'`.
 3. **Provider Leads API (`api/provider-leads.js`)**:
    - `action=request_review`: Authenticated provider endpoint returning `{ review_token, review_url, review_requested_at }`.
+   - Generic lead PATCH endpoint strictly rejects/ignores client attempts to mutate `review_token` or `review_requested_at`.
 4. **Service Review API (`api/service-review.js`)**:
    - `GET /api/service-review?action=verify_token&token=...`: Minimized public metadata return (Zero PII).
    - `POST /api/service-review`:
@@ -61,85 +63,82 @@ Phase 029 implements the verified post-service customer review and rating loop f
 
 ---
 
-### 3. Automated Verification Matrix
+### 3. Production Migration 048 Verification
 
-| Suite | Script | Gates / Checks | Result |
+Migration 048 was executed in the Supabase SQL Editor for project `hvxosxhnxauiqrhpyuur`.
+Independent live verification via `node scripts/verify_phase_029_production_migration.js` confirmed:
+1. **Schema Discovery**: `contact_events.review_token` and `contact_events.review_requested_at` are queryable and active in PostgreSQL.
+2. **Uniqueness Constraint**: Duplicate review tokens are rejected with PostgreSQL unique constraint violation (HTTP 409).
+3. **Tenant Read & Write Isolation**: Provider B receives 0 rows when attempting to read Provider A's review token, and cannot update Provider A leads.
+4. **Live Review Cycle in Production Database**:
+   - Seeded completed lead with review token verified via `GET /api/service-review?action=verify_token`.
+   - Verified review submitted and persisted to `public.reviews` with `is_verified_customer = true`.
+   - Duplicate submission rejected with HTTP 409 Conflict.
+   - Self-review attempt by authenticated provider rejected with HTTP 403 Forbidden.
+   - Client forgery attempt without token forced to `is_verified_customer = false`.
+
+---
+
+### 4. Full Verification & Regression Matrix
+
+| Suite / Gate | Test Script | Assertions | Result |
 |---|---|---|---|
-| **Phase 029 Engine** | `scripts/verify_phase_029_review_engine.js` | 14 / 14 Gates | **PASS (100%)** |
-| **Phase 029 Browser QA** | `scripts/verify_phase_029_browser_qa.js` | Desktop & Mobile Viewports | **PASS (100%)** |
-| **Phase 028 Production Migration** | `scripts/verify_phase_028_production_migration.js` | 21 / 21 Checks | **PASS (100%)** |
-| **Phase 028 Pipeline CRM** | `scripts/verify_phase_028_pipeline_crm.js` | 10 / 10 Gates | **PASS (100%)** |
-| **Phase 027 Realtime Isolation** | `scripts/verify_phase_027_realtime_tenant_isolation.js` | 20 / 20 Checks | **PASS (100%)** |
-| **Phase 027 Lead Stream** | `scripts/verify_phase_027_realtime_lead_stream.js` | 8 / 8 Gates | **PASS (100%)** |
-| **Phase 016 Termii Sender-Safe** | `scripts/verify_phase_016_termii_sender_safe.js` | 14 / 14 Checks | **PASS (100%)** |
-| **Phase 017 Platform Protection** | `scripts/verify_phase_017_platform_protection.js` | 14 / 14 Checks | **PASS (100%)** |
-| **Phase 026 Live Lead Alerts** | `scripts/verify_live_lead_alerts_journey.js` | 8 / 8 Gates | **PASS (100%)** |
+| **Production Migration 048** | `scripts/verify_phase_029_production_migration.js` | 13 / 13 Probes | **PASS** |
+| **Phase 029 Review Engine** | `scripts/verify_phase_029_review_engine.js` | 14 / 14 Gates | **PASS** |
+| **Phase 029 Browser QA** | `scripts/verify_phase_029_browser_qa.js` | Desktop (1280x800) & Mobile (390x844) | **PASS** |
+| **Phase 028 Production Migration** | `scripts/verify_phase_028_production_migration.js` | 21 / 21 Probes | **PASS** |
+| **Phase 028 Pipeline CRM** | `scripts/verify_phase_028_pipeline_crm.js` | 10 / 10 Gates | **PASS** |
+| **Phase 027 Realtime Isolation** | `scripts/verify_phase_027_realtime_tenant_isolation.js` | 20 / 20 Tests | **PASS** |
+| **Phase 027 Lead Stream** | `scripts/verify_phase_027_realtime_lead_stream.js` | 8 / 8 Gates | **PASS** |
+| **Phase 016 Termii Sender-Safe** | `scripts/verify_phase_016_termii_sender_safe.js` | 14 / 14 Checks | **PASS** |
+| **Phase 017 Platform Protection** | `scripts/verify_phase_017_platform_protection.js` | 14 / 14 Checks | **PASS** |
+| **Phase 026 Live Lead Alerts** | `scripts/verify_live_lead_alerts_journey.js` | 8 / 8 Gates | **PASS** |
 
 ---
 
-### 4. Production Migration 048 Status & Blocker Report
+### 5. Forensic Security & Privacy Audit
 
-In accordance with Section 0, 25, and the Absolute Certification Rule:
-- Production Supabase Project: `hvxosxhnxauiqrhpyuur`
-- DDL Script: `supabase/migrations/048_padifix_phase_029_review_engine.sql`
-- Direct REST schema probe via `scripts/verify_phase_029_production_migration.js`:
-  - `column contact_events.review_token does not exist` (HTTP 400).
-  - External PostgreSQL database ports (5432 / 6543) are restricted; DDL must be applied via Supabase Dashboard SQL Editor.
-
-#### Action Required to Achieve GREEN Certification:
-Execute `supabase/migrations/048_padifix_phase_029_review_engine.sql` in the Supabase SQL Editor for `hvxosxhnxauiqrhpyuur`.
-
-```sql
--- 1. ADD REVIEW INVITATION TOKEN & DISPATCH TRACKING TO contact_events
-ALTER TABLE public.contact_events 
-  ADD COLUMN IF NOT EXISTS review_token TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS review_requested_at TIMESTAMPTZ DEFAULT NULL;
-
--- 2. ENFORCE UNIQUE CONSTRAINT ON REVIEW TOKEN IF PRESENT
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'uq_contact_events_review_token'
-  ) THEN
-    ALTER TABLE public.contact_events
-      ADD CONSTRAINT uq_contact_events_review_token UNIQUE (review_token);
-  END IF;
-END $$;
-
--- 3. CREATE PERFORMANCE INDEXES FOR TOKEN LOOKUP & DISPATCH MONITORING
-CREATE INDEX IF NOT EXISTS idx_contact_events_review_token 
-  ON public.contact_events(review_token)
-  WHERE review_token IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_contact_events_review_requested 
-  ON public.contact_events(provider_id, review_requested_at DESC)
-  WHERE review_requested_at IS NOT NULL;
-
--- 4. MAINTAIN RESTRICTIVE COLUMN-LEVEL UPDATE PRIVILEGES
-REVOKE UPDATE ON public.contact_events FROM anon, authenticated;
-GRANT UPDATE (
-  status, 
-  notes, 
-  updated_at, 
-  quote_amount_kobo, 
-  workmanship_amount_kobo, 
-  materials_amount_kobo, 
-  final_amount_kobo, 
-  scheduled_for, 
-  completed_at, 
-  lost_reason, 
-  client_display_name,
-  review_token,
-  review_requested_at
-) ON public.contact_events TO authenticated;
-
-GRANT ALL PRIVILEGES ON public.contact_events TO service_role;
-```
+- `review_token`: 192-bit CSPRNG hex string, never logged, never persisted in telemetry or localStorage.
+- `Privacy Invariant C`: 0 customer phone numbers and 0 raw chat bodies persisted.
+- `Anti-Forgery`: Client `is_verified_customer` parameter ignored; server strictly derives verification from completed job in `contact_events`.
+- `Anti-Abuse`: Rate limiting, XSS escaping on all rendered review content, self-review 403, and duplicate 409 verified.
 
 ---
 
-### Certification Status
+### 6. Final Certification Matrix
 
-- **PRODUCTION MIGRATION**: NOT YET APPLIED IN PRODUCTION
-- **PHASE 029 STATUS**: **CONDITIONAL / BLOCKED** (Pending Migration 048 production application)
-- **WORKING TREE**: Staged for implementation commit
+| Gate | Result |
+|---|---|
+| Production Migration 048 | **PASS** |
+| Production Schema | **PASS** |
+| Constraints | **PASS** |
+| Indexes | **PASS** |
+| Grants | **PASS** |
+| Review Token Security | **PASS** |
+| Completed-Job Enforcement | **PASS** |
+| Verified Review Submission | **PASS** |
+| Duplicate Protection | **PASS** |
+| Self-Review Prevention | **PASS** |
+| Provider Authorization | **PASS** |
+| Review Content Security | **PASS** |
+| Privacy Invariant C | **PASS** |
+| Review Metrics | **PASS** |
+| Public Profile Integration | **PASS** |
+| Search Integration | **PASS** |
+| Dashboard Integration | **PASS** |
+| Browser QA | **PASS** |
+| Phase 028 Regression | **PASS** |
+| Phase 027 Regression | **PASS** |
+| Phase 016 Regression | **PASS** |
+| Phase 017 Regression | **PASS** |
+| Live Lead Alerts Regression | **PASS** |
+| Secret/Logging Audit | **PASS** |
+| Git Integrity | **PASS** |
+
+---
+
+### Final Status
+
+- **PRODUCTION MIGRATION**: **VERIFIED**
+- **PHASE 029 STATUS**: **GREEN — CERTIFIED**
+- **PRODUCTION SUPABASE PROJECT**: `hvxosxhnxauiqrhpyuur`

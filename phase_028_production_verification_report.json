@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-11T22:23:58.863Z",
+  "timestamp": "2026-09-11T22:42:00.448Z",
   "project_ref": "hvxosxhnxauiqrhpyuur",
   "totalChecks": 21,
   "passedChecks": 21,
@@ -81,25 +81,25 @@
     {
       "name": "Seed Production Test Lead for Constraint Probing",
       "passed": true,
-      "detail": "Lead ID: f9f2b12d-32ea-409b-86b0-1096fd66d2d9",
+      "detail": "Lead ID: aff48da9-6b0c-492c-ade8-8eb5429b841f",
       "error": null
     },
     {
       "name": "Production Constraint: chk_contact_events_status Rejects Invalid Status",
       "passed": true,
-      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (f9f2b12d-32ea-409b-86b0-1096fd66d2d9, 8, whatsapp, ",
+      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (aff48da9-6b0c-492c-ade8-8eb5429b841f, 8, whatsapp, ",
       "error": null
     },
     {
       "name": "Production Constraint: chk_contact_events_amounts_non_negative Rejects Negative Amounts",
       "passed": true,
-      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (f9f2b12d-32ea-409b-86b0-1096fd66d2d9, 8, whatsapp, ",
+      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (aff48da9-6b0c-492c-ade8-8eb5429b841f, 8, whatsapp, ",
       "error": null
     },
     {
       "name": "Production Constraint: chk_contact_events_split_equality Rejects Mismatched Split",
       "passed": true,
-      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (f9f2b12d-32ea-409b-86b0-1096fd66d2d9, 8, whatsapp, ",
+      "detail": "HTTP 400 (Rejected as expected): {\"code\":\"23514\",\"details\":\"Failing row contains (aff48da9-6b0c-492c-ade8-8eb5429b841f, 8, whatsapp, ",
       "error": null
     },
     {
