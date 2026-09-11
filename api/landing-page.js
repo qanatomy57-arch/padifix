@@ -782,7 +782,7 @@ const landingPageHandler = async (req, res) => {
   // This avoids exceeding the 12-function Hobby plan limit.
   const routeOverride = req.query?.__route || new URL(req.url || '/', 'http://localhost').searchParams.get('__route');
   if (routeOverride === 'sitemap') {
-    const sitemapHandler = require('./sitemap');
+    const sitemapHandler = require('../lib/sitemap-engine');
     return sitemapHandler(req, res);
   }
 
