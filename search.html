@@ -341,10 +341,32 @@
           <!-- Dynamic JS Injection of Provider Cards -->
         </div>
 
-        <!-- Geospatial Interactive Map Container -->
+        <!-- Geospatial Interactive Map Container (Phase 032) -->
         <div class="search-map-container" id="search-map-container" style="display: none;">
           <div class="search-map" id="search-map"></div>
           <div class="map-overlay-badge" id="map-counter-badge">📍 <span id="map-counter-text">0</span> Artisans Mapped</div>
+
+          <!-- Phase 032 Proximity Radar Controls -->
+          <div class="proximity-radar-bar" id="proximity-radar-bar" role="toolbar" aria-label="Proximity Radar Controls">
+            <button type="button" class="btn-radar-nearme" id="btn-radar-nearme" title="Center map on your current location">
+              <span class="radar-ping-icon">🎯</span> Near Me
+            </button>
+            <div class="radar-chips-group" role="group" aria-label="Radar search radius">
+              <button type="button" class="radar-chip" data-radius="5" id="chip-radius-5">5 km</button>
+              <button type="button" class="radar-chip" data-radius="15" id="chip-radius-15">15 km</button>
+              <button type="button" class="radar-chip" data-radius="30" id="chip-radius-30">30 km</button>
+              <button type="button" class="radar-chip active" data-radius="all" id="chip-radius-all">All</button>
+            </div>
+          </div>
+
+          <!-- Phase 032 Mobile Map Bottom Preview Sheet -->
+          <div class="map-bottom-sheet" id="map-bottom-sheet" aria-hidden="true" style="display: none;">
+            <div class="sheet-drag-handle" id="sheet-drag-handle"></div>
+            <button type="button" class="sheet-close-btn" id="sheet-close-btn" aria-label="Close preview">&times;</button>
+            <div class="sheet-content" id="sheet-content">
+              <!-- Dynamically populated when artisan pin is tapped on mobile -->
+            </div>
+          </div>
         </div>
 
         <!-- Empty State (Hidden by default, with Phase 10.9 Intelligent Recovery) -->

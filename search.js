@@ -1568,6 +1568,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================================
   // PHASE 10.17: GEOSPATIAL MAP & VIEW MODES LIFECYCLE
   // ============================================================================
+  // PHASE 032: GEOSPATIAL PROXIMITY MAP & CLUSTER RADAR ENGINE
+  // ============================================================================
   let directoryMapHandle = null;
   let currentViewMode = 'list';
 
@@ -1577,6 +1579,77 @@ document.addEventListener("DOMContentLoaded", () => {
   const viewModeBtns = document.querySelectorAll('.btn-view-mode');
   const mobileMapToggleBtn = document.getElementById('btn-mobile-map-toggle');
   const resultsMain = document.querySelector('.results-main');
+  const proximityRadarBar = document.getElementById('proximity-radar-bar');
+  const btnRadarNearMe = document.getElementById('btn-radar-nearme');
+  const radarChips = document.querySelectorAll('.radar-chip');
+  const mapBottomSheet = document.getElementById('map-bottom-sheet');
+  const sheetContent = document.getElementById('sheet-content');
+  const sheetCloseBtn = document.getElementById('sheet-close-btn');
+
+  // Map -> Card synchronization & Mobile Bottom Sheet Trigger
+  function handleMarkerSelect(provider) {
+    if (!provider || !provider.id) return;
+
+    // 1. Highlight and scroll corresponding card into view in the results list
+    const card = document.getElementById(`card-prov-${provider.id}`);
+    if (card) {
+      document.querySelectorAll('.provider-item-card.map-highlighted').forEach(c => c.classList.remove('map-highlighted'));
+      card.classList.add('map-highlighted');
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      setTimeout(() => {
+        card.classList.remove('map-highlighted');
+      }, 2500);
+    }
+
+    // 2. Display Mobile Bottom Sheet preview on mobile viewports (< 768px)
+    if (mapBottomSheet && sheetContent) {
+      const initials = (provider.name || provider.business_name || 'Pro').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+      const trade = provider.trade || provider.trade_title || 'Verified Artisan';
+      const name = provider.name || provider.business_name || 'Artisan';
+      const loc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || 'Nigeria';
+      const rating = provider.rating ? `★ ${Number(provider.rating).toFixed(1)} (${provider.reviews_count || 0})` : '★ 5.0 (New)';
+      const dist = provider.distance != null ? `~${Number(provider.distance).toFixed(1)} km away` : 'Nearby';
+
+      sheetContent.innerHTML = `
+        <div class="sheet-card-body">
+          <div class="sheet-avatar">${escapeHtml(initials)}</div>
+          <div class="sheet-info">
+            <h4 class="sheet-name">${escapeHtml(name)}</h4>
+            <div class="sheet-trade">${escapeHtml(trade)}</div>
+            <div class="sheet-meta">📍 ${escapeHtml(loc)} • ${escapeHtml(dist)} • ${rating}</div>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <a href="profile.html?id=${encodeURIComponent(provider.id)}" class="sheet-btn-profile">View Full Profile</a>
+          <button type="button" class="sheet-btn-lead" id="btn-sheet-lead-${escapeHtml(provider.id)}">Direct Inquiry</button>
+        </div>
+      `;
+      mapBottomSheet.style.display = 'block';
+      mapBottomSheet.setAttribute('aria-hidden', 'false');
+
+      const leadBtn = document.getElementById(`btn-sheet-lead-${provider.id}`);
+      if (leadBtn) {
+        leadBtn.addEventListener('click', () => {
+          if (typeof window.openBroadcastModal === 'function') {
+            window.openBroadcastModal({ prefillTrade: trade, prefillState: provider.state, prefillLga: provider.lga });
+          } else {
+            window.location.href = `profile.html?id=${encodeURIComponent(provider.id)}`;
+          }
+        });
+      }
+    }
+  }
+
+  function handleClusterClick(group) {
+    // Zoom into cluster and highlight first card if visible
+    if (group && group.providers && group.providers.length > 0) {
+      const firstId = group.providers[0].provider.id;
+      const card = document.getElementById(`card-prov-${firstId}`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
 
   function initSearchMap(providersList) {
     if (!searchMapEl || typeof L === 'undefined') return;
@@ -1585,7 +1658,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (MapService && MapService.initSearchDirectoryMap) {
       directoryMapHandle = MapService.initSearchDirectoryMap('search-map', {
         providers: providersList || [],
-        userCoords: state.userCoords
+        userCoords: state.userCoords,
+        onMarkerSelect: handleMarkerSelect,
+        onClusterClick: handleClusterClick
       });
     }
   }
@@ -1602,6 +1677,105 @@ document.addEventListener("DOMContentLoaded", () => {
       const plotted = directoryMapHandle.updateProviders(list, state.userCoords);
       if (mapCounterText) mapCounterText.textContent = plotted;
     }
+  }
+
+  // Card -> Map Two-Way Synchronization (Hover/Focus)
+  if (providersContainer && !providersContainer._mapSyncBound) {
+    providersContainer._mapSyncBound = true;
+    providersContainer.addEventListener('mouseenter', (e) => {
+      const card = e.target.closest('.provider-item-card');
+      if (card && directoryMapHandle && directoryMapHandle.highlightProvider) {
+        directoryMapHandle.highlightProvider(card.dataset.providerId);
+      }
+    }, true);
+
+    providersContainer.addEventListener('focusin', (e) => {
+      const card = e.target.closest('.provider-item-card');
+      if (card && directoryMapHandle && directoryMapHandle.highlightProvider) {
+        directoryMapHandle.highlightProvider(card.dataset.providerId);
+      }
+    });
+  }
+
+  // Bottom Sheet Close Button
+  if (sheetCloseBtn) {
+    sheetCloseBtn.addEventListener('click', () => {
+      if (mapBottomSheet) {
+        mapBottomSheet.style.display = 'none';
+        mapBottomSheet.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
+  // Proximity Radar Bar Radius Filter Controls
+  function applyRadarRadius(radius) {
+    radarChips.forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.radius === String(radius));
+    });
+
+    if (directoryMapHandle && directoryMapHandle.setRadarRadius) {
+      directoryMapHandle.setRadarRadius(radius, state.userCoords);
+    }
+
+    if (radius === 'all') {
+      state.maxDistance = 50;
+      if (distanceVal) distanceVal.textContent = 'All distances';
+      if (distanceRange) distanceRange.value = 50;
+    } else {
+      const numRadius = Number(radius);
+      state.maxDistance = numRadius;
+      if (distanceVal) distanceVal.textContent = `Within ${numRadius} km`;
+      if (distanceRange) distanceRange.value = numRadius;
+    }
+
+    state.page = 1;
+    render();
+  }
+
+  radarChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      applyRadarRadius(chip.dataset.radius);
+    });
+  });
+
+  // Transient Browser GPS "Near Me" Button (Never persisted, zero leak)
+  if (btnRadarNearMe) {
+    btnRadarNearMe.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        alert('Geolocation is not supported by your browser. Centering on selected LGA.');
+        return;
+      }
+      btnRadarNearMe.disabled = true;
+      btnRadarNearMe.innerHTML = '<span>⏳</span> Locating...';
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          btnRadarNearMe.disabled = false;
+          btnRadarNearMe.innerHTML = '<span class="radar-ping-icon">🎯</span> Near Me';
+          // Strictly transient coordinates — NEVER persisted to storage, URLs, or backend!
+          state.userCoords = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          };
+          applyRadarRadius(15);
+        },
+        (err) => {
+          btnRadarNearMe.disabled = false;
+          btnRadarNearMe.innerHTML = '<span class="radar-ping-icon">🎯</span> Near Me';
+          console.warn('GPS permission denied or unavailable:', err.message);
+          // Gracefully fall back to selected LGA/state centroid
+          if (typeof NigeriaLocations !== 'undefined') {
+            const locRes = NigeriaLocations.resolveCoordinates({ lga: state.lga, state: state.state });
+            if (locRes && locRes.lat && locRes.lng) {
+              state.userCoords = { lat: locRes.lat, lng: locRes.lng };
+              applyRadarRadius(15);
+              return;
+            }
+          }
+        },
+        { timeout: 8000, maximumAge: 60000, enableHighAccuracy: false }
+      );
+    });
   }
 
   function setViewMode(mode) {

@@ -157,20 +157,20 @@ const VIEWPORTS = [
   const checkCtx = await browser.newContext();
   const checkPage = await checkCtx.newPage();
 
-  const manifest = await (await checkPage.goto(`${PROD_URL}/manifest.json`)).json();
+  const manifest = await (await checkPage.goto(`${PROD_URL}/manifest.json`, { waitUntil: 'domcontentloaded' })).json();
   assert(manifest.name.includes('PadiFix'), `Manifest name: "${manifest.name}"`);
   assert(manifest.short_name === 'PadiFix', `Manifest short_name: "${manifest.short_name}"`);
   assert(manifest.theme_color === '#00A859', `Manifest theme_color: "${manifest.theme_color}"`);
 
-  const sw = await (await checkPage.goto(`${PROD_URL}/sw.js`)).text();
+  const sw = await (await checkPage.goto(`${PROD_URL}/sw.js`, { waitUntil: 'domcontentloaded' })).text();
   assert(sw.includes('padifix-v12.00') || sw.includes('padifix-v11.00'), 'Service worker cache version is padifix-v12.00+');
 
   // 7. SEO & ASSET INTEGRITY
   console.log('\n--- 7. SEO & ASSET STATUS ---');
-  const ogImg = await checkPage.goto(`${PROD_URL}/og-image.png`);
+  const ogImg = await checkPage.goto(`${PROD_URL}/og-image.png`, { waitUntil: 'domcontentloaded' });
   assert(ogImg.status() === 200, 'OpenGraph image (og-image.png) responds HTTP 200 OK');
 
-  const favicon = await checkPage.goto(`${PROD_URL}/favicon.svg`);
+  const favicon = await checkPage.goto(`${PROD_URL}/favicon.svg`, { waitUntil: 'domcontentloaded' });
   assert(favicon.status() === 200, 'Favicon (favicon.svg) responds HTTP 200 OK');
 
   await checkCtx.close();
