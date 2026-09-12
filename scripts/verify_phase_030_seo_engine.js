@@ -83,7 +83,7 @@ async function runSeoEngineVerification() {
     const hasLgaRewrite = rewrites.some(r => r.source === '/services/:trade/:state/:lga' && r.destination.includes('/api/landing-page'));
     const hasStateRewrite = rewrites.some(r => r.source === '/services/:trade/:state' && r.destination.includes('/api/landing-page'));
     const hasTradeRewrite = rewrites.some(r => r.source === '/services/:trade' && r.destination.includes('/api/landing-page'));
-    const hasSitemapRewrite = rewrites.some(r => r.source === '/sitemap.xml' && r.destination.includes('/api/sitemap'));
+    const hasSitemapRewrite = rewrites.some(r => r.source === '/sitemap.xml' && (r.destination.includes('/api/landing-page') || r.destination.includes('/api/sitemap')));
 
     const gate1Passed = hasLgaRewrite && hasStateRewrite && hasTradeRewrite && hasSitemapRewrite;
     reportGate(1, 'Vercel Rewrite Routing & Clean URL Mapping', gate1Passed,

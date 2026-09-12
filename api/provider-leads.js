@@ -46,6 +46,78 @@ function sanitizeText(val, maxLen = 100) {
   return clean.substring(0, maxLen);
 }
 
+const FALLBACK_SEED_ARTISANS = [
+  {
+    id: 8,
+    full_name: 'Adekunle Adeleke',
+    business_name: 'Ade Plumbing Solutions',
+    trade_title: 'Plumber',
+    category_slug: 'plumber',
+    state: 'Lagos',
+    lga: 'Ikeja',
+    rating: 4.9,
+    reviews_count: 14,
+    is_verified: true,
+    phone: '+2348030001122',
+    whatsapp_number: '+2348030001122'
+  },
+  {
+    id: 101,
+    full_name: 'Babatunde Adeleke',
+    business_name: 'Babatunde Electric & Solar',
+    trade_title: 'Electrician',
+    category_slug: 'electrician',
+    state: 'Lagos',
+    lga: 'Ikeja',
+    rating: 4.8,
+    reviews_count: 22,
+    is_verified: true,
+    phone: '+2348055554321',
+    whatsapp_number: '+2348055554321'
+  }
+];
+
+async function matchTopArtisans({ trade_slug, state, lga }) {
+  const normTrade = String(trade_slug || '').toLowerCase().trim();
+  const normState = String(state || '').toLowerCase().trim();
+  const normLga = String(lga || '').toLowerCase().trim();
+
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    try {
+      let query = `${SUPABASE_URL}/rest/v1/providers?is_public=eq.true&is_active=eq.true&select=id,business_name,full_name,trade_title,primary_category_slug,state,lga,area,rating,reviews_count,is_verified,phone,whatsapp_number&order=rating.desc,reviews_count.desc&limit=10`;
+      if (normState) query += `&state=ilike.*${encodeURIComponent(normState)}*`;
+      if (normLga) query += `&lga=ilike.*${encodeURIComponent(normLga)}*`;
+
+      const res = await fetch(query, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const filtered = rows.filter(r => {
+            if (!normTrade) return true;
+            const cat = String(r.primary_category_slug || r.trade_title || '').toLowerCase();
+            return cat.includes(normTrade) || normTrade.includes(cat);
+          });
+          if (filtered.length > 0) return filtered.slice(0, 3);
+          return rows.slice(0, 3);
+        }
+      }
+    } catch (e) {}
+  }
+
+  const matches = FALLBACK_SEED_ARTISANS.filter(a => {
+    const tradeMatch = !normTrade || a.category_slug.includes(normTrade) || normTrade.includes(a.category_slug);
+    const stateMatch = !normState || a.state.toLowerCase().includes(normState);
+    return tradeMatch && stateMatch;
+  });
+
+  return matches.length > 0 ? matches.slice(0, 3) : FALLBACK_SEED_ARTISANS.slice(0, 3);
+}
+
 const providerLeadsHandler = async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -80,6 +152,26 @@ const providerLeadsHandler = async (req, res) => {
 
       // 2. Fetch authoritative quota from server store
       const quota = LeadStore.getProviderQuota(providerId);
+
+      // Phase 031: Fetch broadcasts matching provider's trade and locality
+      const queryFilter = req.query?.filter || urlObj.searchParams.get('filter');
+      if (queryFilter === 'broadcasts') {
+        const isPro = ['PRO', 'PREMIUM'].includes(quota.plan_id);
+        const tradeFilter = req.query?.trade || urlObj.searchParams.get('trade');
+        const stateFilter = req.query?.state || urlObj.searchParams.get('state');
+        const broadcasts = LeadStore.getAvailableBroadcastsForProvider(providerId, {
+          trade_slug: tradeFilter,
+          state: stateFilter,
+          isPro
+        });
+        return res.status(200).json({
+          status: 'success',
+          is_pro: isPro,
+          plan_id: quota.plan_id,
+          contacts_remaining: quota.contacts_remaining,
+          broadcasts
+        });
+      }
 
       // 3. Fetch privacy-safe operational leads from PostgreSQL public.contact_events
       let leads = [];
@@ -487,7 +579,152 @@ const providerLeadsHandler = async (req, res) => {
   // POST: Review Request Dispatch & Quick Operations
   if (req.method === 'POST') {
     try {
-      const { action = 'request_review', lead_id, provider_id } = req.body || {};
+      const {
+        action = 'request_review',
+        lead_id,
+        provider_id,
+        broadcast_id,
+        trade_slug,
+        state,
+        lga,
+        area,
+        urgency,
+        budget_range,
+        job_scope
+      } = req.body || {};
+
+      // Phase 031: Consumer Action — Create Instant Lead Broadcast
+      if (action === 'create_broadcast') {
+        if (!trade_slug || typeof trade_slug !== 'string') {
+          return res.status(400).json({ error: 'Missing required field: trade_slug.' });
+        }
+        if (!state || typeof state !== 'string') {
+          return res.status(400).json({ error: 'Missing required field: state.' });
+        }
+        if (!lga || typeof lga !== 'string') {
+          return res.status(400).json({ error: 'Missing required field: lga.' });
+        }
+        if (!job_scope || typeof job_scope !== 'string') {
+          return res.status(400).json({ error: 'Missing required field: job_scope.' });
+        }
+        const cleanScope = job_scope.trim();
+        if (cleanScope.length < 5) {
+          return res.status(400).json({ error: 'job_scope must be at least 5 characters.' });
+        }
+        if (cleanScope.length > 600) {
+          return res.status(400).json({ error: 'job_scope cannot exceed 600 characters.' });
+        }
+        const normUrgency = ['immediate', 'today', 'scheduled_week'].includes(urgency) ? urgency : 'today';
+
+        // Match Top 3 Verified Artisans
+        const matched = await matchTopArtisans({ trade_slug, state, lga });
+        const matchedIds = matched.map(m => m.id);
+
+        // Store in LeadStore
+        const bcast = LeadStore.createBroadcastLead({
+          trade_slug,
+          state,
+          lga,
+          area,
+          urgency: normUrgency,
+          budget_range: budget_range ? String(budget_range).trim() : null,
+          job_scope: cleanScope,
+          matched_provider_ids: matchedIds
+        });
+
+        // Insert into Supabase if accessible
+        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+          try {
+            await fetch(`${SUPABASE_URL}/rest/v1/broadcast_leads`, {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                id: bcast.id.startsWith('bcast_') ? undefined : bcast.id,
+                trade_slug: bcast.trade_slug,
+                state: bcast.state,
+                lga: bcast.lga,
+                area: bcast.area,
+                urgency: bcast.urgency,
+                budget_range: bcast.budget_range,
+                job_scope: bcast.job_scope,
+                matched_provider_ids: bcast.matched_provider_ids
+              })
+            }).catch(() => {});
+          } catch (e) {}
+        }
+
+        // Format 1-tap WhatsApp deep links
+        const urgencyLabels = {
+          immediate: 'Urgent/Immediate',
+          today: 'Today',
+          scheduled_week: 'This Week'
+        };
+        const urgencyText = urgencyLabels[normUrgency] || 'Standard';
+        const formattedMatched = matched.map(artisan => {
+          const rawPhone = artisan.whatsapp_number || artisan.phone || '+2348000000000';
+          const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+          const briefText = `Hello ${artisan.business_name || artisan.full_name}! I have an urgent request on PadiFix for ${trade_slug} in ${lga}, ${state} (Job Ref: PF-${bcast.id.substring(bcast.id.length - 6)}). Urgency: ${urgencyText}. Scope: ${cleanScope}. Target Budget: ${budget_range || 'Open quote'}. Are you available?`;
+          const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(briefText)}`;
+          const callUrl = `tel:${artisan.phone || cleanPhone}`;
+          return {
+            id: artisan.id,
+            name: artisan.business_name || artisan.full_name,
+            trade_title: artisan.trade_title || trade_slug,
+            rating: artisan.rating || 4.9,
+            reviews_count: artisan.reviews_count || 12,
+            is_verified: true,
+            whatsapp_url: waUrl,
+            call_url: callUrl
+          };
+        });
+
+        return res.status(201).json({
+          status: 'success',
+          broadcast_id: bcast.id,
+          trade_slug: bcast.trade_slug,
+          state: bcast.state,
+          lga: bcast.lga,
+          urgency: bcast.urgency,
+          matched_artisans: formattedMatched,
+          created_at: bcast.created_at
+        });
+      }
+
+      // Phase 031: Provider Action — Claim Broadcast Lead
+      if (action === 'claim_broadcast') {
+        const auth = await verifyProviderAuth(req, provider_id || queryProviderId);
+        if (!auth.valid) {
+          return res.status(auth.statusCode).json({ error: auth.error });
+        }
+        const activeProviderId = auth.providerId;
+        if (!broadcast_id) {
+          return res.status(400).json({ error: 'Missing required field: broadcast_id.' });
+        }
+
+        const quota = LeadStore.getProviderQuota(activeProviderId);
+        const isPro = ['PRO', 'PREMIUM'].includes(quota.plan_id);
+
+        const claimRes = LeadStore.claimBroadcastLead(activeProviderId, String(broadcast_id).trim(), { isPro });
+        if (claimRes.error) {
+          return res.status(claimRes.statusCode || 400).json({
+            error: claimRes.error,
+            early_access_until: claimRes.early_access_until || null
+          });
+        }
+
+        return res.status(200).json({
+          status: 'success',
+          broadcast_id: claimRes.broadcast_id,
+          lead_id: claimRes.lead_id,
+          operational_lead: claimRes.operational_lead
+        });
+      }
+
+      // Existing Action: Request Review
       if (action === 'request_review') {
         const auth = await verifyProviderAuth(req, provider_id || queryProviderId);
         if (!auth.valid) {

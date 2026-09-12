@@ -647,6 +647,235 @@ ${JSON.stringify(jsonLd, null, 2)}
       color: var(--fg-muted);
       margin-top: 40px;
     }
+
+    /* Phase 031: Instant Lead Broadcast Banner & Modal */
+    .broadcast-banner {
+      background: linear-gradient(135deg, rgba(0, 168, 89, 0.18) 0%, rgba(30, 41, 59, 0.8) 100%);
+      border: 1.5px solid var(--border-accent);
+      border-radius: 14px;
+      padding: 18px 22px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+    @media (min-width: 768px) {
+      .broadcast-banner {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+    .broadcast-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(0, 168, 89, 0.2);
+      color: var(--green-light);
+      border: 1px solid var(--border-accent);
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .broadcast-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .broadcast-desc {
+      font-size: 13px;
+      color: var(--fg-muted);
+      line-height: 1.45;
+    }
+    .btn-broadcast-cta {
+      background: var(--green);
+      color: #fff;
+      font-weight: 800;
+      font-size: 14px;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+      min-height: 48px;
+      box-shadow: 0 4px 14px rgba(0, 168, 89, 0.35);
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .btn-broadcast-cta:hover {
+      background: var(--green-light);
+      color: #061109;
+      transform: translateY(-1px);
+    }
+
+    /* Modal Backdrop & Dialog */
+    .bcast-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 8, 16, 0.78);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .bcast-modal-backdrop.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .bcast-dialog {
+      background: #111827;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
+      transform: translateY(16px) scale(0.98);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 24px;
+    }
+    .bcast-modal-backdrop.is-open .bcast-dialog {
+      transform: translateY(0) scale(1);
+    }
+    .bcast-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 14px;
+    }
+    .bcast-close-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: none;
+      color: var(--fg-muted);
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .bcast-close-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+    .bcast-steps-indicator {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+    .bcast-step-dot {
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.1);
+      transition: background 0.2s ease;
+    }
+    .bcast-step-dot.active {
+      background: var(--green);
+    }
+    .bcast-form-group {
+      margin-bottom: 16px;
+    }
+    .bcast-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #E2E8F0;
+      margin-bottom: 6px;
+    }
+    .bcast-input, .bcast-textarea, .bcast-select {
+      width: 100%;
+      background: #0B1120;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 14px;
+      padding: 12px 14px;
+      outline: none;
+      font-family: inherit;
+    }
+    .bcast-input:focus, .bcast-textarea:focus, .bcast-select:focus {
+      border-color: var(--green);
+    }
+    .urgency-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+    .urgency-card {
+      background: #0B1120;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 10px 8px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--fg-muted);
+      transition: all 0.15s ease;
+      min-height: 48px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .urgency-card.selected {
+      border-color: var(--green-light);
+      background: rgba(0, 168, 89, 0.15);
+      color: #fff;
+      font-weight: 700;
+    }
+    .bcast-match-item {
+      background: #0B1120;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .bcast-match-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .bcast-btn-submit {
+      width: 100%;
+      background: var(--green);
+      color: #fff;
+      font-weight: 800;
+      font-size: 15px;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      min-height: 48px;
+      transition: background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .bcast-btn-submit:hover {
+      background: var(--green-light);
+      color: #061109;
+    }
+    .bcast-btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -692,6 +921,19 @@ ${JSON.stringify(jsonLd, null, 2)}
 
   <!-- Main Content Layout -->
   <main class="container">
+    <!-- Instant Broadcast Lead Banner -->
+    <div class="broadcast-banner" id="trigger-broadcast-banner">
+      <div class="broadcast-banner-left">
+        <div class="broadcast-badge">⚡ Instant Artisan Match</div>
+        <h3 class="broadcast-title">Need a ${escapeHtml(trade.name)} Urgently in ${escapeHtml(locTitle)}?</h3>
+        <p class="broadcast-desc">Broadcast your job request to verified local professionals. Get matched and connect on WhatsApp in 60 seconds.</p>
+      </div>
+      <button type="button" class="btn-broadcast-cta" id="btn-open-broadcast-modal">
+        <span>Broadcast Request Now</span>
+        <span style="font-size: 16px;">⚡</span>
+      </button>
+    </div>
+
     <div class="main-grid">
       
       <!-- Primary Column: Artisans Listing -->
@@ -740,6 +982,101 @@ ${JSON.stringify(jsonLd, null, 2)}
     </div>
   </main>
 
+  <!-- Phase 031: 3-Step Instant Lead Broadcast Modal -->
+  <div class="bcast-modal-backdrop" id="bcast-modal" aria-hidden="true">
+    <div class="bcast-dialog" role="dialog" aria-modal="true" aria-labelledby="bcast-modal-title">
+      <div class="bcast-header">
+        <div>
+          <span class="broadcast-badge">⚡ PadiFix Express Match</span>
+          <h2 id="bcast-modal-title" style="font-size: 18px; font-weight: 800; color: #fff; margin-top: 4px;">
+            Broadcast Service Request
+          </h2>
+        </div>
+        <button type="button" class="bcast-close-btn" id="btn-close-bcast-modal" aria-label="Close modal">✕</button>
+      </div>
+
+      <!-- Step Indicator -->
+      <div class="bcast-steps-indicator">
+        <div class="bcast-step-dot active" id="dot-step-1"></div>
+        <div class="bcast-step-dot" id="dot-step-2"></div>
+        <div class="bcast-step-dot" id="dot-step-3"></div>
+      </div>
+
+      <!-- Step 1: Confirm Category & Locality -->
+      <div id="bcast-step-1" class="bcast-step-content">
+        <div class="bcast-form-group">
+          <label class="bcast-label">Selected Trade Category</label>
+          <input type="text" class="bcast-input" id="bcast-trade" value="${escapeHtml(trade.name)}" readonly style="opacity: 0.85; background: rgba(255,255,255,0.04);" />
+        </div>
+        <div class="bcast-form-group">
+          <label class="bcast-label">State / Region</label>
+          <input type="text" class="bcast-input" id="bcast-state" value="${escapeHtml(location?.stateName || 'Lagos')}" />
+        </div>
+        <div class="bcast-form-group">
+          <label class="bcast-label">Local Government Area (LGA) / Town</label>
+          <input type="text" class="bcast-input" id="bcast-lga" value="${escapeHtml(location?.lgaName || 'Ikeja')}" placeholder="e.g. Ikeja, Surulere, Lekki" />
+        </div>
+        <button type="button" class="bcast-btn-submit" id="btn-bcast-goto-step-2">
+          <span>Next: Job Scope &amp; Urgency →</span>
+        </button>
+      </div>
+
+      <!-- Step 2: Job Scope, Urgency, & Target Budget -->
+      <div id="bcast-step-2" class="bcast-step-content" style="display:none;">
+        <div class="bcast-form-group">
+          <label class="bcast-label">How urgent is this job?</label>
+          <div class="urgency-grid" id="urgency-selector">
+            <div class="urgency-card selected" data-urgency="immediate">
+              <span style="font-size: 16px;">⚡</span>
+              <span>Emergency (ASAP)</span>
+            </div>
+            <div class="urgency-card" data-urgency="today">
+              <span style="font-size: 16px;">📅</span>
+              <span>Today</span>
+            </div>
+            <div class="urgency-card" data-urgency="scheduled_week">
+              <span style="font-size: 16px;">🗓️</span>
+              <span>This Week</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bcast-form-group">
+          <label class="bcast-label">Target Budget (Optional / Estimated ₦)</label>
+          <input type="text" class="bcast-input" id="bcast-budget" placeholder="e.g. ₦10,000 - ₦25,000" />
+        </div>
+
+        <div class="bcast-form-group">
+          <label class="bcast-label">Brief Description of the Issue</label>
+          <textarea class="bcast-textarea" id="bcast-scope" rows="3" placeholder="Describe the task or issue (e.g. leaking kitchen pipe, need installation, fuse blown)..." maxlength="600"></textarea>
+          <span style="font-size: 11px; color: var(--fg-muted); display:block; margin-top: 4px;">Zero customer phone numbers required. You connect directly via WhatsApp.</span>
+        </div>
+
+        <div style="display:flex; gap: 8px;">
+          <button type="button" class="bcast-input" id="btn-bcast-back-to-step-1" style="width: 35%; cursor: pointer;">← Back</button>
+          <button type="button" class="bcast-btn-submit" id="btn-bcast-submit" style="width: 65%;">
+            <span>Find Artisans Now ⚡</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3: Match Handshake Screen -->
+      <div id="bcast-step-3" class="bcast-step-content" style="display:none;">
+        <div style="text-align:center; margin-bottom: 16px;">
+          <span style="font-size: 32px;">🎉</span>
+          <h3 style="font-size: 17px; font-weight: 800; color: #fff; margin-top: 4px;">Verified Local Matches Found!</h3>
+          <p style="font-size: 12.5px; color: var(--fg-muted);">Tap WhatsApp or Call to connect with your matched artisans directly with zero commission.</p>
+        </div>
+
+        <div id="bcast-match-results-container">
+          <!-- Dynamically populated matched cards -->
+        </div>
+
+        <button type="button" class="bcast-input" id="btn-bcast-done" style="margin-top: 12px; cursor: pointer;">Done / Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Footer -->
   <footer>
     <div class="container">
@@ -768,6 +1105,165 @@ ${JSON.stringify(jsonLd, null, 2)}
         }
       });
     });
+
+    // Phase 031: Interactive Broadcast Modal Controller
+    (function() {
+      const modal = document.getElementById('bcast-modal');
+      const openBtn = document.getElementById('btn-open-broadcast-modal');
+      const closeBtn = document.getElementById('btn-close-bcast-modal');
+      const doneBtn = document.getElementById('btn-bcast-done');
+      const gotoStep2Btn = document.getElementById('btn-bcast-goto-step-2');
+      const backStep1Btn = document.getElementById('btn-bcast-back-to-step-1');
+      const submitBtn = document.getElementById('btn-bcast-submit');
+
+      const step1 = document.getElementById('bcast-step-1');
+      const step2 = document.getElementById('bcast-step-2');
+      const step3 = document.getElementById('bcast-step-3');
+
+      const dot1 = document.getElementById('dot-step-1');
+      const dot2 = document.getElementById('dot-step-2');
+      const dot3 = document.getElementById('dot-step-3');
+
+      let selectedUrgency = 'immediate';
+
+      function setStep(stepNum) {
+        step1.style.display = stepNum === 1 ? 'block' : 'none';
+        step2.style.display = stepNum === 2 ? 'block' : 'none';
+        step3.style.display = stepNum === 3 ? 'block' : 'none';
+
+        dot1.className = 'bcast-step-dot' + (stepNum >= 1 ? ' active' : '');
+        dot2.className = 'bcast-step-dot' + (stepNum >= 2 ? ' active' : '');
+        dot3.className = 'bcast-step-dot' + (stepNum >= 3 ? ' active' : '');
+      }
+
+      function openModal() {
+        if (!modal) return;
+        setStep(1);
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeModal() {
+        if (!modal) return;
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+      }
+
+      if (openBtn) openBtn.addEventListener('click', openModal);
+      if (closeBtn) closeBtn.addEventListener('click', closeModal);
+      if (doneBtn) doneBtn.addEventListener('click', closeModal);
+
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) closeModal();
+        });
+      }
+
+      // Step 1 -> Step 2
+      if (gotoStep2Btn) {
+        gotoStep2Btn.addEventListener('click', () => {
+          const lga = (document.getElementById('bcast-lga')?.value || '').trim();
+          if (!lga) {
+            alert('Please specify your LGA or area.');
+            return;
+          }
+          setStep(2);
+        });
+      }
+
+      // Step 2 -> Step 1
+      if (backStep1Btn) {
+        backStep1Btn.addEventListener('click', () => setStep(1));
+      }
+
+      // Urgency selection
+      document.querySelectorAll('#urgency-selector .urgency-card').forEach(card => {
+        card.addEventListener('click', () => {
+          document.querySelectorAll('#urgency-selector .urgency-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedUrgency = card.dataset.urgency || 'today';
+        });
+      });
+
+      // Submit Broadcast Request
+      if (submitBtn) {
+        submitBtn.addEventListener('click', async () => {
+          const state = (document.getElementById('bcast-state')?.value || 'Lagos').trim();
+          const lga = (document.getElementById('bcast-lga')?.value || 'Ikeja').trim();
+          const budget = (document.getElementById('bcast-budget')?.value || '').trim();
+          const scope = (document.getElementById('bcast-scope')?.value || '').trim();
+
+          if (!scope || scope.length < 5) {
+            alert('Please describe your request (at least 5 characters).');
+            return;
+          }
+
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span>Matching Verified Artisans... ⚡</span>';
+
+          try {
+            const res = await fetch('/api/provider-leads', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'create_broadcast',
+                trade_slug: '${trade.slug}',
+                state: state,
+                lga: lga,
+                urgency: selectedUrgency,
+                budget_range: budget,
+                job_scope: scope
+              })
+            });
+
+            const data = await res.json();
+            if (!res.ok || data.error) {
+              alert(data.error || 'Failed to match artisans. Please try again.');
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = '<span>Find Artisans Now ⚡</span>';
+              return;
+            }
+
+            // Render matched artisans in step 3
+            var container = document.getElementById('bcast-match-results-container');
+            if (container) {
+              var artisans = data.matched_artisans || [];
+              if (artisans.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:#94A3B8; font-size:13px;">No direct online matches right now. Your request is on the radar for local artisans.</p>';
+              } else {
+                container.innerHTML = artisans.map(function(a, idx) {
+                  return '<div class="bcast-match-item">' +
+                    '<div class="bcast-match-header">' +
+                      '<div>' +
+                        '<h4 style="color:#fff; font-size:14.5px; font-weight:700;">' + (idx + 1) + '. ' + (a.name || 'Verified Artisan') + '</h4>' +
+                        '<span style="font-size:11.5px; color:#34D399; font-weight:600;">✓ NIN Verified • ★ ' + (a.rating || '5.0') + ' (' + (a.reviews_count || 1) + ' reviews)</span>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">' +
+                      '<a href="' + a.whatsapp_url + '" target="_blank" rel="noopener" class="btn-action btn-wa" style="text-decoration:none; font-size:12.5px;">' +
+                        '<span>WhatsApp Match</span>' +
+                      '</a>' +
+                      '<a href="' + a.call_url + '" class="btn-action btn-call" style="text-decoration:none; font-size:12.5px;">' +
+                        '<span>Call Directly</span>' +
+                      '</a>' +
+                    '</div>' +
+                  '</div>';
+                }).join('');
+              }
+            }
+
+            setStep(3);
+          } catch (err) {
+            alert('Connection error. Please try again.');
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Find Artisans Now ⚡</span>';
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>`;

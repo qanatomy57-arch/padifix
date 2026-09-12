@@ -4065,6 +4065,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (typeof loadProviderLeadsAndQuota === 'function') {
           loadProviderLeadsAndQuota();
         }
+        if (typeof loadBroadcastRadar === 'function') {
+          loadBroadcastRadar();
+        }
       } else {
         const errMsg = data.error || 'Payment verification could not be completed';
         showToast(`Payment check: ${errMsg}`, 'error');
@@ -4074,9 +4077,143 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // Phase 031: Load Open Broadcast Radar
+  async function loadBroadcastRadar() {
+    const listEl = document.getElementById('radar-leads-list');
+    const countEl = document.getElementById('radar-count');
+    const tierEl = document.getElementById('radar-tier-badge');
+    if (!listEl) return;
+
+    try {
+      const authHeaders = { 'Content-Type': 'application/json' };
+      if (supabaseSession && supabaseSession.access_token) {
+        authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+      }
+
+      const res = await fetch(`/api/provider-leads?filter=broadcasts&provider_id=${currentProvider?.id || ''}`, {
+        headers: authHeaders
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      const broadcasts = data.broadcasts || [];
+      const isPro = Boolean(data.is_pro);
+
+      if (countEl) countEl.textContent = `${broadcasts.length} Open`;
+      if (tierEl) {
+        tierEl.textContent = isPro ? '⚡ Pro Instant Priority' : 'Free Tier (15m Delay)';
+        tierEl.style.background = isPro ? 'rgba(0, 168, 89, 0.2)' : 'rgba(245, 158, 11, 0.2)';
+        tierEl.style.color = isPro ? '#34D399' : '#F59E0B';
+      }
+
+      if (broadcasts.length === 0) {
+        listEl.innerHTML = `
+          <div class="radar-empty-state">
+            <span>📡</span>
+            <p>No open customer broadcasts in your area right now. The radar refreshes automatically.</p>
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = broadcasts.map(b => {
+        const isLocked = Boolean(b.is_locked);
+        const urgencyLabels = {
+          immediate: '⚡ Emergency (ASAP)',
+          today: '📅 Today',
+          scheduled_week: '🗓️ This Week'
+        };
+        const urgencyText = urgencyLabels[b.urgency] || b.urgency;
+
+        return `
+          <div class="radar-lead-card ${isLocked ? 'is-locked' : ''}" id="radar-card-${b.id}">
+            <div class="radar-card-top">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="color: #fff; font-size: 14px;">${b.trade_slug?.toUpperCase()} in ${b.lga}, ${b.state}</strong>
+                <span style="font-size: 11px; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #CBD5E1;">${urgencyText}</span>
+              </div>
+              <span style="font-size: 11.5px; color: var(--text-muted);">${b.relative_time}</span>
+            </div>
+            <p class="radar-scope">${b.job_scope}</p>
+            <div class="radar-meta">
+              <span>💰 Budget: ${b.budget_range || 'Open quote'}</span>
+              <span>📍 Area: ${b.area || b.lga}</span>
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              ${isLocked
+                ? `<span class="badge-radar-tier" style="padding: 6px 12px; font-size: 12px;">⚡ Pro Early-Access — Unlocks Soon</span>`
+                : `<button type="button" class="btn-claim-lead" data-broadcast-id="${b.id}">
+                    <span>Claim Lead (1 Credit) →</span>
+                   </button>`
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Wire claim buttons
+      listEl.querySelectorAll('.btn-claim-lead').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const bcastId = btn.dataset.broadcastId;
+          if (!bcastId) return;
+
+          const confirmed = confirm('Claim this lead? This will consume 1 monthly contact credit and add the deal directly to your CRM pipeline.');
+          if (!confirmed) return;
+
+          btn.disabled = true;
+          btn.textContent = 'Claiming...';
+
+          try {
+            const claimRes = await fetch('/api/provider-leads', {
+              method: 'POST',
+              headers: authHeaders,
+              body: JSON.stringify({
+                action: 'claim_broadcast',
+                broadcast_id: bcastId,
+                provider_id: currentProvider?.id
+              })
+            });
+
+            const claimData = await claimRes.json();
+            if (!claimRes.ok || claimData.error) {
+              alert(claimData.error || 'Failed to claim lead.');
+              btn.disabled = false;
+              btn.textContent = 'Claim Lead (1 Credit) →';
+              return;
+            }
+
+            if (typeof showToast === 'function') {
+              showToast('🎉 Lead claimed! Added directly to your active CRM pipeline.', 'success');
+            } else {
+              alert('Lead claimed successfully!');
+            }
+
+            // Refresh leads and radar
+            await loadProviderLeadsAndQuota();
+            await loadBroadcastRadar();
+          } catch (err) {
+            alert('Network error claiming lead. Please try again.');
+            btn.disabled = false;
+            btn.textContent = 'Claim Lead (1 Credit) →';
+          }
+        });
+      });
+
+    } catch (err) {
+      console.warn('[Broadcast Radar] Error fetching open broadcasts:', err);
+    }
+  }
+
   // 12. Run Initial Render Pipeline
   await loadMetrics();
   await loadProviderLeadsAndQuota();
+  await loadBroadcastRadar();
+
+  const refreshRadarBtn = document.getElementById('btn-refresh-radar');
+  if (refreshRadarBtn) {
+    refreshRadarBtn.addEventListener('click', () => loadBroadcastRadar());
+  }
+
   if (typeof initRealtimeLeadStream === 'function') {
     initRealtimeLeadStream();
     window.addEventListener('beforeunload', cleanupRealtimeLeadStream);

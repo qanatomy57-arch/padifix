@@ -345,6 +345,26 @@
             </div>
           </div>
 
+          <!-- Phase 031: Open Broadcast Radar -->
+          <div class="crm-broadcast-radar" id="crm-broadcast-radar">
+            <div class="radar-header">
+              <div class="radar-title-wrap">
+                <span class="radar-icon">📡</span>
+                <h3 class="radar-title">Open Broadcast Radar</h3>
+                <span class="badge-radar-count" id="radar-count">0 Open</span>
+                <span class="badge-radar-tier" id="radar-tier-badge">Pro Priority</span>
+              </div>
+              <button type="button" class="btn btn-outline btn-scan-radar" id="btn-refresh-radar" title="Scan local broadcast requests">🔄 Scan Radar</button>
+            </div>
+            <p class="radar-subtitle">Urgent customer service requests in your registered trade and locality. Pro tier receives 15-minute priority early access.</p>
+            <div id="radar-leads-list" class="radar-leads-list">
+              <div class="radar-empty-state">
+                <span>📡</span>
+                <p>No open customer broadcasts in your area right now. The radar refreshes automatically.</p>
+              </div>
+            </div>
+          </div>
+
           <!-- Leads and Kanban board container -->
           <div class="dash-leads-list" id="recent-leads-list">
             <!-- Rendered dynamically (Kanban or List) -->
