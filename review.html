@@ -691,8 +691,10 @@
         if (jobDescEl) jobDescEl.textContent = `Verified Task: ${lead.job_description} in ${lead.locality}`;
 
         if (initialsEl && lead.provider_name) {
-          const parts = lead.provider_name.split(' ').filter(Boolean);
-          initialsEl.textContent = parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].substring(0, 2).toUpperCase();
+          const parts = String(lead.provider_name).split(' ').filter(Boolean);
+          initialsEl.textContent = parts.length > 1 && parts[0] && parts[1]
+            ? ((parts[0][0] || '') + (parts[1][0] || '')).toUpperCase()
+            : (parts[0] ? parts[0].substring(0, 2).toUpperCase() : 'VA');
         }
 
         if (clientNameInput && lead.client_display_name) {

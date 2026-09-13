@@ -50,18 +50,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const availCheck = document.getElementById('dash-avail-check');
     const availText = document.getElementById('dash-avail-text');
 
-    const firstName = currentProvider.firstName || (currentProvider.name ? currentProvider.name.split(' ')[0] : 'Partner');
-    if (nameEl) nameEl.textContent = currentProvider.name;
+    const firstName = currentProvider.firstName || (typeof currentProvider.name === 'string' && currentProvider.name.trim() ? currentProvider.name.trim().split(' ')[0] : 'Partner');
+    if (nameEl) nameEl.textContent = currentProvider.name || currentProvider.business_name || 'Partner';
     if (welcomeNameEl) welcomeNameEl.textContent = firstName;
-    if (tradeEl) tradeEl.textContent = currentProvider.trade;
+    if (tradeEl) tradeEl.textContent = currentProvider.trade || 'Artisan';
     
     // Avatar rendering
     if (avatarEl) {
       if (currentProvider.avatarUrl) {
         avatarEl.innerHTML = `<img src="${escapeHtml(currentProvider.avatarUrl)}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />`;
       } else {
-        const rawName = currentProvider.name || currentProvider.business_name || currentProvider.firstName || 'Partner';
-        const initials = rawName.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const rawName = String(currentProvider.name || currentProvider.business_name || currentProvider.firstName || 'Partner');
+        const initials = rawName.split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'PA';
         avatarEl.textContent = initials;
         avatarEl.style.background = currentProvider.avatarBg || 'var(--dash-green)';
       }
@@ -71,8 +71,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (currentProvider.avatarUrl) {
         editAvatarPreview.innerHTML = `<img src="${escapeHtml(currentProvider.avatarUrl)}" alt="Profile Photo" />`;
       } else {
-        const rawName = currentProvider.name || currentProvider.business_name || currentProvider.firstName || 'Partner';
-        const initials = rawName.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const rawName = String(currentProvider.name || currentProvider.business_name || currentProvider.firstName || 'Partner');
+        const initials = rawName.split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'PA';
         editAvatarPreview.textContent = initials;
       }
     }
@@ -230,23 +230,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   let cachedLeads = [];
   let isLeadsLoading = false;
 
-  async function loadProviderLeadsAndQuota() {
-    if (!currentProvider || !currentProvider.id) return;
-    if (isLeadsLoading) return;
-    isLeadsLoading = true;
-
-    const providerId = currentProvider.id;
-
-    // Retrieve Supabase JWT session token
+  async function getAuthToken() {
     let token = null;
     try {
       if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getSession === 'function') {
         const sessionRes = await LokatorDB.auth.getSession();
         token = sessionRes?.data?.session?.access_token;
       }
-    } catch (e) {
-      console.warn('Session retrieval notice:', e.message);
-    }
+    } catch (e) {}
 
     if (!token && typeof localStorage !== 'undefined') {
       try {
@@ -257,6 +248,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } catch (e) {}
     }
+
+    if (!token && typeof supabaseSession !== 'undefined' && supabaseSession?.access_token) {
+      token = supabaseSession.access_token;
+    }
+
+    return token;
+  }
+
+  async function loadProviderLeadsAndQuota() {
+    if (!currentProvider || !currentProvider.id) return;
+    if (isLeadsLoading) return;
+    isLeadsLoading = true;
+
+    const providerId = currentProvider.id;
+
+    // Retrieve Supabase JWT session token
+    const token = await getAuthToken();
 
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
@@ -499,9 +507,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Phase 029: If requesting review on a completed lead and token is not yet stored, request it from API
     if (templateKey === 'review' && (lead.status === 'completed' || lead.status === 'job_won') && !lead.review_token) {
       try {
+        const token = await getAuthToken();
         const authHeaders = { 'Content-Type': 'application/json' };
-        if (supabaseSession && supabaseSession.access_token) {
-          authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+        if (token) {
+          authHeaders['Authorization'] = `Bearer ${token}`;
         }
         const res = await fetch('/api/provider-leads?action=request_review', {
           method: 'POST',
@@ -1134,9 +1143,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (lead) {
             if (activeDrawerTemplateKey === 'review' && (lead.status === 'completed' || lead.status === 'job_won') && !lead.review_token) {
               try {
+                const token = await getAuthToken();
                 const authHeaders = { 'Content-Type': 'application/json' };
-                if (supabaseSession && supabaseSession.access_token) {
-                  authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+                if (token) {
+                  authHeaders['Authorization'] = `Bearer ${token}`;
                 }
                 const res = await fetch('/api/provider-leads?action=request_review', {
                   method: 'POST',
@@ -1610,7 +1620,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const quotaCounts = document.getElementById('quota-counts-display');
     if (quotaCounts) {
-      const parts = quotaCounts.textContent.split('/');
+      const parts = (quotaCounts.textContent || '').split('/');
       if (parts.length === 2) {
         const used = (parseInt(parts[0].trim(), 10) || 0) + 1;
         quotaCounts.textContent = `${used} / ${parts[1].trim()}`;
@@ -4360,9 +4370,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!listEl) return;
 
     try {
+      const token = await getAuthToken();
       const authHeaders = { 'Content-Type': 'application/json' };
-      if (supabaseSession && supabaseSession.access_token) {
-        authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+      if (token) {
+        authHeaders['Authorization'] = `Bearer ${token}`;
       }
 
       const res = await fetch(`/api/provider-leads?filter=broadcasts&provider_id=${currentProvider?.id || ''}`, {
@@ -4927,9 +4938,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+      const token = await getAuthToken();
       const authHeaders = { 'Content-Type': 'application/json' };
-      if (supabaseSession && supabaseSession.access_token) {
-        authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+      if (token) {
+        authHeaders['Authorization'] = `Bearer ${token}`;
       }
 
       const res = await fetch('/api/provider-leads?action=save_invoice', {
@@ -5162,9 +5174,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           markPaidBtn.disabled = true;
           markPaidBtn.textContent = 'Processing...';
 
+          const token = await getAuthToken();
           const authHeaders = { 'Content-Type': 'application/json' };
-          if (supabaseSession && supabaseSession.access_token) {
-            authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+          if (token) {
+            authHeaders['Authorization'] = `Bearer ${token}`;
           }
 
           const res = await fetch('/api/provider-leads?action=mark_paid', {

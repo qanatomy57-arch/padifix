@@ -1193,8 +1193,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       reviewsContainer.innerHTML = filteredReviews.map(r => {
         const safeRating = Math.min(5, Math.max(1, parseInt(r.rating, 10) || 5));
         const starsStr = '★'.repeat(safeRating) + '☆'.repeat(5 - safeRating);
-        const author = r.customer_name || r.author || 'Verified Client';
-        const initials = author.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const author = String(r.customer_name || r.author || 'Verified Client');
+        const initials = author.split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'VC';
         const safeRevId = r.id || Date.now();
         const dateStr = r.date || (r.created_at ? new Date(r.created_at).toLocaleDateString() : 'Recent');
         const jobType = r.job_type || r.serviceType || 'Verified Task';
@@ -1499,7 +1499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     livePreviewWrap.style.display = 'block';
     const starsStr = '★'.repeat(selectedOverallRating) + '☆'.repeat(5 - selectedOverallRating);
-    const initials = (authorVal || 'You').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const initials = String(authorVal || 'You').split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'YO';
     const tagsArr = Array.from(selectedPraiseTags);
 
     livePreviewCard.innerHTML = `
@@ -2321,7 +2321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (nearbyList.length > 0) {
       nearbyContainer.innerHTML = nearbyList.map(n => {
         const safeNId = parseInt(n.id, 10) || 0;
-        const nInitials = (n.name || '').split(' ').map(part => part[0]).join('').substring(0, 2).toUpperCase();
+        const nInitials = String(n.name || 'PadiFix').split(' ').filter(Boolean).map(part => part && part[0] ? part[0] : '').join('').substring(0, 2).toUpperCase() || 'PF';
         const safeRating = Number(n.rating || 5).toFixed(1);
         const safeReviews = parseInt(n.reviewsCount || 0, 10);
         const safeAvatarBg = (n.avatarBg && typeof n.avatarBg === 'string' && n.avatarBg.startsWith('linear-gradient')) ? n.avatarBg : 'var(--green)';

@@ -743,7 +743,7 @@ async function loadDynamicTopProviders() {
     if (featured && featured.length > 0) {
       tpGrid.innerHTML = featured.map((p, idx) => {
         const safeId = parseInt(p.id, 10) || 0;
-        const initials = (p.name || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const initials = String(p.name || 'Pro').split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'PR';
         const PhoneEngine = (typeof NigeriaPhone !== 'undefined' ? NigeriaPhone : null) || (typeof window !== 'undefined' ? window.NigeriaPhone : null);
         const telUrl = PhoneEngine ? PhoneEngine.buildTelUrl(p) : (p.phone ? `tel:${p.phone}` : '');
         const waUrl = PhoneEngine ? PhoneEngine.buildWhatsAppUrl(p, { service: p.trade, location: p.area }) : '';
@@ -807,7 +807,8 @@ function setupFunnelTelemetryListeners() {
     cat.addEventListener('click', () => {
       if (typeof LokatorTelemetry !== 'undefined') {
         const href = cat.getAttribute('href') || '';
-        const catSlug = href.includes('service=') ? href.split('service=')[1].split('&')[0] : 'all';
+        const match = href.match(/[?&]service=([^&#]*)/);
+        const catSlug = match ? decodeURIComponent(match[1]) : (href.includes('service=') ? (href.split('service=')[1]?.split('&')[0] || 'all') : 'all');
         LokatorTelemetry.trackEvent('category_browse_clicked', {
           category: catSlug,
           source: 'home_categories'

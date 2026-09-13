@@ -503,9 +503,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Generate initials for avatar
   function getInitials(name) {
-    if (!name) return "LP";
-    const parts = name.trim().split(" ");
-    return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+    if (!name || typeof name !== 'string') return "LP";
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (!parts.length || !parts[0]) return "LP";
+    return ((parts[0][0] || '') + (parts[1] && parts[1][0] ? parts[1][0] : '')).toUpperCase() || "LP";
   }
 
   // 2. Render Loading Skeletons
@@ -1032,7 +1033,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let displayTrade = provider.primary_trade || provider.trade || 'Specialist Artisan';
         if (displayTrade.includes(' & ') && provider.primary_category_slug) {
-          displayTrade = provider.primary_category_slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          displayTrade = String(provider.primary_category_slug).split('-').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         }
 
         // Truthful Rating & Review Count (Phase 029: Authoritative Metrics & Verified Badges)
@@ -1603,7 +1604,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 2. Display Mobile Bottom Sheet preview on mobile viewports (< 768px)
     if (mapBottomSheet && sheetContent) {
-      const initials = (provider.name || provider.business_name || 'Pro').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+      const rawProName = String(provider.name || provider.business_name || 'Pro');
+      const initials = rawProName.split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'PR';
       const trade = provider.trade || provider.trade_title || 'Verified Artisan';
       const name = provider.name || provider.business_name || 'Artisan';
       const loc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || 'Nigeria';
@@ -1847,7 +1849,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!rawText) rawText = 'Search';
 
       // Title case format (e.g. Electrician, Plumber, AC Repair)
-      const cleanTitle = rawText.split(' ').map(w => w ? (w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : '').join(' ');
+      const cleanTitle = String(rawText).split(' ').filter(Boolean).map(w => w ? (w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : '').join(' ');
 
       return `
         <div class="recent-chip" data-index="${idx}" data-keyword="${escapeHtml(s.keyword || '')}" data-loc="${escapeHtml(s.location || '')}" data-state="${escapeHtml(s.state || '')}" data-lga="${escapeHtml(s.lga || '')}">

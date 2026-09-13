@@ -10,7 +10,7 @@
 
 'use strict';
 
-const { withSentry } = require('../lib/sentry-server');
+const { withSentry, polyfillResponse } = require('../lib/sentry-server');
 const {
   resolveTrade,
   resolveLocation,
@@ -1273,6 +1273,8 @@ ${JSON.stringify(jsonLd, null, 2)}
  * Serverless Landing Page Handler
  */
 const landingPageHandler = async (req, res) => {
+  polyfillResponse(res);
+
   // ── Consolidated Route: Sitemap Engine ──────────────────────────
   // Vercel rewrite: /sitemap.xml → /api/landing-page?__route=sitemap&section=index
   // This avoids exceeding the 12-function Hobby plan limit.
