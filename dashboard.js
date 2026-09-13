@@ -60,7 +60,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (currentProvider.avatarUrl) {
         avatarEl.innerHTML = `<img src="${escapeHtml(currentProvider.avatarUrl)}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />`;
       } else {
-        const initials = currentProvider.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const rawName = currentProvider.name || currentProvider.business_name || currentProvider.firstName || 'Partner';
+        const initials = rawName.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase();
         avatarEl.textContent = initials;
         avatarEl.style.background = currentProvider.avatarBg || 'var(--dash-green)';
       }
@@ -70,7 +71,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (currentProvider.avatarUrl) {
         editAvatarPreview.innerHTML = `<img src="${escapeHtml(currentProvider.avatarUrl)}" alt="Profile Photo" />`;
       } else {
-        const initials = currentProvider.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const rawName = currentProvider.name || currentProvider.business_name || currentProvider.firstName || 'Partner';
+        const initials = rawName.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase();
         editAvatarPreview.textContent = initials;
       }
     }
@@ -740,8 +742,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             </button>
           </div>
 
-          <!-- PHASE 027 & PHASE 033 QUICK ACTIONS -->
+          <!-- PHASE 027, 033, 034 QUICK ACTIONS -->
           <div class="dash-lead-quick-actions">
+            ${(status === 'completed' || status === 'job_won') ? `
+              <button type="button" class="btn-quick-chip btn-chip-portfolio" data-lead-id="${escapeHtml(lead.id)}" title="Add before/after photos of this completed job to your portfolio showcase">
+                📸 Add to Showcase
+              </button>
+            ` : ''}
             <button type="button" class="btn-quick-chip btn-chip-invoice" data-lead-id="${escapeHtml(lead.id)}" title="Generate or view itemized digital quote / invoice">
               📄 Quote / Invoice
             </button>
@@ -898,6 +905,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', () => {
         const leadId = btn.dataset.leadId;
         openInvoiceGeneratorModal(leadId);
+      });
+    });
+
+    // Phase 034: Quick Action Chip - Add to Showcase from Completed Lead
+    document.querySelectorAll('.btn-chip-portfolio').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', () => {
+        const leadId = btn.dataset.leadId;
+        openPortfolioModalFromLead(leadId);
       });
     });
 
@@ -2688,12 +2705,184 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 10. Portfolio Showcase Tab & Modal
+  // 10. Portfolio Showcase Tab & Modal (Phase 034)
   const portfolioGridEl = document.getElementById('dash-portfolio-list');
   const modalPortfolio = document.getElementById('modal-portfolio');
   const btnOpenPortModal = document.getElementById('btn-open-portfolio-modal');
   const btnClosePortModal = document.getElementById('btn-close-modal');
   const formAddPort = document.getElementById('form-add-portfolio');
+
+  let beforeCompressedData = null;
+  let afterCompressedData = null;
+
+  function resetPortfolioModal() {
+    if (formAddPort) formAddPort.reset();
+    beforeCompressedData = null;
+    afterCompressedData = null;
+    const leadIdInput = document.getElementById('port-lead-id');
+    if (leadIdInput) leadIdInput.value = '';
+    const leadBanner = document.getElementById('port-lead-banner');
+    if (leadBanner) leadBanner.style.display = 'none';
+
+    // Reset dropzone views
+    const beforePrevBox = document.getElementById('port-before-preview-box');
+    const beforeEmpty = document.getElementById('port-before-empty');
+    if (beforePrevBox) beforePrevBox.style.display = 'none';
+    if (beforeEmpty) beforeEmpty.style.display = 'block';
+
+    const afterPrevBox = document.getElementById('port-after-preview-box');
+    const afterEmpty = document.getElementById('port-after-empty');
+    if (afterPrevBox) afterPrevBox.style.display = 'none';
+    if (afterEmpty) afterEmpty.style.display = 'block';
+
+    // Default to single photo format
+    const singleRadio = document.querySelector('input[name="port_project_type"][value="single"]');
+    if (singleRadio) singleRadio.checked = true;
+    const beforeZone = document.getElementById('port-before-zone');
+    if (beforeZone) beforeZone.style.display = 'none';
+    const singleCard = document.getElementById('port-format-single-label');
+    const baCard = document.getElementById('port-format-ba-label');
+    if (singleCard) {
+      singleCard.classList.add('active');
+      singleCard.style.borderColor = 'var(--dash-green, #00A859)';
+    }
+    if (baCard) {
+      baCard.classList.remove('active');
+      baCard.style.borderColor = 'var(--dash-border, rgba(255,255,255,0.1))';
+    }
+    const afterFile = document.getElementById('port-file-after');
+    if (afterFile) afterFile.required = true;
+    const beforeFile = document.getElementById('port-file-before');
+    if (beforeFile) beforeFile.required = false;
+  }
+
+  function openPortfolioModalFromLead(leadId) {
+    resetPortfolioModal();
+    const lead = (typeof cachedLeads !== 'undefined' && Array.isArray(cachedLeads) ? cachedLeads : []).find(l => String(l.id) === String(leadId));
+    if (!lead) return;
+
+    const leadIdInput = document.getElementById('port-lead-id');
+    if (leadIdInput) leadIdInput.value = lead.id;
+
+    const leadBanner = document.getElementById('port-lead-banner');
+    const leadDetails = document.getElementById('port-lead-details');
+    const svc = lead.service || lead.category || currentProvider.trade || 'Work';
+    const loc = lead.locality || lead.lga || currentProvider.area || 'Nigeria';
+
+    if (leadBanner && leadDetails) {
+      leadBanner.style.display = 'block';
+      leadDetails.textContent = `${svc} in ${loc}`;
+    }
+
+    const titleInput = document.getElementById('port-title');
+    if (titleInput) {
+      titleInput.value = `Completed ${svc} in ${loc}`;
+    }
+
+    const catInput = document.getElementById('port-category');
+    if (catInput) {
+      catInput.value = svc;
+    }
+
+    if (modalPortfolio) modalPortfolio.style.display = 'flex';
+  }
+
+  // Handle format toggle: Single vs Before & After
+  function updatePortfolioFormatView(format) {
+    const isBa = format === 'before_after';
+    const beforeZone = document.getElementById('port-before-zone');
+    const singleCard = document.getElementById('port-format-single-label');
+    const baCard = document.getElementById('port-format-ba-label');
+    const beforeFile = document.getElementById('port-file-before');
+    const afterLabel = document.getElementById('port-after-label-text');
+
+    if (isBa) {
+      if (beforeZone) beforeZone.style.display = 'block';
+      if (beforeFile) beforeFile.required = true;
+      if (afterLabel) afterLabel.textContent = 'AFTER / COMPLETED PHOTO *';
+      if (baCard) {
+        baCard.classList.add('active');
+        baCard.style.borderColor = 'var(--dash-green, #00A859)';
+      }
+      if (singleCard) {
+        singleCard.classList.remove('active');
+        singleCard.style.borderColor = 'var(--dash-border, rgba(255,255,255,0.1))';
+      }
+    } else {
+      if (beforeZone) beforeZone.style.display = 'none';
+      if (beforeFile) beforeFile.required = false;
+      if (afterLabel) afterLabel.textContent = 'COMPLETED WORK PHOTO *';
+      if (singleCard) {
+        singleCard.classList.add('active');
+        singleCard.style.borderColor = 'var(--dash-green, #00A859)';
+      }
+      if (baCard) {
+        baCard.classList.remove('active');
+        baCard.style.borderColor = 'var(--dash-border, rgba(255,255,255,0.1))';
+      }
+    }
+  }
+
+  document.querySelectorAll('input[name="port_project_type"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      updatePortfolioFormatView(e.target.value);
+    });
+  });
+
+  document.querySelectorAll('.port-format-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const radio = card.querySelector('input[name="port_project_type"]');
+      if (radio) {
+        radio.checked = true;
+        updatePortfolioFormatView(radio.value);
+      }
+    });
+  });
+
+  // Client-side WebP compression on file selection
+  const beforeFileInput = document.getElementById('port-file-before');
+  if (beforeFileInput) {
+    beforeFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const compressed = await LokatorDB.compressImage(file, 800, 800, 0.8);
+        beforeCompressedData = compressed.dataUrl;
+        const prevImg = document.getElementById('port-before-preview');
+        const prevBox = document.getElementById('port-before-preview-box');
+        const emptyBox = document.getElementById('port-before-empty');
+        const sizePill = document.getElementById('port-before-size-pill');
+        if (prevImg) prevImg.src = compressed.dataUrl;
+        if (prevBox) prevBox.style.display = 'block';
+        if (emptyBox) emptyBox.style.display = 'none';
+        if (sizePill) sizePill.textContent = `✓ Compressed: ${Math.round(compressed.compressedSize / 1024)} KB WebP`;
+      } catch (err) {
+        showToast('Image processing failed: ' + err.message, 'error');
+      }
+    });
+  }
+
+  const afterFileInput = document.getElementById('port-file-after');
+  if (afterFileInput) {
+    afterFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const compressed = await LokatorDB.compressImage(file, 800, 800, 0.8);
+        afterCompressedData = compressed.dataUrl;
+        const prevImg = document.getElementById('port-after-preview');
+        const prevBox = document.getElementById('port-after-preview-box');
+        const emptyBox = document.getElementById('port-after-empty');
+        const sizePill = document.getElementById('port-after-size-pill');
+        if (prevImg) prevImg.src = compressed.dataUrl;
+        if (prevBox) prevBox.style.display = 'block';
+        if (emptyBox) emptyBox.style.display = 'none';
+        if (sizePill) sizePill.textContent = `✓ Compressed: ${Math.round(compressed.compressedSize / 1024)} KB WebP`;
+      } catch (err) {
+        showToast('Image processing failed: ' + err.message, 'error');
+      }
+    });
+  }
 
   function renderPortfolio() {
     if (!portfolioGridEl) return;
@@ -2706,17 +2895,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     portfolioGridEl.innerHTML = items.map(item => {
       const safeAccent = (item.accentColor && item.accentColor.startsWith('#')) ? item.accentColor : '#004D2C';
       const safeId = (typeof item.id === 'string' || typeof item.id === 'number') ? String(item.id).replace(/[^a-zA-Z0-9_-]/g, '') : '0';
+      const isBa = Boolean(item.is_before_after || item.isBeforeAfter || item.project_type === 'before_after');
+      const isVerified = Boolean(item.verified_job);
+      const hasImg = Boolean(item.after_image_url || item.imageUrl);
+
       return `
         <div class="dash-portfolio-card">
-          <div class="dash-port-media" style="background: linear-gradient(135deg, ${safeAccent}, #006B3F);">
-            <span>${escapeHtml(item.icon || '🛠️')}</span>
+          <div class="dash-port-media" style="position: relative; overflow: hidden; background: ${hasImg ? '#000' : 'linear-gradient(135deg, ' + safeAccent + ', #006B3F)'};">
+            ${hasImg ? `
+              <img src="${escapeHtml(item.after_image_url || item.imageUrl)}" alt="${escapeHtml(item.title)}" style="width:100%; height:100%; object-fit:cover;" />
+            ` : `
+              <span>${escapeHtml(item.icon || '🛠️')}</span>
+            `}
+            ${isBa ? '<span style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.75); color:#FFF; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;">⚡ B&A</span>' : ''}
           </div>
           <div class="dash-port-body">
             <div class="dash-port-title">${escapeHtml(item.title)}</div>
-            <div class="dash-port-desc">${escapeHtml(item.description)}</div>
-            <div class="dash-port-footer">
-              <span class="badge-pill" style="font-size: 11px; padding: 2px 8px;">${escapeHtml(item.tag || 'Verified Work')}</span>
-              <button type="button" class="btn-delete-port" data-item-id="${safeId}" style="background: none; border: none; color: var(--danger); font-size: 12.5px; cursor: pointer; font-weight: 700;">Delete</button>
+            <div class="dash-port-desc">${escapeHtml(item.description || '')}</div>
+            <div class="dash-port-footer" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+              ${isVerified ? `
+                <span class="badge-pill" style="font-size: 11px; padding: 2px 8px; background: rgba(16, 185, 129, 0.2); color: #10B981; font-weight: 700;">🛡️ Verified Job</span>
+              ` : `
+                <span class="badge-pill" style="font-size: 11px; padding: 2px 8px;">${escapeHtml(item.tag || item.service_tag || 'Showcase')}</span>
+              `}
+              <button type="button" class="btn-delete-port" data-item-id="${safeId}" style="background: none; border: none; color: var(--danger, #EF4444); font-size: 12.5px; cursor: pointer; font-weight: 700;">Delete</button>
             </div>
           </div>
         </div>
@@ -2726,9 +2928,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (btnOpenPortModal && modalPortfolio) {
     btnOpenPortModal.addEventListener('click', () => {
+      resetPortfolioModal();
       modalPortfolio.style.display = 'flex';
     });
   }
+
   if (btnClosePortModal && modalPortfolio) {
     btnClosePortModal.addEventListener('click', () => {
       modalPortfolio.style.display = 'none';
@@ -2739,40 +2943,79 @@ document.addEventListener('DOMContentLoaded', async () => {
     formAddPort.addEventListener('submit', async (e) => {
       e.preventDefault();
       const title = document.getElementById('port-title').value.trim();
-      const category = document.getElementById('port-category').value.trim() || currentProvider.trade;
-      const tag = document.getElementById('port-tag').value.trim() || 'Verified Work';
+      const category = document.getElementById('port-category').value.trim() || currentProvider.trade || 'General Craftsmanship';
       const desc = document.getElementById('port-desc').value.trim();
+      const projectType = document.querySelector('input[name="port_project_type"]:checked')?.value || 'single';
+      const leadId = document.getElementById('port-lead-id')?.value || null;
+
+      // Validate required images
+      if (!afterCompressedData) {
+        showToast('Please select a completed workmanship photo.', 'error');
+        return;
+      }
+      if (projectType === 'before_after' && !beforeCompressedData) {
+        showToast('Please select a before photo for Before & After comparison.', 'error');
+        return;
+      }
+
+      // Invariant C client check: warn if phone numbers are in description
+      if (/(?:\+?234|0)[789][01]\d{8}\b/.test(title) || /(?:\+?234|0)[789][01]\d{8}\b/.test(desc)) {
+        showToast('Privacy Warning: Phone numbers are not allowed in portfolio showcase descriptions.', 'error');
+        return;
+      }
+
+      const submitBtn = document.getElementById('btn-submit-portfolio');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Publishing...';
+      }
 
       try {
         const res = await LokatorDB.addPortfolioItem(currentProvider.id, {
           title,
           category,
-          tag,
           description: desc,
+          project_type: projectType,
+          before_image_url: beforeCompressedData,
+          after_image_url: afterCompressedData,
+          lead_id: leadId,
           accentColor: '#006B3F',
           icon: '🛠️'
         });
+
         const newItem = res.data || res;
         if (!currentProvider.portfolio) currentProvider.portfolio = [];
         currentProvider.portfolio.unshift(newItem);
         renderPortfolio();
+
         if (typeof LokatorTelemetry !== 'undefined') {
           const canonicalCat = (typeof CategoryMap !== 'undefined' && CategoryMap.resolveQuery)
             ? CategoryMap.resolveQuery(category)
             : 'trade';
-          LokatorTelemetry.trackEvent('provider_portfolio_uploaded', { category: canonicalCat });
+          LokatorTelemetry.trackEvent('provider_portfolio_uploaded', {
+            category: canonicalCat,
+            project_type: projectType,
+            verified_job: Boolean(newItem.verified_job)
+          });
         }
+
         modalPortfolio.style.display = 'none';
-        formAddPort.reset();
+        resetPortfolioModal();
+
         if (res && res.status === 'OFFLINE_PENDING') {
           showToast(res.message, 'info');
         } else if (res && res.status === 'REMOTE_FAILURE') {
           showToast(res.message || 'Failed to add portfolio item', 'error');
         } else {
-          showToast('Project added to your public portfolio showcase.');
+          showToast('Project added to your public portfolio showcase!');
         }
       } catch (err) {
         showToast('Failed to add portfolio item: ' + (err.message || 'Network error'), 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Publish to Showcase';
+        }
       }
     });
   }
@@ -2783,14 +3026,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const itemId = e.target.dataset.itemId;
         if (confirm('Are you sure you want to remove this project from your portfolio?')) {
           const res = await LokatorDB.deletePortfolioItem(currentProvider.id, itemId);
-          currentProvider.portfolio = (currentProvider.portfolio || []).filter(item => item.id !== itemId);
+          currentProvider.portfolio = (currentProvider.portfolio || []).filter(item => String(item.id) !== String(itemId));
           renderPortfolio();
           if (res && res.status === 'OFFLINE_PENDING') {
             showToast(res.message, 'info');
           } else if (res && res.status === 'REMOTE_FAILURE') {
             showToast(res.message || 'Failed to remove project', 'error');
           } else {
-            showToast('Project removed.');
+            showToast('Project removed from portfolio.');
           }
         }
       }

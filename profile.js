@@ -726,15 +726,101 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 8. Portfolio Showcase & Lightbox
   const portfolioGrid = document.getElementById('portfolio-grid');
+  const portfolioCountPill = document.getElementById('portfolio-count-pill');
   const lightbox = document.getElementById('portfolio-lightbox');
+  const lightboxDialog = document.getElementById('lightbox-dialog');
   const lightboxClose = document.getElementById('lightbox-close-btn');
   const lightboxBanner = document.getElementById('lightbox-banner');
   const lightboxTitle = document.getElementById('lightbox-title');
   const lightboxDesc = document.getElementById('lightbox-desc');
   const lightboxTag = document.getElementById('lightbox-tag');
+  const lightboxProvenance = document.getElementById('lightbox-provenance');
+  const lightboxViewControls = document.getElementById('lightbox-view-controls');
 
   let activePortfolioItems = [];
   let currentLightboxIdx = -1;
+
+  function initBeforeAfterSlider(container) {
+    if (!container) return;
+    const beforeLayer = container.querySelector('.ba-before-layer');
+    const divider = container.querySelector('.ba-divider-line');
+    const modeBtns = container.querySelectorAll('.ba-mode-btn');
+    if (!beforeLayer || !divider) return;
+
+    let isDragging = false;
+
+    const setPosition = (pct) => {
+      const clamped = Math.max(0, Math.min(100, pct));
+      beforeLayer.style.clipPath = `inset(0 ${100 - clamped}% 0 0)`;
+      divider.style.left = `${clamped}%`;
+      container.setAttribute('aria-valuenow', Math.round(clamped));
+    };
+
+    const handlePointerMove = (clientX) => {
+      const rect = container.getBoundingClientRect();
+      if (!rect.width) return;
+      const x = clientX - rect.left;
+      const pct = (x / rect.width) * 100;
+      setPosition(pct);
+    };
+
+    container.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.ba-mode-bar')) return;
+      isDragging = true;
+      try { container.setPointerCapture(e.pointerId); } catch (err) {}
+      handlePointerMove(e.clientX);
+    });
+
+    container.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      handlePointerMove(e.clientX);
+    });
+
+    const endDrag = (e) => {
+      if (isDragging) {
+        isDragging = false;
+        try { container.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+    };
+
+    container.addEventListener('pointerup', endDrag);
+    container.addEventListener('pointercancel', endDrag);
+
+    // Keyboard accessibility for slider
+    container.addEventListener('keydown', (e) => {
+      const current = parseFloat(container.getAttribute('aria-valuenow') || '50');
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setPosition(current - 5);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setPosition(current + 5);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        setPosition(0);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        setPosition(100);
+      }
+    });
+
+    // View mode chips: Split (50%), Before (100%), After (0%)
+    modeBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modeBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const mode = btn.dataset.mode;
+        if (mode === 'before') {
+          setPosition(100);
+        } else if (mode === 'after') {
+          setPosition(0);
+        } else {
+          setPosition(50);
+        }
+      });
+    });
+  }
 
   function showLightboxItem(idx) {
     if (!lightbox || !activePortfolioItems || activePortfolioItems.length === 0) return;
@@ -742,11 +828,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     const item = activePortfolioItems[currentLightboxIdx];
     if (!item) return;
 
-    lightboxBanner.textContent = item.icon || '🛠️';
-    lightboxBanner.style.background = `linear-gradient(135deg, ${item.accentColor || '#006B3F'}, #020D05)`;
+    const isBa = Boolean(item.is_before_after || item.isBeforeAfter || item.project_type === 'before_after');
+    const isVerified = Boolean(item.verified_job);
+
+    if (lightboxDialog) {
+      if (isBa && item.before_image_url) {
+        lightboxDialog.classList.add('lightbox-ba-active');
+      } else {
+        lightboxDialog.classList.remove('lightbox-ba-active');
+      }
+    }
+
+    if (isBa && item.before_image_url) {
+      lightboxBanner.innerHTML = `
+        <div class="ba-slider-container lightbox-slider-box" id="lb-ba-slider" tabindex="0" role="slider" aria-label="Before and after comparison for ${escapeHtml(item.title)}" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100">
+          <div class="ba-image-layer ba-after-layer">
+            <img src="${escapeHtml(item.after_image_url || item.imageUrl)}" alt="${escapeHtml(item.title)} - After" />
+            <span class="ba-label ba-label-after">AFTER</span>
+          </div>
+          <div class="ba-image-layer ba-before-layer" style="clip-path: inset(0 50% 0 0);">
+            <img src="${escapeHtml(item.before_image_url)}" alt="${escapeHtml(item.title)} - Before" />
+            <span class="ba-label ba-label-before">BEFORE</span>
+          </div>
+          <div class="ba-divider-line" style="left: 50%;">
+            <div class="ba-handle" title="Drag to compare">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8.5 7l-5 5 5 5V7zm7 0v10l5-5-5-5z"/></svg>
+            </div>
+          </div>
+        </div>
+      `;
+      const lbSlider = lightboxBanner.querySelector('#lb-ba-slider');
+      if (lbSlider) initBeforeAfterSlider(lbSlider);
+      if (lightboxViewControls) lightboxViewControls.style.display = 'flex';
+    } else {
+      const hasImg = Boolean(item.after_image_url || item.imageUrl);
+      if (hasImg) {
+        lightboxBanner.innerHTML = `
+          <img src="${escapeHtml(item.after_image_url || item.imageUrl)}" alt="${escapeHtml(item.title)}" style="width:100%; height:100%; object-fit:contain; background:#000;" />
+        `;
+      } else {
+        const safeAccent = (item.accentColor && item.accentColor.startsWith('#')) ? item.accentColor : '#006B3F';
+        lightboxBanner.innerHTML = `<span>${escapeHtml(item.icon || '🛠️')}</span>`;
+        lightboxBanner.style.background = `linear-gradient(135deg, ${safeAccent}, #020D05)`;
+      }
+      if (lightboxViewControls) lightboxViewControls.style.display = 'none';
+    }
+
     lightboxTitle.textContent = item.title;
-    lightboxDesc.textContent = item.description;
-    lightboxTag.textContent = `${item.tag || 'Verified Work'} • ${currentLightboxIdx + 1}/${activePortfolioItems.length}`;
+    lightboxDesc.textContent = item.description || '';
+    lightboxTag.textContent = `${item.category || item.tag || 'Project'} • ${currentLightboxIdx + 1}/${activePortfolioItems.length}`;
+    
+    if (lightboxProvenance) {
+      if (isVerified) {
+        lightboxProvenance.style.display = 'inline-flex';
+        lightboxProvenance.textContent = '🛡️ Verified PadiFix Client Job';
+      } else {
+        lightboxProvenance.style.display = 'none';
+      }
+    }
+
     lightbox.classList.add('active');
     lightbox.setAttribute('aria-hidden', 'false');
   }
@@ -756,43 +896,107 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let items = provider.portfolio;
     if (filter === 'before-after') {
-      items = items.filter(p => p.isBeforeAfter);
+      items = items.filter(p => p.is_before_after || p.isBeforeAfter || p.project_type === 'before_after');
     } else if (filter === 'completed') {
-      items = items.filter(p => !p.isBeforeAfter);
+      items = items.filter(p => Boolean(p.verified_job) || (!p.is_before_after && !p.isBeforeAfter && p.project_type !== 'before_after'));
     }
 
     activePortfolioItems = items;
 
+    if (portfolioCountPill) {
+      portfolioCountPill.textContent = `${items.length} Project${items.length === 1 ? '' : 's'}`;
+    }
+
     if (items.length === 0) {
-      portfolioGrid.innerHTML = `<p style="grid-column: 1/-1; color: var(--fg-muted); padding: 16px 0;">No items found in this category.</p>`;
+      portfolioGrid.innerHTML = `<p style="grid-column: 1/-1; color: var(--fg-muted); padding: 24px 0; text-align: center;">No projects found in this view category.</p>`;
       return;
     }
 
     portfolioGrid.innerHTML = items.map((item, idx) => {
       const safeIdx = parseInt(idx, 10);
+      const isBa = Boolean(item.is_before_after || item.isBeforeAfter || item.project_type === 'before_after');
+      const hasBeforeImg = Boolean(item.before_image_url);
+      const hasAfterImg = Boolean(item.after_image_url || item.imageUrl);
+      const isVerified = Boolean(item.verified_job);
       const safeAccent = (item.accentColor && item.accentColor.startsWith('#')) ? item.accentColor : '#006B3F';
+
+      if (isBa && hasBeforeImg && hasAfterImg) {
+        return `
+          <div class="portfolio-card portfolio-card-ba" data-idx="${safeIdx}">
+            <div class="ba-slider-container" id="ba-slider-${safeIdx}" tabindex="0" role="slider" aria-label="Before and after comparison for ${escapeHtml(item.title)}" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100">
+              <div class="ba-image-layer ba-after-layer">
+                <img src="${escapeHtml(item.after_image_url || item.imageUrl)}" alt="${escapeHtml(item.title)} - After" loading="lazy" />
+                <span class="ba-label ba-label-after">AFTER</span>
+              </div>
+              <div class="ba-image-layer ba-before-layer" style="clip-path: inset(0 50% 0 0);">
+                <img src="${escapeHtml(item.before_image_url)}" alt="${escapeHtml(item.title)} - Before" loading="lazy" />
+                <span class="ba-label ba-label-before">BEFORE</span>
+              </div>
+              <div class="ba-divider-line" style="left: 50%;">
+                <div class="ba-handle" title="Drag to compare before and after">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8.5 7l-5 5 5 5V7zm7 0v10l5-5-5-5z"/></svg>
+                </div>
+              </div>
+              ${isVerified ? '<span class="portfolio-verified-chip">🛡️ Verified PadiFix Job</span>' : '<span class="portfolio-badge-chip">Before & After</span>'}
+              <div class="ba-mode-bar">
+                <button type="button" class="ba-mode-btn active" data-mode="split" title="Split view">Split</button>
+                <button type="button" class="ba-mode-btn" data-mode="before" title="View before only">Before</button>
+                <button type="button" class="ba-mode-btn" data-mode="after" title="View after only">After</button>
+              </div>
+            </div>
+            <div class="portfolio-card-body">
+              <div class="portfolio-card-header-row">
+                <span class="portfolio-category-pill">${escapeHtml(item.category || provider.trade || 'Service')}</span>
+                ${isVerified ? '<span class="portfolio-lead-verified" title="Job verified from completed client hiring">✓ Verified Client Work</span>' : ''}
+              </div>
+              <h4>${escapeHtml(item.title)}</h4>
+              <p>${escapeHtml(item.description || '')}</p>
+              <button type="button" class="btn-open-lightbox" data-idx="${safeIdx}">Expand Comparison ⤢</button>
+            </div>
+          </div>
+        `;
+      }
+
       return `
-        <div class="portfolio-card" data-idx="${safeIdx}" tabindex="0" role="button" aria-label="${escapeHtml(item.title)}">
-          <div class="portfolio-card-thumb" style="background: linear-gradient(135deg, ${safeAccent}, #06180D);">
-            <span class="portfolio-card-badge">${escapeHtml(item.tag || 'Verified Work')}</span>
-            <span class="thumb-icon">${escapeHtml(item.icon || '🛠️')}</span>
+        <div class="portfolio-card" data-idx="${safeIdx}">
+          <div class="portfolio-single-thumb" data-idx="${safeIdx}" tabindex="0" role="button" aria-label="${escapeHtml(item.title)}">
+            ${hasAfterImg ? `
+              <img src="${escapeHtml(item.after_image_url || item.imageUrl)}" alt="${escapeHtml(item.title)}" loading="lazy" />
+            ` : `
+              <div class="portfolio-card-gradient" style="background: linear-gradient(135deg, ${safeAccent}, #06180D);">
+                <span class="thumb-icon">${escapeHtml(item.icon || '🛠️')}</span>
+              </div>
+            `}
+            ${isVerified ? '<span class="portfolio-verified-chip">🛡️ Verified PadiFix Job</span>' : `<span class="portfolio-badge-chip">${escapeHtml(item.tag || item.service_tag || 'Completed Project')}</span>`}
           </div>
           <div class="portfolio-card-body">
+            <div class="portfolio-card-header-row">
+              <span class="portfolio-category-pill">${escapeHtml(item.category || provider.trade || 'Service')}</span>
+              ${isVerified ? '<span class="portfolio-lead-verified" title="Job verified from completed client hiring">✓ Verified Client Work</span>' : ''}
+            </div>
             <h4>${escapeHtml(item.title)}</h4>
-            <p>${escapeHtml(item.description)}</p>
+            <p>${escapeHtml(item.description || '')}</p>
+            <button type="button" class="btn-open-lightbox" data-idx="${safeIdx}">View Full Size ⤢</button>
           </div>
         </div>
       `;
     }).join('');
 
-    portfolioGrid.querySelectorAll('.portfolio-card').forEach(card => {
-      const idx = parseInt(card.dataset.idx, 10);
-      const openLb = () => {
+    // Initialize all Before/After sliders
+    portfolioGrid.querySelectorAll('.ba-slider-container').forEach(slider => {
+      initBeforeAfterSlider(slider);
+    });
+
+    // Lightbox triggers
+    portfolioGrid.querySelectorAll('.btn-open-lightbox, .portfolio-single-thumb').forEach(el => {
+      const idx = parseInt(el.dataset.idx, 10);
+      const openLb = (e) => {
+        e.stopPropagation();
         showLightboxItem(idx);
       };
-      card.addEventListener('click', openLb);
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') openLb();
+      el.addEventListener('click', openLb);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') openLb(e);
       });
     });
   }
@@ -806,6 +1010,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   renderPortfolio('all');
+
+  if (lightboxViewControls) {
+    lightboxViewControls.querySelectorAll('.btn-lb-mode').forEach(btn => {
+      btn.addEventListener('click', () => {
+        lightboxViewControls.querySelectorAll('.btn-lb-mode').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const lbSlider = lightboxBanner.querySelector('#lb-ba-slider');
+        if (!lbSlider) return;
+        const beforeLayer = lbSlider.querySelector('.ba-before-layer');
+        const divider = lbSlider.querySelector('.ba-divider-line');
+        const mode = btn.dataset.mode;
+        let pct = 50;
+        if (mode === 'before') pct = 100;
+        if (mode === 'after') pct = 0;
+        if (beforeLayer) beforeLayer.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+        if (divider) divider.style.left = `${pct}%`;
+        lbSlider.setAttribute('aria-valuenow', pct);
+      });
+    });
+  }
 
   if (lightboxClose && lightbox) {
     lightboxClose.addEventListener('click', () => {

@@ -1530,30 +1530,95 @@
   <!-- Toast Notification -->
   <div class="dash-toast" id="dash-toast">Notification Message</div>
 
-  <!-- Add Portfolio Item Modal -->
-  <div id="modal-portfolio" class="modal-overlay">
-    <div class="modal-card">
-      <h3 class="modal-title">Add Completed Project</h3>
+  <!-- Add Portfolio Item Modal (Phase 034 Showcase & Before/After) -->
+  <div id="modal-portfolio" class="modal-overlay" style="display: none;">
+    <div class="modal-card port-modal-card" style="max-width: 580px; width: 100%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 class="modal-title" style="margin: 0;">Add Showcase Project</h3>
+        <button type="button" class="btn-modal-close" id="btn-close-modal" aria-label="Close modal">✕</button>
+      </div>
+
+      <div id="port-lead-banner" style="display: none; background: rgba(0, 168, 89, 0.12); border: 1px solid rgba(0, 168, 89, 0.3); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; color: #10B981;">
+        🛡️ <strong>Linked Completed Job:</strong> <span id="port-lead-details">Client Project</span> — will receive the certified <em>Verified PadiFix Client Job</em> badge!
+      </div>
+
       <form id="form-add-portfolio">
-        <div class="form-group">
-          <label for="port-title">Project Title *</label>
-          <input type="text" id="port-title" required placeholder="e.g. 5kVA Solar Inverter Setup" />
+        <input type="hidden" id="port-lead-id" />
+
+        <!-- Project Type Selector -->
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label style="font-weight: 700; font-size: 13px; margin-bottom: 6px; display: block;">Showcase Format *</label>
+          <div class="port-format-selector" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <label class="port-format-card active" id="port-format-single-label" style="cursor: pointer; border: 2px solid var(--dash-green, #00A859); border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;">
+              <input type="radio" name="port_project_type" value="single" checked style="accent-color: var(--dash-green, #00A859);" />
+              <span>📷 Single Photo</span>
+            </label>
+            <label class="port-format-card" id="port-format-ba-label" style="cursor: pointer; border: 1px solid var(--dash-border, rgba(255,255,255,0.1)); border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;">
+              <input type="radio" name="port_project_type" value="before_after" style="accent-color: var(--dash-green, #00A859);" />
+              <span>⚡ Before & After</span>
+            </label>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="port-category">Category</label>
-          <input type="text" id="port-category" placeholder="e.g. Electrical Installation" />
+
+        <!-- Image Uploaders with Client WebP Canvas Compression -->
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label style="font-weight: 700; font-size: 13px; margin-bottom: 6px; display: block;">Workmanship Photos *</label>
+          
+          <div id="port-dropzones-wrapper" style="display: grid; grid-template-columns: 1fr; gap: 12px;">
+            <!-- Before Image Dropzone -->
+            <div id="port-before-zone" style="display: none;">
+              <span style="font-size: 11.5px; font-weight: 700; color: #EF4444; margin-bottom: 4px; display: block;">BEFORE PHOTO *</span>
+              <div class="port-dropzone" id="dropzone-before" style="border: 2px dashed var(--dash-border, rgba(255,255,255,0.2)); border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; position: relative;">
+                <input type="file" id="port-file-before" accept="image/*" style="position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;" />
+                <div id="port-before-empty">
+                  <div style="font-size: 24px; margin-bottom: 4px;">📸</div>
+                  <span style="font-size: 12.5px; color: var(--dash-muted);">Click or drop before photo</span>
+                </div>
+                <div id="port-before-preview-box" style="display: none; position: relative;">
+                  <img id="port-before-preview" src="" alt="Before preview" style="max-height: 140px; border-radius: 6px; object-fit: cover;" />
+                  <span id="port-before-size-pill" style="display: block; font-size: 11px; color: #10B981; margin-top: 4px;">WebP compressed</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- After / Showcase Image Dropzone -->
+            <div id="port-after-zone">
+              <span id="port-after-label-text" style="font-size: 11.5px; font-weight: 700; color: #10B981; margin-bottom: 4px; display: block;">COMPLETED / AFTER PHOTO *</span>
+              <div class="port-dropzone" id="dropzone-after" style="border: 2px dashed var(--dash-border, rgba(255,255,255,0.2)); border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; position: relative;">
+                <input type="file" id="port-file-after" accept="image/*" style="position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;" required />
+                <div id="port-after-empty">
+                  <div style="font-size: 24px; margin-bottom: 4px;">✨</div>
+                  <span style="font-size: 12.5px; color: var(--dash-muted);">Click or drop completed workmanship photo</span>
+                </div>
+                <div id="port-after-preview-box" style="display: none; position: relative;">
+                  <img id="port-after-preview" src="" alt="After preview" style="max-height: 140px; border-radius: 6px; object-fit: cover;" />
+                  <span id="port-after-size-pill" style="display: block; font-size: 11px; color: #10B981; margin-top: 4px;">WebP compressed</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 11px; color: var(--dash-muted); margin-top: 6px;">⚡ Native WebP compression automatically resizes images to max 800px to save data (&lt;80KB).</div>
         </div>
-        <div class="form-group">
-          <label for="port-tag">Badge Tag</label>
-          <input type="text" id="port-tag" placeholder="e.g. Verified Work" value="Verified Work" />
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label for="port-title" style="font-weight: 700; font-size: 13px; margin-bottom: 4px; display: block;">Project Title *</label>
+          <input type="text" id="port-title" class="form-control" required placeholder="e.g. Modern Conduit Rewiring in Lekki" style="width: 100%;" />
         </div>
-        <div class="form-group">
-          <label for="port-desc">Description</label>
-          <textarea id="port-desc" rows="3" placeholder="Briefly describe what was accomplished..."></textarea>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label for="port-category" style="font-weight: 700; font-size: 13px; margin-bottom: 4px; display: block;">Service Category</label>
+          <input type="text" id="port-category" class="form-control" placeholder="e.g. Electrical Installation" style="width: 100%;" />
         </div>
-        <div class="modal-form-actions">
+
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label for="port-desc" style="font-weight: 700; font-size: 13px; margin-bottom: 4px; display: block;">Description / Work Highlights</label>
+          <textarea id="port-desc" class="form-control" rows="3" placeholder="Describe the materials used, scope completed, or solution delivered..." style="width: 100%; resize: vertical;"></textarea>
+          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">🔒 <em>Privacy Notice:</em> Never enter customer phone numbers, residential addresses, or private chat logs.</div>
+        </div>
+
+        <div class="modal-form-actions" style="display: flex; justify-content: flex-end; gap: 8px;">
           <button type="button" class="btn btn-outline" id="btn-close-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add to Portfolio</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-portfolio">Publish to Showcase</button>
         </div>
       </form>
     </div>

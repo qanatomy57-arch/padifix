@@ -14,6 +14,8 @@
 'use strict';
 
 const { withSentry } = require('../lib/sentry-server');
+const { verifyProviderAuth } = require('../lib/supabase-auth-verifier');
+const crypto = require('crypto');
 
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
@@ -139,18 +141,254 @@ function toPublicProvider(row) {
   };
 }
 
+/**
+ * Strict Privacy Invariant C helper: strips phone numbers, coordinates, tokens, addresses
+ */
+function sanitizePortfolioText(rawText) {
+  if (!rawText || typeof rawText !== 'string') return '';
+  let text = rawText
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<[^>]*>/g, '');
+  // Strip Nigerian & international phone numbers (e.g. 08012345678, +234..., or 10-14 digit clusters)
+  text = text.replace(/(?:\+?234|0)[789][01]\d{8}\b/g, '[contact via platform]');
+  text = text.replace(/\b\d{4}[- ]?\d{3}[- ]?\d{4}\b/g, '[contact via platform]');
+  text = text.replace(/\b\d{10,14}\b/g, '[contact via platform]');
+  // Strip GPS coordinates (e.g. 6.5244, 3.3792)
+  text = text.replace(/\b-?\d{1,2}\.\d{4,8}\s*,\s*-?\d{1,3}\.\d{4,8}\b/g, '[location]');
+  // Strip JWT tokens
+  text = text.replace(/eyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]+)*/g, '[token]');
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function toPublicPortfolioItem(item) {
+  if (!item) return null;
+  const isBa = item.project_type === 'before_after' || Boolean(item.is_before_after || item.isBeforeAfter);
+  const isVerified = Boolean(item.verified_job);
+  return {
+    id: String(item.id || ''),
+    provider_id: Number(item.provider_id),
+    title: sanitizePortfolioText(item.title || 'Workmanship Showcase'),
+    category: sanitizePortfolioText(item.category || 'Craftsmanship'),
+    description: sanitizePortfolioText(item.description || ''),
+    project_type: isBa ? 'before_after' : 'single',
+    is_before_after: isBa,
+    isBeforeAfter: isBa,
+    before_image_url: isBa ? (item.before_image_url || null) : null,
+    after_image_url: item.after_image_url || item.image_url || null,
+    imageUrl: item.after_image_url || item.image_url || null,
+    verified_job: isVerified,
+    lead_id: isVerified ? (item.lead_id || null) : null,
+    service_tag: isVerified ? 'Verified PadiFix Client Job' : sanitizePortfolioText(item.service_tag || item.tag || 'Completed Project'),
+    tag: isVerified ? 'Verified PadiFix Client Job' : sanitizePortfolioText(item.service_tag || item.tag || 'Completed Project'),
+    accent_color: item.accent_color || item.accentColor || '#006B3F',
+    accentColor: item.accent_color || item.accentColor || '#006B3F',
+    created_at: item.created_at || new Date().toISOString()
+  };
+}
+
+async function handlePortfolioPost(req, res) {
+  let body = req.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
+  }
+  body = body || {};
+
+  const action = body.action || req.query?.action;
+  if (!action) {
+    return res.status(400).json({ error: 'Missing action parameter. Expected add_portfolio_item or delete_portfolio_item.' });
+  }
+
+  const targetProviderId = body.provider_id || req.query?.provider_id;
+  const authResult = await verifyProviderAuth(req, targetProviderId);
+  if (!authResult.valid) {
+    return res.status(authResult.statusCode || 401).json({ error: authResult.error });
+  }
+  const callerProviderId = authResult.providerId;
+
+  if (action === 'add_portfolio_item') {
+    const title = (body.title || '').trim();
+    if (!title || title.length < 3) {
+      return res.status(400).json({ error: 'Project title must be at least 3 characters long.' });
+    }
+
+    const afterImageUrl = (body.after_image_url || body.imageUrl || body.image_url || '').trim();
+    if (!afterImageUrl) {
+      return res.status(400).json({ error: 'Showcase after image is required.' });
+    }
+
+    // Security check: prohibit SVG/HTML/executable image payloads
+    if (/\.(svg|html|htm|js|exe|php)$/i.test(afterImageUrl) || afterImageUrl.startsWith('data:image/svg+xml')) {
+      return res.status(400).json({ error: 'Invalid image format. SVG and scriptable file types are strictly prohibited.' });
+    }
+
+    const projectType = (body.project_type === 'before_after' || body.is_before_after || body.isBeforeAfter) ? 'before_after' : 'single';
+    let beforeImageUrl = (body.before_image_url || '').trim() || null;
+    if (projectType === 'before_after') {
+      if (!beforeImageUrl) {
+        return res.status(400).json({ error: 'Before image is required for Before & After transformation projects.' });
+      }
+      if (/\.(svg|html|htm|js|exe|php)$/i.test(beforeImageUrl) || beforeImageUrl.startsWith('data:image/svg+xml')) {
+        return res.status(400).json({ error: 'Invalid before image format. SVG and scriptable file types are strictly prohibited.' });
+      }
+    } else {
+      beforeImageUrl = null;
+    }
+
+    // Privacy Invariant C: sanitize text
+    const cleanTitle = sanitizePortfolioText(title);
+    const cleanCategory = sanitizePortfolioText(body.category || 'Craftsmanship');
+    const cleanDesc = sanitizePortfolioText(body.description || '');
+
+    // Server-Authoritative Verified Job Provenance Check
+    let verifiedJob = false;
+    let verifiedLeadId = null;
+    const clientLeadId = body.lead_id || body.leadId;
+
+    if (clientLeadId) {
+      if (req._mockLeads && Array.isArray(req._mockLeads)) {
+        const mockLead = req._mockLeads.find(l => (String(l.id) === String(clientLeadId) || String(l.lead_id) === String(clientLeadId)) && Number(l.provider_id) === Number(callerProviderId));
+        if (mockLead && (mockLead.status === 'completed' || mockLead.status === 'job_won')) {
+          verifiedJob = true;
+          verifiedLeadId = String(clientLeadId);
+        }
+      } else {
+        try {
+          const leadQueryUrl = `${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(clientLeadId)}&provider_id=eq.${callerProviderId}&select=id,status`;
+          const leadRes = await fetch(leadQueryUrl, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: req.headers.authorization || `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          });
+          if (leadRes.ok) {
+            const leadRows = await leadRes.json();
+            if (Array.isArray(leadRows) && leadRows.length > 0) {
+              const st = leadRows[0].status;
+              if (st === 'completed' || st === 'job_won') {
+                verifiedJob = true;
+                verifiedLeadId = String(leadRows[0].id);
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    const newItem = {
+      id: req._mockUuid || (crypto.randomUUID ? crypto.randomUUID() : 'port-' + Date.now()),
+      provider_id: callerProviderId,
+      title: cleanTitle,
+      category: cleanCategory,
+      description: cleanDesc,
+      project_type: projectType,
+      before_image_url: beforeImageUrl,
+      after_image_url: afterImageUrl,
+      verified_job: verifiedJob,
+      lead_id: verifiedLeadId,
+      service_tag: verifiedJob ? 'Verified PadiFix Client Job' : 'Completed Project',
+      accent_color: body.accent_color || body.accentColor || '#006B3F',
+      display_order: Number(body.display_order) || 0,
+      is_public: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (req._mockPortfolioItems && Array.isArray(req._mockPortfolioItems)) {
+      req._mockPortfolioItems.unshift(newItem);
+    } else {
+      try {
+        const insertUrl = `${SUPABASE_URL}/rest/v1/provider_portfolio_items`;
+        const insertRes = await fetch(insertUrl, {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: req.headers.authorization || `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify(newItem)
+        });
+        if (!insertRes.ok) {
+          const errText = await insertRes.text();
+          return res.status(500).json({ error: 'Failed to persist portfolio item', details: errText });
+        }
+        const insertedData = await insertRes.json();
+        if (Array.isArray(insertedData) && insertedData.length > 0) {
+          return res.status(201).json({
+            status: 'success',
+            data: toPublicPortfolioItem(insertedData[0]),
+            message: 'Portfolio item added successfully.'
+          });
+        }
+      } catch (insertErr) {
+        return res.status(500).json({ error: 'Database error saving portfolio item', message: insertErr.message });
+      }
+    }
+
+    return res.status(201).json({
+      status: 'success',
+      data: toPublicPortfolioItem(newItem),
+      message: 'Portfolio item added successfully.'
+    });
+  }
+
+  if (action === 'delete_portfolio_item') {
+    const itemId = body.item_id || body.id || req.query?.item_id;
+    if (!itemId) {
+      return res.status(400).json({ error: 'Item ID is required for deletion.' });
+    }
+
+    if (req._mockPortfolioItems && Array.isArray(req._mockPortfolioItems)) {
+      const idx = req._mockPortfolioItems.findIndex(i => String(i.id) === String(itemId) && Number(i.provider_id) === Number(callerProviderId));
+      if (idx === -1) {
+        return res.status(404).json({ error: 'Portfolio item not found or unauthorized.' });
+      }
+      req._mockPortfolioItems.splice(idx, 1);
+      return res.status(200).json({ status: 'success', message: 'Portfolio item deleted successfully.' });
+    }
+
+    try {
+      const deleteUrl = `${SUPABASE_URL}/rest/v1/provider_portfolio_items?id=eq.${encodeURIComponent(itemId)}&provider_id=eq.${callerProviderId}`;
+      const delRes = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: req.headers.authorization || `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!delRes.ok) {
+        return res.status(500).json({ error: 'Failed to delete portfolio item.' });
+      }
+      return res.status(200).json({ status: 'success', message: 'Portfolio item deleted successfully.' });
+    } catch (delErr) {
+      return res.status(500).json({ error: 'Database error deleting portfolio item', message: delErr.message });
+    }
+  }
+
+  return res.status(400).json({ error: `Unsupported action: ${action}` });
+}
+
 const providersHandler = async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  if (req.method === 'POST') {
+    return await handlePortfolioPost(req, res);
+  }
+
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use GET /api/providers' });
+    return res.status(405).json({ error: 'Method Not Allowed. Use GET or POST /api/providers' });
   }
 
   // Rate Limiting
@@ -326,10 +564,32 @@ const providersHandler = async (req, res) => {
 
     // If single ID requested and found, return object directly or with data array
     if (queryId && sanitizedProviders.length === 1) {
+      const p = sanitizedProviders[0];
+      let portfolioItems = [];
+      if (req._mockPortfolio) {
+        portfolioItems = (Array.isArray(req._mockPortfolio) ? req._mockPortfolio : []).map(toPublicPortfolioItem);
+      } else {
+        try {
+          const portRes = await fetch(`${SUPABASE_URL}/rest/v1/provider_portfolio_items?provider_id=eq.${p.id}&is_public=eq.true&order=display_order.asc,created_at.desc`, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          });
+          if (portRes.ok) {
+            const rawItems = await portRes.json();
+            portfolioItems = (Array.isArray(rawItems) ? rawItems : []).map(toPublicPortfolioItem);
+          }
+        } catch (portErr) {
+          // Gracefully fallback
+        }
+      }
+      p.portfolio = portfolioItems;
+
       return res.status(200).json({
         status: 'success',
-        provider: sanitizedProviders[0],
-        data: sanitizedProviders
+        provider: p,
+        data: [p]
       });
     }
 

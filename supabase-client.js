@@ -3198,17 +3198,29 @@
       const numId = Number(providerId);
       if (!numId) return null;
 
+      const isBa = Boolean(itemData.project_type === 'before_after' || itemData.isBeforeAfter || itemData.is_before_after);
+      const projectType = isBa ? 'before_after' : 'single';
+      const beforeImg = isBa ? (itemData.before_image_url || itemData.beforeImageUrl || null) : null;
+      const afterImg = itemData.after_image_url || itemData.afterImageUrl || itemData.imageUrl || itemData.image_url || null;
+
       const newItem = {
         id: 'port-' + Date.now(),
         provider_id: numId,
         title: itemData.title || 'Completed Project',
         category: itemData.category || 'Service Work',
         description: itemData.description || 'Quality craftsmanship delivered on time and within budget.',
-        is_before_after: Boolean(itemData.isBeforeAfter || itemData.is_before_after),
-        tag: itemData.tag || 'Verified Work',
+        project_type: projectType,
+        is_before_after: isBa,
+        isBeforeAfter: isBa,
+        before_image_url: beforeImg,
+        after_image_url: afterImg,
+        image_url: afterImg,
+        lead_id: itemData.lead_id || itemData.leadId || null,
+        verified_job: Boolean(itemData.verified_job),
+        tag: itemData.tag || (isBa ? 'Before & After' : 'Completed Project'),
+        service_tag: itemData.tag || (isBa ? 'Before & After' : 'Completed Project'),
         accent_color: itemData.accentColor || itemData.accent_color || '#006B3F',
         icon: itemData.icon || '🛠️',
-        image_url: itemData.imageUrl || itemData.image_url || null,
         created_at: new Date().toISOString()
       };
 
@@ -3217,13 +3229,51 @@
 
       if (isRemoteActive() && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
         try {
-          const { error } = await supabaseInstance
-            .from('portfolio_items')
-            .insert([newItem]);
-          if (error) {
-            remoteError = error;
-          } else {
+          const apiBase = (typeof window !== 'undefined' && window.location && window.location.origin) 
+            ? window.location.origin 
+            : ((typeof process !== 'undefined' && process.env && process.env.APP_URL) || 'https://padifix.vercel.app');
+          const endpointUrl = (typeof window !== 'undefined') ? '/api/providers' : `${apiBase}/api/providers`;
+          
+          let token = SUPABASE_ANON_KEY;
+          try {
+            const userSession = await this.auth.getSession();
+            if (userSession?.data?.session?.access_token) {
+              token = userSession.data.session.access_token;
+            }
+          } catch (e) {}
+
+          const apiRes = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              action: 'add_portfolio_item',
+              provider_id: numId,
+              title: newItem.title,
+              category: newItem.category,
+              description: newItem.description,
+              project_type: newItem.project_type,
+              before_image_url: newItem.before_image_url,
+              after_image_url: newItem.after_image_url,
+              lead_id: newItem.lead_id,
+              accent_color: newItem.accent_color
+            })
+          });
+
+          if (apiRes.ok) {
+            const resJson = await apiRes.json();
+            if (resJson && resJson.data) {
+              newItem.id = resJson.data.id;
+              newItem.verified_job = Boolean(resJson.data.verified_job);
+              newItem.tag = resJson.data.service_tag || newItem.tag;
+              newItem.service_tag = resJson.data.service_tag || newItem.service_tag;
+            }
             remoteConfirmed = true;
+          } else {
+            const errData = await apiRes.json().catch(() => ({}));
+            remoteError = new Error(errData.error || 'Server rejected portfolio upload');
           }
         } catch (e) {
           remoteError = e;
@@ -3292,14 +3342,37 @@
 
       if (isRemoteActive() && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
         try {
-          const { error } = await supabaseInstance
-            .from('portfolio_items')
-            .delete()
-            .eq('id', itemId);
-          if (error) {
-            remoteError = error;
-          } else {
+          const apiBase = (typeof window !== 'undefined' && window.location && window.location.origin) 
+            ? window.location.origin 
+            : ((typeof process !== 'undefined' && process.env && process.env.APP_URL) || 'https://padifix.vercel.app');
+          const endpointUrl = (typeof window !== 'undefined') ? '/api/providers' : `${apiBase}/api/providers`;
+          
+          let token = SUPABASE_ANON_KEY;
+          try {
+            const userSession = await this.auth.getSession();
+            if (userSession?.data?.session?.access_token) {
+              token = userSession.data.session.access_token;
+            }
+          } catch (e) {}
+
+          const apiRes = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              action: 'delete_portfolio_item',
+              provider_id: numId,
+              item_id: itemId
+            })
+          });
+
+          if (apiRes.ok) {
             remoteConfirmed = true;
+          } else {
+            const errData = await apiRes.json().catch(() => ({}));
+            remoteError = new Error(errData.error || 'Failed to delete portfolio item.');
           }
         } catch (e) {
           remoteError = e;
@@ -3735,15 +3808,19 @@
      * Client-side Image Compression Helper
      * Resizes and compresses image files before upload to save bandwidth and storage.
      */
-    async compressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.82) {
+    async compressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.8) {
       if (!file) throw new Error('No image file provided');
       if (typeof window === 'undefined' || typeof document === 'undefined' || typeof FileReader === 'undefined') {
         // Node / test environment fallback
+        const mockDataUrl = (typeof file === 'string' && file.startsWith('data:'))
+          ? file.replace(/^data:image\/[a-z0-9.+_-]+;/i, 'data:image/webp;')
+          : 'data:image/webp;base64,sample_compressed_webp_image';
         return {
-          dataUrl: typeof file === 'string' ? file : 'data:image/jpeg;base64,sample_compressed_image',
+          dataUrl: mockDataUrl,
           blob: null,
           originalSize: file.size || 1024,
-          compressedSize: 512
+          compressedSize: 512,
+          format: 'image/webp'
         };
       }
 
@@ -3773,7 +3850,13 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
 
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            let targetMime = 'image/webp';
+            let compressedDataUrl = canvas.toDataURL('image/webp', quality);
+            if (!compressedDataUrl.startsWith('data:image/webp')) {
+              targetMime = 'image/jpeg';
+              compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            }
+
             canvas.toBlob((blob) => {
               resolve({
                 dataUrl: compressedDataUrl,
@@ -3781,9 +3864,10 @@
                 originalSize: file.size || 0,
                 compressedSize: blob ? blob.size : compressedDataUrl.length,
                 width: width,
-                height: height
+                height: height,
+                format: targetMime
               });
-            }, 'image/jpeg', quality);
+            }, targetMime, quality);
           };
           img.src = e.target.result;
         };

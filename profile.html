@@ -213,14 +213,15 @@
 
           <!-- PORTFOLIO SHOWCASE GALLERY -->
           <article class="profile-card-box" id="portfolio-section">
-            <div class="profile-section-heading">
+            <div class="profile-section-heading" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <h2>Work Portfolio & Projects</h2>
+              <span class="portfolio-verified-badge" id="portfolio-count-pill" style="font-size: 12px; font-weight: 700; color: #00A859; background: rgba(0, 168, 89, 0.1); padding: 3px 10px; border-radius: 999px;">0 Projects</span>
             </div>
             
             <div class="portfolio-tabs-bar" role="tablist">
               <button class="ptab-btn active" data-filter="all" role="tab">All Samples</button>
               <button class="ptab-btn" data-filter="before-after" role="tab">Before & After</button>
-              <button class="ptab-btn" data-filter="completed" role="tab">Completed Jobs</button>
+              <button class="ptab-btn" data-filter="completed" role="tab">Verified Jobs</button>
             </div>
 
             <div class="portfolio-grid" id="portfolio-grid">
@@ -550,13 +551,23 @@
 
   <!-- Fullscreen Portfolio Lightbox Modal -->
   <div class="lightbox-overlay" id="portfolio-lightbox" aria-hidden="true" role="dialog">
-    <div class="lightbox-dialog">
+    <div class="lightbox-dialog" id="lightbox-dialog">
       <button class="lightbox-close-btn" id="lightbox-close-btn" aria-label="Close lightbox">✕</button>
-      <div class="lightbox-banner" id="lightbox-banner">⚡</div>
+      <div class="lightbox-banner" id="lightbox-banner">
+        <!-- Rendered dynamically: interactive slider or single image -->
+      </div>
       <div class="lightbox-body">
-        <span class="review-service-tag" id="lightbox-tag">Completed Project</span>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+          <span class="review-service-tag" id="lightbox-tag">Completed Project</span>
+          <span class="lightbox-provenance-pill" id="lightbox-provenance" style="display: none;">🛡️ Verified PadiFix Job</span>
+        </div>
         <h3 id="lightbox-title">Project Title</h3>
         <p id="lightbox-desc">Project detailed description.</p>
+        <div class="lightbox-view-controls" id="lightbox-view-controls" style="display: none; margin-top: 12px; gap: 8px;">
+          <button type="button" class="btn-lb-mode active" data-mode="split">Split View</button>
+          <button type="button" class="btn-lb-mode" data-mode="before">Before</button>
+          <button type="button" class="btn-lb-mode" data-mode="after">After</button>
+        </div>
       </div>
     </div>
   </div>

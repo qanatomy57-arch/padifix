@@ -2753,6 +2753,34 @@ input:checked + .slider:before {
   background: rgba(0, 168, 89, 0.25);
 }
 
+.btn-chip-portfolio {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34D399;
+}
+.btn-chip-portfolio:hover {
+  background: rgba(16, 185, 129, 0.28);
+}
+
+.port-format-card {
+  transition: all 0.15s ease;
+  background: var(--dash-surface, #1E293B);
+}
+
+.port-format-card:hover {
+  border-color: var(--dash-green, #00A859) !important;
+}
+
+.port-dropzone {
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.port-dropzone:hover {
+  border-color: var(--dash-green, #00A859) !important;
+  background: rgba(0, 168, 89, 0.05);
+}
+
 /* ============================================================================
    PRINTABLE INVOICE STYLES (SCREEN PREVIEW & @MEDIA PRINT)
    ============================================================================ */
