@@ -645,6 +645,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       lostBadgeHtml = `<span class="crm-badge-money" style="background: rgba(239, 68, 68, 0.15); color: #EF4444; border-color: rgba(239, 68, 68, 0.3);">❌ ${escapeHtml(lead.lost_reason)}</span>`;
     }
 
+    // Phase 033: Digital Quote / Invoice badge
+    let invoiceBadgeHtml = '';
+    if (lead.invoice_ref) {
+      invoiceBadgeHtml = `<span class="crm-badge-money" style="background: rgba(0, 168, 89, 0.15); color: #34D399; border-color: rgba(0, 168, 89, 0.3);" title="Digital Quote / Invoice Attached">📄 ${escapeHtml(lead.invoice_ref)}</span>`;
+    }
+
     // Advance button text & target status
     let advanceBtnText = '';
     let advanceTarget = '';
@@ -698,12 +704,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           </div>
 
-          <!-- Meta badges (financial, schedule, lost reason) -->
-          ${(moneyBadgeHtml || scheduleBadgeHtml || lostBadgeHtml) ? `
+          <!-- Meta badges (financial, schedule, lost reason, invoice) -->
+          ${(moneyBadgeHtml || scheduleBadgeHtml || lostBadgeHtml || invoiceBadgeHtml) ? `
             <div class="crm-deal-meta-row">
               ${moneyBadgeHtml}
               ${scheduleBadgeHtml}
               ${lostBadgeHtml}
+              ${invoiceBadgeHtml}
             </div>
           ` : ''}
 
@@ -733,8 +740,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             </button>
           </div>
 
-          <!-- PHASE 027 QUICK ACTIONS -->
+          <!-- PHASE 027 & PHASE 033 QUICK ACTIONS -->
           <div class="dash-lead-quick-actions">
+            <button type="button" class="btn-quick-chip btn-chip-invoice" data-lead-id="${escapeHtml(lead.id)}" title="Generate or view itemized digital quote / invoice">
+              📄 Quote / Invoice
+            </button>
             <button type="button" class="btn-quick-chip btn-chip-contacted" data-lead-id="${escapeHtml(lead.id)}" title="Mark this lead as contacted">
               ✓ Mark Contacted
             </button>
@@ -880,6 +890,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         openWhatsAppDrawer(leadId, tmpl);
       });
     });
+
+    // PHASE 033: Quick Action Chip - Generate / View Digital Quote & Invoice
+    document.querySelectorAll('.btn-chip-invoice').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', () => {
+        const leadId = btn.dataset.leadId;
+        openInvoiceGeneratorModal(leadId);
+      });
+    });
+
+    // Stage modal trigger to open full itemized quote / invoice builder
+    const openInvFromStageBtn = document.getElementById('btn-open-invoice-from-stage');
+    if (openInvFromStageBtn && !openInvFromStageBtn.dataset.bound) {
+      openInvFromStageBtn.dataset.bound = 'true';
+      openInvFromStageBtn.addEventListener('click', () => {
+        const leadId = document.getElementById('crm-modal-lead-id')?.value;
+        const stageModal = document.getElementById('crm-stage-modal');
+        if (stageModal) stageModal.style.display = 'none';
+        if (leadId) openInvoiceGeneratorModal(leadId);
+      });
+    }
 
     // PHASE 027: Quick Action Chip - Mark Contacted
     document.querySelectorAll('.btn-chip-contacted').forEach(btn => {
@@ -4204,10 +4236,743 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // ============================================================================
+  // PHASE 033: IN-APP DIGITAL QUOTE & INVOICE GENERATOR ENGINE
+  // ============================================================================
+  let activeInvoiceLeadId = null;
+
+  function createWorkmanshipRow(desc = '', qty = 1, unitPrice = 0) {
+    const tr = document.createElement('tr');
+    tr.className = 'inv-workmanship-item-row';
+    tr.innerHTML = `
+      <td>
+        <input type="text" class="inv-row-input inv-item-desc" placeholder="e.g. Diagnostic & wiring labor" value="${escapeHtml(desc)}" maxlength="200" required />
+      </td>
+      <td style="text-align: center;">
+        <input type="number" class="inv-row-input inv-item-qty" min="1" max="1000" step="1" value="${Math.max(1, parseInt(qty, 10) || 1)}" style="text-align: center;" required />
+      </td>
+      <td style="text-align: right;">
+        <input type="number" class="inv-row-input inv-item-price" min="0" max="10000000" step="500" placeholder="0" value="${unitPrice || ''}" style="text-align: right;" required />
+      </td>
+      <td style="text-align: right; font-weight: 700; color: #34D399;" class="inv-item-total-col">
+        ₦0
+      </td>
+      <td style="text-align: center;">
+        <button type="button" class="btn-del-inv-row" title="Remove row">🗑️</button>
+      </td>
+    `;
+    tr.querySelector('.btn-del-inv-row').addEventListener('click', () => {
+      tr.remove();
+      recalculateInvoiceTotals();
+    });
+    tr.querySelectorAll('.inv-row-input').forEach(input => {
+      input.addEventListener('input', recalculateInvoiceTotals);
+    });
+    return tr;
+  }
+
+  function createMaterialsRow(desc = '', qty = 1, unitPrice = 0) {
+    const tr = document.createElement('tr');
+    tr.className = 'inv-materials-item-row';
+    tr.innerHTML = `
+      <td>
+        <input type="text" class="inv-row-input inv-item-desc" placeholder="e.g. 63A Double Pole Breaker" value="${escapeHtml(desc)}" maxlength="200" required />
+      </td>
+      <td style="text-align: center;">
+        <input type="number" class="inv-row-input inv-item-qty" min="1" max="1000" step="1" value="${Math.max(1, parseInt(qty, 10) || 1)}" style="text-align: center;" required />
+      </td>
+      <td style="text-align: right;">
+        <input type="number" class="inv-row-input inv-item-price" min="0" max="10000000" step="500" placeholder="0" value="${unitPrice || ''}" style="text-align: right;" required />
+      </td>
+      <td style="text-align: right; font-weight: 700; color: #F59E0B;" class="inv-item-total-col">
+        ₦0
+      </td>
+      <td style="text-align: center;">
+        <button type="button" class="btn-del-inv-row" title="Remove row">🗑️</button>
+      </td>
+    `;
+    tr.querySelector('.btn-del-inv-row').addEventListener('click', () => {
+      tr.remove();
+      recalculateInvoiceTotals();
+    });
+    tr.querySelectorAll('.inv-row-input').forEach(input => {
+      input.addEventListener('input', recalculateInvoiceTotals);
+    });
+    return tr;
+  }
+
+  function recalculateInvoiceTotals() {
+    let workmanshipSubtotal = 0;
+    document.querySelectorAll('#inv-tbody-workmanship tr').forEach(row => {
+      const qty = Math.max(1, parseInt(row.querySelector('.inv-item-qty')?.value, 10) || 1);
+      const price = Math.max(0, parseInt(row.querySelector('.inv-item-price')?.value, 10) || 0);
+      const total = qty * price;
+      workmanshipSubtotal += total;
+      const totalCol = row.querySelector('.inv-item-total-col');
+      if (totalCol) totalCol.textContent = `₦${total.toLocaleString()}`;
+    });
+
+    let materialsSubtotal = 0;
+    document.querySelectorAll('#inv-tbody-materials tr').forEach(row => {
+      const qty = Math.max(1, parseInt(row.querySelector('.inv-item-qty')?.value, 10) || 1);
+      const price = Math.max(0, parseInt(row.querySelector('.inv-item-price')?.value, 10) || 0);
+      const total = qty * price;
+      materialsSubtotal += total;
+      const totalCol = row.querySelector('.inv-item-total-col');
+      if (totalCol) totalCol.textContent = `₦${total.toLocaleString()}`;
+    });
+
+    const grossSubtotal = workmanshipSubtotal + materialsSubtotal;
+
+    const discountInput = document.getElementById('inv-discount-amount');
+    let discount = Math.max(0, parseInt(discountInput?.value, 10) || 0);
+    if (discount > grossSubtotal) {
+      discount = grossSubtotal;
+      if (discountInput) discountInput.value = discount;
+    }
+
+    const grandTotal = Math.max(0, grossSubtotal - discount);
+
+    const workDisp = document.getElementById('inv-workmanship-subtotal-disp');
+    if (workDisp) workDisp.textContent = `₦${workmanshipSubtotal.toLocaleString()}`;
+
+    const matDisp = document.getElementById('inv-materials-subtotal-disp');
+    if (matDisp) matDisp.textContent = `₦${materialsSubtotal.toLocaleString()}`;
+
+    const grossDisp = document.getElementById('inv-gross-subtotal-disp');
+    if (grossDisp) grossDisp.textContent = `₦${grossSubtotal.toLocaleString()}`;
+
+    const grandDisp = document.getElementById('inv-grand-total-disp');
+    if (grandDisp) grandDisp.textContent = `₦${grandTotal.toLocaleString()}`;
+
+    return {
+      workmanshipSubtotal,
+      materialsSubtotal,
+      grossSubtotal,
+      discount,
+      grandTotal,
+      workmanshipSubtotalKobo: workmanshipSubtotal * 100,
+      materialsSubtotalKobo: materialsSubtotal * 100,
+      grossSubtotalKobo: grossSubtotal * 100,
+      discountKobo: discount * 100,
+      grandTotalKobo: grandTotal * 100
+    };
+  }
+
+  function collectInvoicePayload(status = 'issued') {
+    const leadId = document.getElementById('inv-lead-id')?.value;
+    const docType = document.getElementById('inv-doc-type')?.value || 'quote';
+    const clientName = document.getElementById('inv-client-name')?.value?.trim() || 'Valued Customer';
+    const bankName = document.getElementById('inv-bank-select')?.value || 'GTBank';
+    const accountNum = document.getElementById('inv-account-number')?.value?.trim() || '';
+    const accountName = document.getElementById('inv-account-name')?.value?.trim() || '';
+    const terms = document.getElementById('inv-terms-notes')?.value?.trim() || '';
+
+    const workmanshipItems = [];
+    document.querySelectorAll('#inv-tbody-workmanship tr').forEach(row => {
+      const desc = row.querySelector('.inv-item-desc')?.value?.trim();
+      const qty = Math.max(1, parseInt(row.querySelector('.inv-item-qty')?.value, 10) || 1);
+      const priceNgn = Math.max(0, parseInt(row.querySelector('.inv-item-price')?.value, 10) || 0);
+      if (desc) {
+        workmanshipItems.push({
+          description: desc,
+          quantity: qty,
+          unit_price_kobo: priceNgn * 100,
+          amount_kobo: qty * priceNgn * 100
+        });
+      }
+    });
+
+    const materialsItems = [];
+    document.querySelectorAll('#inv-tbody-materials tr').forEach(row => {
+      const desc = row.querySelector('.inv-item-desc')?.value?.trim();
+      const qty = Math.max(1, parseInt(row.querySelector('.inv-item-qty')?.value, 10) || 1);
+      const priceNgn = Math.max(0, parseInt(row.querySelector('.inv-item-price')?.value, 10) || 0);
+      if (desc) {
+        materialsItems.push({
+          description: desc,
+          quantity: qty,
+          unit_price_kobo: priceNgn * 100,
+          amount_kobo: qty * priceNgn * 100
+        });
+      }
+    });
+
+    const discountNgn = Math.max(0, parseInt(document.getElementById('inv-discount-amount')?.value, 10) || 0);
+
+    const providerName = currentProvider ? (currentProvider.business_name || currentProvider.full_name) : 'Verified Artisan';
+    const providerTrade = currentProvider ? (currentProvider.trade_title || currentProvider.primary_category_slug) : 'Artisan Service';
+
+    return {
+      lead_id: leadId,
+      invoice_type: docType,
+      status, // 'draft' | 'issued' | 'paid'
+      items: {
+        workmanship: workmanshipItems,
+        materials: materialsItems
+      },
+      discount_kobo: discountNgn * 100,
+      bank_details: {
+        bank_name: bankName,
+        account_number: accountNum,
+        account_name: accountName
+      },
+      terms,
+      customer: {
+        name: clientName
+      },
+      provider: {
+        business_name: providerName,
+        trade: providerTrade
+      }
+    };
+  }
+
+  function openInvoiceGeneratorModal(leadId) {
+    activeInvoiceLeadId = leadId;
+    const modal = document.getElementById('invoice-generator-modal');
+    if (!modal) return;
+
+    const lead = cachedLeads.find(l => l.id === leadId);
+    if (!lead) return;
+
+    const errBox = document.getElementById('inv-error-alert');
+    if (errBox) {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
+    }
+
+    document.getElementById('inv-lead-id').value = lead.id;
+    document.getElementById('inv-client-name').value = lead.client_display_name || '';
+    document.getElementById('inv-locality-label').textContent = lead.locality || 'Local Area';
+    document.getElementById('inv-service-label').textContent = lead.intent_tag || 'Artisan Service';
+    const cleanJobRef = 'PF-' + lead.id.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase();
+    document.getElementById('inv-job-ref-label').textContent = cleanJobRef;
+
+    const pill = document.getElementById('inv-status-pill');
+    if (lead.invoice_ref) {
+      pill.textContent = lead.invoice_ref;
+      pill.style.background = 'rgba(0, 168, 89, 0.2)';
+      pill.style.color = '#34D399';
+    } else {
+      pill.textContent = 'New Document';
+      pill.style.background = 'rgba(255, 255, 255, 0.1)';
+      pill.style.color = '#94A3B8';
+    }
+
+    // Toggle document type
+    const existingType = lead.invoice_data?.invoice_type || 'quote';
+    document.getElementById('inv-doc-type').value = existingType;
+    document.querySelectorAll('.btn-inv-type').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.type === existingType);
+    });
+
+    const advanceBtn = document.getElementById('btn-inv-send-advance');
+    if (advanceBtn) {
+      advanceBtn.textContent = existingType === 'invoice' ? '🚀 Issue Invoice (quote_sent) →' : '🚀 Issue Quote (quote_sent) →';
+    }
+
+    // Clear and populate workmanship items
+    const tbodyWork = document.getElementById('inv-tbody-workmanship');
+    tbodyWork.innerHTML = '';
+    if (lead.invoice_data?.items?.workmanship?.length) {
+      lead.invoice_data.items.workmanship.forEach(item => {
+        const unitNgn = Math.round(item.unit_price_kobo / 100);
+        tbodyWork.appendChild(createWorkmanshipRow(item.description, item.quantity, unitNgn));
+      });
+    } else if (lead.workmanship_amount_kobo) {
+      tbodyWork.appendChild(createWorkmanshipRow('Diagnostic, Inspection & Labor', 1, Math.round(lead.workmanship_amount_kobo / 100)));
+    } else {
+      tbodyWork.appendChild(createWorkmanshipRow('', 1, 0));
+    }
+
+    // Clear and populate materials items
+    const tbodyMat = document.getElementById('inv-tbody-materials');
+    tbodyMat.innerHTML = '';
+    if (lead.invoice_data?.items?.materials?.length) {
+      lead.invoice_data.items.materials.forEach(item => {
+        const unitNgn = Math.round(item.unit_price_kobo / 100);
+        tbodyMat.appendChild(createMaterialsRow(item.description, item.quantity, unitNgn));
+      });
+    } else if (lead.materials_amount_kobo) {
+      tbodyMat.appendChild(createMaterialsRow('Replacement Parts / Materials', 1, Math.round(lead.materials_amount_kobo / 100)));
+    } else {
+      tbodyMat.appendChild(createMaterialsRow('', 1, 0));
+    }
+
+    // Populate discount
+    const discountInput = document.getElementById('inv-discount-amount');
+    if (discountInput) {
+      discountInput.value = lead.invoice_data?.discount_kobo ? Math.round(lead.invoice_data.discount_kobo / 100) : 0;
+    }
+
+    // Populate bank details (from invoice_data or saved localStorage or currentProvider)
+    let savedBank = {};
+    try {
+      savedBank = JSON.parse(localStorage.getItem('padifix_provider_bank_details') || '{}');
+    } catch (e) {}
+
+    const bankSelect = document.getElementById('inv-bank-select');
+    const acctNumInput = document.getElementById('inv-account-number');
+    const acctNameInput = document.getElementById('inv-account-name');
+
+    const effectiveBank = lead.invoice_data?.bank_details?.bank_name || savedBank.bank_name || 'GTBank';
+    const effectiveAcctNum = lead.invoice_data?.bank_details?.account_number || savedBank.account_number || '';
+    const effectiveAcctName = lead.invoice_data?.bank_details?.account_name || savedBank.account_name || (currentProvider ? (currentProvider.business_name || currentProvider.full_name) : '');
+
+    if (bankSelect) bankSelect.value = effectiveBank;
+    if (acctNumInput) acctNumInput.value = effectiveAcctNum;
+    if (acctNameInput) acctNameInput.value = effectiveAcctName;
+
+    // Populate terms
+    const termsInput = document.getElementById('inv-terms-notes');
+    if (termsInput) {
+      termsInput.value = lead.invoice_data?.terms || '50% commitment deposit before commencement, balance upon full satisfaction. 30-day workmanship guarantee.';
+    }
+
+    // "Mark as Paid" button visibility
+    const paidBtn = document.getElementById('btn-inv-mark-paid');
+    if (paidBtn) {
+      if (lead.invoice_data?.status === 'paid') {
+        paidBtn.style.display = 'inline-block';
+        paidBtn.textContent = '✅ Marked as Paid';
+        paidBtn.disabled = true;
+      } else if (lead.invoice_ref && (lead.status === 'quote_sent' || lead.status === 'scheduled')) {
+        paidBtn.style.display = 'inline-block';
+        paidBtn.textContent = '💰 Mark as Paid';
+        paidBtn.disabled = false;
+      } else {
+        paidBtn.style.display = 'none';
+        paidBtn.disabled = false;
+      }
+    }
+
+    recalculateInvoiceTotals();
+    modal.style.display = 'flex';
+  }
+
+  function formatWhatsAppInvoiceBreakdown(invoice) {
+    const isInvoice = invoice.invoice_type === 'invoice';
+    const headerTitle = isInvoice ? '📄 *PADIFIX OFFICIAL SERVICE INVOICE*' : '📄 *PADIFIX SERVICE QUOTATION*';
+    const providerName = invoice.provider?.business_name || 'Verified Artisan';
+    const providerTrade = invoice.provider?.trade || 'Artisan Service';
+    const customerName = invoice.customer?.name || 'Valued Client';
+    const jobRef = invoice.job_ref || 'PF-000000';
+    const invNum = invoice.invoice_number || 'INV-PF-PENDING';
+
+    let msg = `${headerTitle}\n`;
+    msg += `*Ref:* ${invNum}\n`;
+    msg += `*Job Ref:* ${jobRef}\n`;
+    msg += `*Artisan:* ${providerName} (${providerTrade})\n`;
+    msg += `*Client:* ${customerName}\n\n`;
+
+    if (invoice.items?.workmanship?.length) {
+      msg += `🛠️ *WORKMANSHIP / LABOR:*\n`;
+      invoice.items.workmanship.forEach(item => {
+        const amtNgn = Math.round(item.amount_kobo / 100).toLocaleString();
+        msg += `• ${item.description} (Qty: ${item.quantity}) = ₦${amtNgn}\n`;
+      });
+      msg += `\n`;
+    }
+
+    if (invoice.items?.materials?.length) {
+      msg += `📦 *MATERIALS & SUPPLIES:*\n`;
+      invoice.items.materials.forEach(item => {
+        const amtNgn = Math.round(item.amount_kobo / 100).toLocaleString();
+        msg += `• ${item.description} (Qty: ${item.quantity}) = ₦${amtNgn}\n`;
+      });
+      msg += `\n`;
+    }
+
+    const subtotalNgn = Math.round(invoice.subtotal_kobo / 100).toLocaleString();
+    const discountNgn = Math.round((invoice.discount_kobo || 0) / 100).toLocaleString();
+    const totalNgn = Math.round(invoice.total_kobo / 100).toLocaleString();
+
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `*Gross Subtotal:* ₦${subtotalNgn}\n`;
+    if (invoice.discount_kobo > 0) {
+      msg += `*Discount:* -₦${discountNgn}\n`;
+    }
+    msg += `*TOTAL DUE:* ₦${totalNgn}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    if (invoice.bank_details?.account_number) {
+      msg += `🏦 *DIRECT BANK PAYMENT (Artisan Payout):*\n`;
+      msg += `• Bank: ${invoice.bank_details.bank_name || 'Commercial Bank'}\n`;
+      msg += `• Account No: ${invoice.bank_details.account_number}\n`;
+      msg += `• Account Name: ${invoice.bank_details.account_name || providerName}\n`;
+      msg += `*(Please use Job Ref ${jobRef} as transfer remark)*\n\n`;
+    }
+
+    if (invoice.terms) {
+      msg += `📋 *Terms & Warranty:*\n${invoice.terms}\n\n`;
+    }
+
+    msg += `_Generated via PadiFix verified directory (Zero commission, direct artisan settlement)_`;
+    return msg;
+  }
+
+  function populatePrintableInvoice(invoice, lead) {
+    const isInvoice = invoice.invoice_type === 'invoice';
+    document.getElementById('print-doc-title').textContent = isInvoice ? 'SERVICE INVOICE' : 'SERVICE QUOTATION';
+    document.getElementById('print-invoice-ref').textContent = invoice.invoice_number;
+    document.getElementById('print-job-ref').textContent = invoice.job_ref;
+    document.getElementById('print-footer-job-ref').textContent = invoice.job_ref;
+    document.getElementById('print-date').textContent = new Date(invoice.created_at || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    document.getElementById('print-provider-name').textContent = invoice.provider?.business_name || (currentProvider ? (currentProvider.business_name || currentProvider.full_name) : 'Verified Artisan');
+    document.getElementById('print-provider-trade').textContent = invoice.provider?.trade || (currentProvider ? currentProvider.trade_title : 'Artisan Service');
+    document.getElementById('print-provider-locality').textContent = (currentProvider ? `${currentProvider.lga || ''}, ${currentProvider.state || ''}` : 'Lagos, Nigeria').replace(/^,\s*/, '');
+
+    document.getElementById('print-customer-name').textContent = invoice.customer?.name || lead.client_display_name || 'Valued Customer';
+    document.getElementById('print-customer-locality').textContent = lead.locality || 'Local Area';
+    document.getElementById('print-customer-scope').textContent = lead.intent_tag || 'Artisan Service';
+
+    const tbody = document.getElementById('print-table-body');
+    tbody.innerHTML = '';
+
+    if (invoice.items?.workmanship) {
+      invoice.items.workmanship.forEach(item => {
+        const tr = document.createElement('tr');
+        const unitNgn = Math.round(item.unit_price_kobo / 100).toLocaleString();
+        const totNgn = Math.round(item.amount_kobo / 100).toLocaleString();
+        tr.innerHTML = `
+          <td>${escapeHtml(item.description)}</td>
+          <td style="text-align: center; color: #00A859; font-weight: 700;">Labor</td>
+          <td style="text-align: center;">${item.quantity}</td>
+          <td style="text-align: right;">₦${unitNgn}</td>
+          <td style="text-align: right; font-weight: 700;">₦${totNgn}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    if (invoice.items?.materials) {
+      invoice.items.materials.forEach(item => {
+        const tr = document.createElement('tr');
+        const unitNgn = Math.round(item.unit_price_kobo / 100).toLocaleString();
+        const totNgn = Math.round(item.amount_kobo / 100).toLocaleString();
+        tr.innerHTML = `
+          <td>${escapeHtml(item.description)}</td>
+          <td style="text-align: center; color: #F59E0B; font-weight: 700;">Materials</td>
+          <td style="text-align: center;">${item.quantity}</td>
+          <td style="text-align: right;">₦${unitNgn}</td>
+          <td style="text-align: right; font-weight: 700;">₦${totNgn}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById('print-bank-name').textContent = invoice.bank_details?.bank_name || 'Commercial Bank';
+    document.getElementById('print-bank-account-num').textContent = invoice.bank_details?.account_number || '--';
+    document.getElementById('print-bank-account-name').textContent = invoice.bank_details?.account_name || (currentProvider ? (currentProvider.business_name || currentProvider.full_name) : 'Artisan Name');
+
+    document.getElementById('print-labor-subtotal').textContent = `₦${Math.round((invoice.workmanship_subtotal_kobo || 0) / 100).toLocaleString()}`;
+    document.getElementById('print-materials-subtotal').textContent = `₦${Math.round((invoice.materials_subtotal_kobo || 0) / 100).toLocaleString()}`;
+    document.getElementById('print-gross-subtotal').textContent = `₦${Math.round((invoice.subtotal_kobo || 0) / 100).toLocaleString()}`;
+    document.getElementById('print-discount').textContent = `-₦${Math.round((invoice.discount_kobo || 0) / 100).toLocaleString()}`;
+    document.getElementById('print-grand-total').textContent = `₦${Math.round((invoice.total_kobo || 0) / 100).toLocaleString()}`;
+
+    document.getElementById('print-terms-text').textContent = invoice.terms || '50% commitment deposit before commencement, balance upon full satisfaction. 30-day workmanship guarantee.';
+  }
+
+  async function submitInvoiceToServer(payload) {
+    const errBox = document.getElementById('inv-error-alert');
+    if (errBox) {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
+    }
+
+    try {
+      const authHeaders = { 'Content-Type': 'application/json' };
+      if (supabaseSession && supabaseSession.access_token) {
+        authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+      }
+
+      const res = await fetch('/api/provider-leads?action=save_invoice', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save invoice');
+      }
+
+      if (payload.bank_details && payload.bank_details.account_number) {
+        try {
+          localStorage.setItem('padifix_provider_bank_details', JSON.stringify(payload.bank_details));
+        } catch (e) {}
+      }
+
+      const leadIdx = cachedLeads.findIndex(l => l.id === payload.lead_id);
+      if (leadIdx !== -1) {
+        cachedLeads[leadIdx] = {
+          ...cachedLeads[leadIdx],
+          ...data.lead,
+          invoice_ref: data.invoice_number,
+          invoice_data: data.invoice
+        };
+      }
+
+      if (data.pipeline_metrics) {
+        renderPipelineRibbon(data.pipeline_metrics);
+      }
+
+      renderLeadsInbox(cachedLeads);
+      return data;
+    } catch (err) {
+      if (errBox) {
+        errBox.textContent = `Error: ${err.message}`;
+        errBox.style.display = 'block';
+      }
+      throw err;
+    }
+  }
+
+  function initInvoiceGenerator() {
+    const modal = document.getElementById('invoice-generator-modal');
+    if (!modal) return;
+
+    // Close button
+    const closeBtn = document.getElementById('btn-close-invoice-modal');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+      });
+    }
+
+    // Escape key closes modal
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.style.display === 'flex') {
+        modal.style.display = 'none';
+      }
+    });
+
+    // Toggle document type (Quote vs Invoice)
+    document.querySelectorAll('.btn-inv-type').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.btn-inv-type').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const docType = btn.dataset.type;
+        document.getElementById('inv-doc-type').value = docType;
+        const advanceBtn = document.getElementById('btn-inv-send-advance');
+        if (advanceBtn) {
+          advanceBtn.textContent = docType === 'invoice' ? '🚀 Issue Invoice (quote_sent) →' : '🚀 Issue Quote (quote_sent) →';
+        }
+      });
+    });
+
+    // Add labor row
+    const addWorkBtn = document.getElementById('btn-add-workmanship-row');
+    if (addWorkBtn) {
+      addWorkBtn.addEventListener('click', () => {
+        const tbody = document.getElementById('inv-tbody-workmanship');
+        tbody.appendChild(createWorkmanshipRow('', 1, 0));
+        recalculateInvoiceTotals();
+      });
+    }
+
+    // Add materials row
+    const addMatBtn = document.getElementById('btn-add-materials-row');
+    if (addMatBtn) {
+      addMatBtn.addEventListener('click', () => {
+        const tbody = document.getElementById('inv-tbody-materials');
+        tbody.appendChild(createMaterialsRow('', 1, 0));
+        recalculateInvoiceTotals();
+      });
+    }
+
+    // Discount change
+    const discountInput = document.getElementById('inv-discount-amount');
+    if (discountInput) {
+      discountInput.addEventListener('input', recalculateInvoiceTotals);
+    }
+
+    // Copy Account Number button
+    const copyAcctBtn = document.getElementById('btn-copy-acct-num');
+    if (copyAcctBtn) {
+      copyAcctBtn.addEventListener('click', async () => {
+        const num = document.getElementById('inv-account-number')?.value?.trim();
+        if (!num) {
+          showToast('No account number entered to copy.', 'info');
+          return;
+        }
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(num);
+            showToast('📋 Account number copied!', 'success');
+          } else {
+            showToast(`Account number: ${num}`, 'info');
+          }
+        } catch (e) {
+          showToast(`Account number: ${num}`, 'info');
+        }
+      });
+    }
+
+    // Action: Save Draft
+    const saveDraftBtn = document.getElementById('btn-inv-save-draft');
+    if (saveDraftBtn) {
+      saveDraftBtn.addEventListener('click', async () => {
+        try {
+          saveDraftBtn.disabled = true;
+          saveDraftBtn.textContent = 'Saving...';
+          const payload = collectInvoicePayload('draft');
+          const data = await submitInvoiceToServer(payload);
+          showToast('💾 Quote draft saved successfully!', 'success');
+          const pill = document.getElementById('inv-status-pill');
+          if (pill) {
+            pill.textContent = data.invoice_number;
+            pill.style.background = 'rgba(0, 168, 89, 0.2)';
+            pill.style.color = '#34D399';
+          }
+        } catch (e) {
+          // Handled in submitInvoiceToServer
+        } finally {
+          saveDraftBtn.disabled = false;
+          saveDraftBtn.textContent = '💾 Save Draft';
+        }
+      });
+    }
+
+    // Action: Issue / Advance (quote_sent)
+    const sendAdvanceBtn = document.getElementById('btn-inv-send-advance');
+    if (sendAdvanceBtn) {
+      sendAdvanceBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+          sendAdvanceBtn.disabled = true;
+          sendAdvanceBtn.textContent = 'Issuing...';
+          const payload = collectInvoicePayload('issued');
+          await submitInvoiceToServer(payload);
+          showToast('🚀 Quote issued! Deal moved to Quote Sent.', 'success');
+          modal.style.display = 'none';
+        } catch (e) {
+          // Handled in submitInvoiceToServer
+        } finally {
+          sendAdvanceBtn.disabled = false;
+          sendAdvanceBtn.textContent = '🚀 Issue Quote (quote_sent) →';
+        }
+      });
+    }
+
+    // Action: Send WhatsApp Quote
+    const sendWaBtn = document.getElementById('btn-inv-send-wa');
+    if (sendWaBtn) {
+      sendWaBtn.addEventListener('click', async () => {
+        try {
+          sendWaBtn.disabled = true;
+          sendWaBtn.textContent = 'Formatting...';
+          const payload = collectInvoicePayload('issued');
+          const data = await submitInvoiceToServer(payload);
+          const waMsg = formatWhatsAppInvoiceBreakdown(data.invoice);
+
+          // Deep link to WhatsApp
+          const waUrl = `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
+          window.open(waUrl, '_blank');
+          showToast('💬 WhatsApp quote breakdown generated and opened!', 'success');
+          modal.style.display = 'none';
+        } catch (e) {
+          // Handled in submitInvoiceToServer
+        } finally {
+          sendWaBtn.disabled = false;
+          sendWaBtn.textContent = '💬 Send WhatsApp Quote';
+        }
+      });
+    }
+
+    // Action: Print / PDF
+    const printBtn = document.getElementById('btn-inv-print-pdf');
+    if (printBtn) {
+      printBtn.addEventListener('click', async () => {
+        try {
+          printBtn.disabled = true;
+          printBtn.textContent = 'Preparing...';
+          const payload = collectInvoicePayload(document.getElementById('inv-status-pill')?.textContent === 'New Document' ? 'draft' : 'issued');
+          const data = await submitInvoiceToServer(payload);
+          populatePrintableInvoice(data.invoice, data.lead);
+          window.print();
+        } catch (e) {
+          // Handled in submitInvoiceToServer
+        } finally {
+          printBtn.disabled = false;
+          printBtn.textContent = '🖨️ Print / PDF Receipt';
+        }
+      });
+    }
+
+    // Action: Mark as Paid
+    const markPaidBtn = document.getElementById('btn-inv-mark-paid');
+    if (markPaidBtn) {
+      markPaidBtn.addEventListener('click', async () => {
+        const leadId = document.getElementById('inv-lead-id')?.value;
+        if (!leadId) return;
+
+        const totals = recalculateInvoiceTotals();
+        if (!confirm(`Confirm customer has settled payment of ₦${totals.grandTotal.toLocaleString()} directly into your bank account?\n\nThis records your final realized revenue.`)) {
+          return;
+        }
+
+        try {
+          markPaidBtn.disabled = true;
+          markPaidBtn.textContent = 'Processing...';
+
+          const authHeaders = { 'Content-Type': 'application/json' };
+          if (supabaseSession && supabaseSession.access_token) {
+            authHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+          }
+
+          const res = await fetch('/api/provider-leads?action=mark_paid', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({ lead_id: leadId })
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'Failed to mark invoice as paid');
+          }
+
+          const leadIdx = cachedLeads.findIndex(l => l.id === leadId);
+          if (leadIdx !== -1) {
+            cachedLeads[leadIdx] = {
+              ...cachedLeads[leadIdx],
+              ...data.lead,
+              invoice_data: data.invoice
+            };
+          }
+
+          if (data.pipeline_metrics) {
+            renderPipelineRibbon(data.pipeline_metrics);
+          }
+
+          renderLeadsInbox(cachedLeads);
+          showToast('💰 Payment confirmed and recorded into revenue!', 'success');
+          modal.style.display = 'none';
+        } catch (err) {
+          alert(`Error: ${err.message}`);
+          markPaidBtn.disabled = false;
+          markPaidBtn.textContent = '💰 Mark as Paid';
+        }
+      });
+    }
+
+    // Expose helpers on window for external triggers and test suites
+    window.openInvoiceGeneratorModal = openInvoiceGeneratorModal;
+    window.recalculateInvoiceTotals = recalculateInvoiceTotals;
+    window.collectInvoicePayload = collectInvoicePayload;
+    window.formatWhatsAppInvoiceBreakdown = formatWhatsAppInvoiceBreakdown;
+    window.populatePrintableInvoice = populatePrintableInvoice;
+    window.submitInvoiceToServer = submitInvoiceToServer;
+  }
+
   // 12. Run Initial Render Pipeline
   await loadMetrics();
   await loadProviderLeadsAndQuota();
   await loadBroadcastRadar();
+  initInvoiceGenerator();
 
   const refreshRadarBtn = document.getElementById('btn-refresh-radar');
   if (refreshRadarBtn) {

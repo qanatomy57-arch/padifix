@@ -153,6 +153,58 @@ const providerLeadsHandler = async (req, res) => {
       // 2. Fetch authoritative quota from server store
       const quota = LeadStore.getProviderQuota(providerId);
 
+      const queryAction = req.query?.action || urlObj.searchParams.get('action');
+
+      // Phase 033: Get invoice document for a specific lead
+      if (queryAction === 'get_invoice') {
+        const leadId = req.query?.lead_id || urlObj.searchParams.get('lead_id') || req.query?.id || urlObj.searchParams.get('id');
+        if (!leadId) {
+          return res.status(400).json({ error: 'Missing required query parameter: lead_id.' });
+        }
+
+        let invData = null;
+        let invRef = null;
+        let targetLead = null;
+
+        // Query PG with strict provider tenant isolation
+        if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+          try {
+            const pgRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(String(leadId).trim())}&provider_id=eq.${providerId}&select=id,provider_id,channel,locality,status,intent_tag,notes,quote_amount_kobo,workmanship_amount_kobo,materials_amount_kobo,final_amount_kobo,scheduled_for,completed_at,lost_reason,client_display_name,review_token,review_requested_at,invoice_ref,invoice_data,created_at,updated_at`, {
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (pgRes.ok) {
+              const rows = await pgRes.json();
+              if (rows.length > 0 && rows[0].invoice_data) {
+                invData = rows[0].invoice_data;
+                invRef = rows[0].invoice_ref;
+                targetLead = rows[0];
+              }
+            }
+          } catch (e) {}
+        }
+
+        if (!invData) {
+          const storeRes = LeadStore.getLeadInvoice(providerId, String(leadId).trim());
+          if (storeRes.error) {
+            return res.status(storeRes.statusCode || 400).json({ error: storeRes.error });
+          }
+          invData = storeRes.invoice;
+          invRef = storeRes.invoice_number;
+          targetLead = storeRes.lead;
+        }
+
+        return res.status(200).json({
+          status: 'success',
+          invoice_number: invRef || invData.invoice_number,
+          job_ref: invData.job_ref,
+          invoice: invData,
+          lead: targetLead
+        });
+      }
+
       // Phase 031: Fetch broadcasts matching provider's trade and locality
       const queryFilter = req.query?.filter || urlObj.searchParams.get('filter');
       if (queryFilter === 'broadcasts') {
@@ -201,6 +253,8 @@ const providerLeadsHandler = async (req, res) => {
             'client_display_name',
             'review_token',
             'review_requested_at',
+            'invoice_ref',
+            'invoice_data',
             'created_at',
             'updated_at'
           ].join(',');
@@ -251,6 +305,8 @@ const providerLeadsHandler = async (req, res) => {
               client_display_name: r.client_display_name || null,
               review_token: r.review_token || null,
               review_requested_at: r.review_requested_at || null,
+              invoice_ref: r.invoice_ref || null,
+              invoice_data: r.invoice_data || null,
               created_at: r.created_at,
               updated_at: r.updated_at || r.created_at,
               relative_time: formatRelativeTime(r.created_at)
@@ -778,6 +834,123 @@ const providerLeadsHandler = async (req, res) => {
           review_requested_at: recRes.review_requested_at
         });
       }
+
+      // Phase 033: Save or Issue Itemized Digital Quote / Invoice
+      if (action === 'save_invoice') {
+        const auth = await verifyProviderAuth(req, provider_id || queryProviderId);
+        if (!auth.valid) {
+          return res.status(auth.statusCode).json({ error: auth.error });
+        }
+        const activeProviderId = auth.providerId;
+        if (!lead_id) {
+          return res.status(400).json({ error: 'Missing required field: lead_id.' });
+        }
+
+        const rawAuth = req.headers['authorization'] || req.headers['Authorization'] || '';
+        const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
+
+        const invRes = LeadStore.saveLeadInvoice(activeProviderId, String(lead_id).trim(), {
+          invoice_type: req.body.invoice_type,
+          items: req.body.items,
+          discount_kobo: req.body.discount_kobo,
+          bank_details: req.body.bank_details,
+          terms: req.body.terms,
+          status: req.body.status, // 'draft' | 'issued' | 'paid'
+          provider: req.body.provider,
+          customer: req.body.customer
+        });
+
+        if (invRes.error) {
+          return res.status(invRes.statusCode || 400).json({ error: invRes.error });
+        }
+
+        // Persist to Supabase if accessible
+        if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+          try {
+            await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(String(lead_id).trim())}&provider_id=eq.${activeProviderId}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                invoice_ref: invRes.invoice_number,
+                invoice_data: invRes.invoice,
+                quote_amount_kobo: invRes.lead.quote_amount_kobo,
+                workmanship_amount_kobo: invRes.lead.workmanship_amount_kobo,
+                materials_amount_kobo: invRes.lead.materials_amount_kobo,
+                final_amount_kobo: invRes.lead.final_amount_kobo,
+                status: invRes.lead.status,
+                updated_at: new Date().toISOString()
+              })
+            }).catch(() => {});
+          } catch (e) {}
+        }
+
+        const updatedMetrics = LeadStore.calculateProviderPipelineMetrics(activeProviderId);
+
+        return res.status(200).json({
+          status: 'success',
+          message: req.body.status === 'draft' ? 'Invoice draft saved successfully.' : 'Invoice issued and pipeline synchronized successfully.',
+          invoice_number: invRes.invoice_number,
+          job_ref: invRes.job_ref,
+          invoice: invRes.invoice,
+          lead: invRes.lead,
+          pipeline_metrics: updatedMetrics
+        });
+      }
+
+      // Phase 033: Explicit Provider Action to Mark Invoice as Paid
+      if (action === 'mark_paid') {
+        const auth = await verifyProviderAuth(req, provider_id || queryProviderId);
+        if (!auth.valid) {
+          return res.status(auth.statusCode).json({ error: auth.error });
+        }
+        const activeProviderId = auth.providerId;
+        if (!lead_id) {
+          return res.status(400).json({ error: 'Missing required field: lead_id.' });
+        }
+
+        const rawAuth = req.headers['authorization'] || req.headers['Authorization'] || '';
+        const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
+
+        const paidRes = LeadStore.markInvoicePaid(activeProviderId, String(lead_id).trim());
+        if (paidRes.error) {
+          return res.status(paidRes.statusCode || 400).json({ error: paidRes.error });
+        }
+
+        if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+          try {
+            await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(String(lead_id).trim())}&provider_id=eq.${activeProviderId}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                invoice_data: paidRes.invoice,
+                final_amount_kobo: paidRes.lead.final_amount_kobo,
+                updated_at: new Date().toISOString()
+              })
+            }).catch(() => {});
+          } catch (e) {}
+        }
+
+        const updatedMetrics = LeadStore.calculateProviderPipelineMetrics(activeProviderId);
+
+        return res.status(200).json({
+          status: 'success',
+          message: 'Invoice marked as paid.',
+          invoice_number: paidRes.invoice.invoice_number,
+          job_ref: paidRes.invoice.job_ref,
+          invoice: paidRes.invoice,
+          lead: paidRes.lead,
+          pipeline_metrics: updatedMetrics
+        });
+      }
+
       return res.status(400).json({ error: `Unknown action: '${action}'.` });
     } catch (err) {
       return res.status(500).json({ error: 'Internal Server Error', message: err.message });

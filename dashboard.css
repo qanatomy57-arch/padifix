@@ -146,6 +146,7 @@ body.dash-body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 /* Dashboard Topbar */
@@ -1614,14 +1615,19 @@ input:checked + .slider:before {
   }
 
   .dash-topbar-inner {
-    padding: 0 16px;
+    padding: 0 10px;
     height: 62px;
+  }
+
+  .dash-topbar-actions {
+    gap: 6px;
   }
 
   .dash-portal-badge,
   .btn-view-public-custom,
   .btn-signout-custom,
-  .dash-user-meta {
+  .dash-user-meta,
+  .dash-topbar .theme-label {
     display: none !important;
   }
 
@@ -2620,4 +2626,335 @@ input:checked + .slider:before {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ============================================================================
+   PHASE 033: IN-APP DIGITAL QUOTE & INVOICE GENERATOR STYLES
+   ============================================================================ */
+
+.invoice-modal-card {
+  background: #0B1320;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.65);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.invoice-status-badge {
+  background: rgba(0, 168, 89, 0.15);
+  color: #34D399;
+  border: 1px solid rgba(0, 168, 89, 0.35);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.invoice-type-toggle-group {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-inv-type {
+  flex: 1;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--dash-border);
+  color: var(--dash-muted);
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  min-height: 44px;
+  transition: all 0.2s ease;
+}
+
+.btn-inv-type.active {
+  background: rgba(0, 168, 89, 0.18);
+  border-color: #00A859;
+  color: #34D399;
+}
+
+.invoice-items-table-wrap {
+  overflow-x: auto;
+  margin-top: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.invoice-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.invoice-items-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dash-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.invoice-items-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.invoice-items-table tr:last-child td {
+  border-bottom: none;
+}
+
+.inv-row-input {
+  width: 100%;
+  background: var(--dash-card-bg);
+  border: 1px solid var(--dash-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #fff;
+  font-size: 0.82rem;
+}
+
+.inv-row-input:focus {
+  border-color: #00A859;
+  outline: none;
+}
+
+.btn-del-inv-row {
+  background: transparent;
+  border: none;
+  color: #EF4444;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px 6px;
+  min-height: 36px;
+  min-width: 32px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-del-inv-row:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.btn-chip-invoice {
+  background: rgba(0, 168, 89, 0.12);
+  border: 1px solid rgba(0, 168, 89, 0.35);
+  color: #34D399;
+}
+.btn-chip-invoice:hover {
+  background: rgba(0, 168, 89, 0.25);
+}
+
+/* ============================================================================
+   PRINTABLE INVOICE STYLES (SCREEN PREVIEW & @MEDIA PRINT)
+   ============================================================================ */
+
+.printable-invoice-document {
+  display: none;
+}
+
+@media print {
+  /* Hide all dashboard chrome and page elements */
+  body > * {
+    display: none !important;
+  }
+
+  /* Show only printable document */
+  body > #invoice-printable-sheet {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 24px;
+    background: #FFFFFF !important;
+    color: #111827 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  .print-invoice-card {
+    max-width: 800px;
+    margin: 0 auto;
+    border: 1px solid #D1D5DB;
+    padding: 32px;
+    border-radius: 8px;
+  }
+
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #00A859;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+
+  .print-logo {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 800;
+    color: #00A859;
+  }
+
+  .print-badge {
+    display: inline-block;
+    background: #E6F4EA;
+    color: #00A859;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+  }
+
+  .print-doc-meta {
+    text-align: right;
+  }
+
+  .print-doc-title {
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    color: #111827;
+  }
+
+  .print-doc-row {
+    font-size: 12px;
+    color: #4B5563;
+    line-height: 1.5;
+  }
+
+  .print-parties-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+
+  .print-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: #6B7280;
+    letter-spacing: 0.5px;
+  }
+
+  .print-party-name {
+    margin: 4px 0 2px 0;
+    font-size: 16px;
+    color: #111827;
+  }
+
+  .print-party-detail {
+    margin: 0;
+    font-size: 12px;
+    color: #4B5563;
+    line-height: 1.4;
+  }
+
+  .print-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+    font-size: 12px;
+  }
+
+  .print-table th {
+    background: #F3F4F6;
+    color: #374151;
+    font-weight: 700;
+    padding: 8px 10px;
+    border-top: 1px solid #E5E7EB;
+    border-bottom: 1px solid #D1D5DB;
+  }
+
+  .print-table td {
+    padding: 10px;
+    border-bottom: 1px solid #E5E7EB;
+  }
+
+  .print-summary-wrap {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+    page-break-inside: avoid;
+  }
+
+  .print-bank-box {
+    background: #F9FAFB;
+    border: 1px solid #E5E7EB;
+    border-left: 3px solid #00A859;
+    padding: 12px 16px;
+    border-radius: 6px;
+  }
+
+  .print-bank-title {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    color: #00A859;
+  }
+
+  .print-bank-line {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    color: #374151;
+  }
+
+  .print-bank-note {
+    margin: 8px 0 0 0;
+    font-size: 10px;
+    color: #6B7280;
+    font-style: italic;
+  }
+
+  .print-totals-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .print-total-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #4B5563;
+  }
+
+  .print-grand-total {
+    border-top: 2px solid #111827;
+    padding-top: 8px;
+    font-size: 15px;
+    font-weight: 800;
+    color: #00A859;
+  }
+
+  .print-terms-box {
+    background: #F9FAFB;
+    border: 1px solid #E5E7EB;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #4B5563;
+    margin-bottom: 24px;
+    page-break-inside: avoid;
+  }
+
+  .print-footer {
+    border-top: 1px solid #E5E7EB;
+    padding-top: 12px;
+    text-align: center;
+    font-size: 10px;
+    color: #9CA3AF;
+    line-height: 1.5;
+  }
+}
+
 
