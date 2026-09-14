@@ -51,6 +51,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const distanceVal = document.getElementById("distance-val");
   const sortSelect = document.getElementById("sort-select");
   const verifiedOnlyCb = document.getElementById("verified-only");
+  const pillFilterVerified = document.getElementById("pill-filter-verified");
+  const searchTrustBanner = document.getElementById("search-trust-banner");
+  const btnDismissTrustBanner = document.getElementById("btn-dismiss-trust-banner");
+  const modalTrustExplainer = document.getElementById("modal-trust-explainer");
+  const btnCloseTrustExplainer = document.getElementById("btn-close-trust-explainer");
+  const trustExplainerDismissCta = document.getElementById("trust-explainer-dismiss-cta");
+  const trustExplainerProfileCta = document.getElementById("trust-explainer-profile-cta");
   const availableOnlyCb = document.getElementById("available-only");
   const ratingPills = document.getElementById("rating-pills");
   const resetFiltersBtn = document.getElementById("reset-filters");
@@ -212,9 +219,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (sortSelect) sortSelect.value = "distance-asc";
     }
 
-    if (verifiedParam === "true" && verifiedOnlyCb) {
-      verifiedOnlyCb.checked = true;
+    if (verifiedParam === "true") {
       state.verifiedOnly = true;
+      if (verifiedOnlyCb) verifiedOnlyCb.checked = true;
+      if (pillFilterVerified) {
+        pillFilterVerified.classList.add("active");
+        pillFilterVerified.setAttribute("aria-pressed", "true");
+      }
     }
 
     if (availableParam === "true" && availableOnlyCb) {
@@ -1100,11 +1111,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const providerLoc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || '';
 
-        const verState = (typeof PadiFixMonetization !== 'undefined' && typeof PadiFixMonetization.resolveVerificationState === 'function')
-          ? PadiFixMonetization.resolveVerificationState(provider)
-          : null;
-        const isBadgeShown = verState ? Boolean(verState.badgeVisible) : Boolean(provider.isVerified);
-        const badgeTitle = verState && verState.publicBadgeText ? verState.publicBadgeText : (provider.ninVerified ? 'NIN Verified Professional' : 'Verified Professional');
+        // Phase 038: Server-Authoritative Badge Tier
+        const serverTier = provider.badge_tier || provider.badgeTier || null;
+        let effectiveTier = serverTier ? String(serverTier).toUpperCase() : null;
+
+        if (!effectiveTier && typeof PadiFixMonetization !== 'undefined' && typeof PadiFixMonetization.resolveVerificationState === 'function') {
+          const vState = PadiFixMonetization.resolveVerificationState(provider);
+          if (vState && vState.badgeVisible && vState.badgeTier) {
+            effectiveTier = String(vState.badgeTier).toUpperCase();
+          }
+        }
+
+        // Fallback for local seed / offline providers where serverTier is not pre-computed
+        if (!effectiveTier && (provider.is_verified || provider.isVerified)) {
+          if (provider.isTop || provider.is_top) {
+            effectiveTier = 'PREMIUM';
+          } else if (provider.rating && Number(provider.rating) >= 4.8) {
+            effectiveTier = 'PRO';
+          } else {
+            effectiveTier = 'BASIC';
+          }
+        }
+
+        const isBadgeShown = Boolean(effectiveTier);
+
+        let badgePillHtml = '';
+        if (effectiveTier === 'PREMIUM') {
+          badgePillHtml = `<button type="button" class="verified-badge-pill premium" data-provider-id="${safeId}" data-badge-tier="PREMIUM" aria-label="Open trust details for ${escapeHtml(displayName)} — Premium Verified">✨ Premium Verified</button>`;
+        } else if (effectiveTier === 'PRO') {
+          badgePillHtml = `<button type="button" class="verified-badge-pill pro" data-provider-id="${safeId}" data-badge-tier="PRO" aria-label="Open trust details for ${escapeHtml(displayName)} — Pro Verified">🛡️ Pro Verified</button>`;
+        } else if (effectiveTier === 'BASIC') {
+          badgePillHtml = `<button type="button" class="verified-badge-pill basic" data-provider-id="${safeId}" data-badge-tier="BASIC" aria-label="Open trust details for ${escapeHtml(displayName)} — Verified Artisan">🛡️ Verified Artisan</button>`;
+        }
 
         return `
           <article class="provider-item-card ${isBadgeShown ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(displayTrade)}" data-provider-location="${escapeHtml(providerLoc)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
@@ -1126,11 +1164,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <h3 class="provider-title-name">${escapeHtml(displayName)}</h3>
                   </a>
                   ${subTitleName ? `<span class="artisan-sub-name" title="Artisan In Charge" style="font-size: 13px; color: #64748B; font-weight: 500;">• ${escapeHtml(subTitleName)}</span>` : ''}
-                  ${isBadgeShown ? `
-                    <span class="verified-badge-icon" title="${escapeHtml(badgeTitle)}">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="#0284C7"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                    </span>` : ''
-                  }
+                  ${badgePillHtml}
                   ${isSponsored ? `<span class="badge-tag-promoted" title="Sponsored Category Placement" aria-label="Sponsored listing">⚡ Promoted</span>` : ''}
                   ${provider.isTop ? `<span class="badge-tag-top">⭐ Top</span>` : ''}
                 </div>
@@ -1180,7 +1214,19 @@ document.addEventListener("DOMContentLoaded", () => {
           const providerId = parseInt(card.dataset.providerId, 10);
           const trade = card.dataset.providerTrade;
           const position = parseInt(card.dataset.position, 10) || 1;
-          const isSponsored = card.dataset.isSponsored === 'true';
+          if (e.target.closest('.verified-badge-pill')) {
+            const badgeBtn = e.target.closest('.verified-badge-pill');
+            e.preventDefault();
+            e.stopPropagation();
+            const bTier = badgeBtn.dataset.badgeTier;
+            const prov = (state.allProviders || []).find(p => Number(p.id) === providerId) || {
+              id: providerId,
+              business_name: card.querySelector('.provider-title-name')?.textContent || 'Artisan Professional',
+              first_name: card.querySelector('.provider-title-name')?.textContent || 'Artisan Professional'
+            };
+            showTrustExplainerModal(prov, bTier, badgeBtn);
+            return;
+          }
 
           if (e.target.closest('.call-btn')) {
             const card = e.target.closest('.provider-item-card');
@@ -2111,6 +2157,31 @@ document.addEventListener("DOMContentLoaded", () => {
   if (verifiedOnlyCb) {
     verifiedOnlyCb.addEventListener("change", (e) => {
       state.verifiedOnly = e.target.checked;
+      if (pillFilterVerified) {
+        pillFilterVerified.classList.toggle("active", state.verifiedOnly);
+        pillFilterVerified.setAttribute("aria-pressed", state.verifiedOnly ? "true" : "false");
+      }
+      if (typeof LokatorTelemetry !== 'undefined') {
+        LokatorTelemetry.trackEvent('verified_filter_toggled', { source: 'sidebar' });
+      }
+      updateUrlState();
+      state.page = 1;
+      render();
+    });
+  }
+
+  if (pillFilterVerified) {
+    pillFilterVerified.addEventListener("click", () => {
+      state.verifiedOnly = !state.verifiedOnly;
+      if (verifiedOnlyCb) {
+        verifiedOnlyCb.checked = state.verifiedOnly;
+      }
+      pillFilterVerified.classList.toggle("active", state.verifiedOnly);
+      pillFilterVerified.setAttribute("aria-pressed", state.verifiedOnly ? "true" : "false");
+      if (typeof LokatorTelemetry !== 'undefined') {
+        LokatorTelemetry.trackEvent('verified_filter_toggled', { source: 'top_pill' });
+      }
+      updateUrlState();
       state.page = 1;
       render();
     });
@@ -2165,6 +2236,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (distanceRange) distanceRange.value = 50;
       if (distanceVal) distanceVal.textContent = "50 km";
       if (verifiedOnlyCb) verifiedOnlyCb.checked = false;
+      if (pillFilterVerified) {
+        pillFilterVerified.classList.remove("active");
+        pillFilterVerified.setAttribute("aria-pressed", "false");
+      }
       if (availableOnlyCb) availableOnlyCb.checked = false;
       if (gpsTrigger) gpsTrigger.classList.remove("active");
       if (ratingPills) {
@@ -2740,6 +2815,156 @@ document.addEventListener("DOMContentLoaded", () => {
       closeMobileFilterDrawer();
     }
   });
+
+  // ==========================================================================
+  // PHASE 038: TRUST BANNER & TRUST EXPLAINER MODAL LIFECYCLE
+  // ==========================================================================
+
+  function initTrustBanner() {
+    if (!searchTrustBanner) return;
+    try {
+      const isDismissed = localStorage.getItem('padifix_trust_banner_dismissed');
+      if (isDismissed !== 'true') {
+        searchTrustBanner.style.display = 'block';
+        if (typeof LokatorTelemetry !== 'undefined') {
+          LokatorTelemetry.trackEvent('trust_banner_viewed', {});
+        }
+      } else {
+        searchTrustBanner.style.display = 'none';
+      }
+    } catch (e) {
+      searchTrustBanner.style.display = 'block';
+    }
+
+    const btnOpenTrustModal = document.getElementById('btn-open-trust-modal');
+    if (btnOpenTrustModal) {
+      btnOpenTrustModal.addEventListener('click', (e) => {
+        e.preventDefault();
+        showTrustExplainerModal(null, 'PRO', btnOpenTrustModal);
+      });
+    }
+
+    if (btnDismissTrustBanner) {
+      btnDismissTrustBanner.addEventListener('click', (e) => {
+        e.preventDefault();
+        searchTrustBanner.style.display = 'none';
+        try {
+          localStorage.setItem('padifix_trust_banner_dismissed', 'true');
+        } catch (err) {}
+        if (typeof LokatorTelemetry !== 'undefined') {
+          LokatorTelemetry.trackEvent('trust_banner_dismissed', {});
+        }
+      });
+    }
+  }
+
+  let lastFocusedElement = null;
+
+  function showTrustExplainerModal(provider, tier, triggerEl) {
+    if (!modalTrustExplainer) return;
+    lastFocusedElement = triggerEl || document.activeElement;
+
+    const p = provider || {};
+    const nameEl = document.getElementById('trust-explainer-artisan-name');
+    const badgeEl = document.getElementById('trust-explainer-tier-badge');
+    const profileCta = document.getElementById('trust-explainer-profile-cta');
+
+    const displayName = p.business_name || (p.first_name ? `${p.first_name} ${p.last_initial || ''}`.trim() : (p.name || 'PadiFix Verified Professionals'));
+    if (nameEl) nameEl.textContent = displayName;
+
+    const cleanTier = String(tier || 'PRO').toUpperCase();
+    if (badgeEl) {
+      badgeEl.className = 'trust-artisan-tier-badge ' + cleanTier.toLowerCase();
+      if (cleanTier === 'PREMIUM') {
+        badgeEl.textContent = '✨ Premium Verified';
+      } else if (cleanTier === 'PRO') {
+        badgeEl.textContent = '🛡️ Pro Verified';
+      } else {
+        badgeEl.textContent = '🛡️ Verified Artisan';
+      }
+    }
+
+    if (profileCta) {
+      if (p.id) {
+        profileCta.href = `profile.html?id=${p.id}`;
+        profileCta.style.display = 'inline-flex';
+      } else {
+        profileCta.style.display = 'none';
+      }
+    }
+
+    modalTrustExplainer.style.display = 'flex';
+    document.body.classList.add('trust-modal-open');
+
+    // Telemetry: track trust badge click (Zero PII)
+    if (typeof LokatorTelemetry !== 'undefined') {
+      LokatorTelemetry.trackEvent('trust_badge_clicked', {
+        provider_id: p.id || null,
+        badge_tier: cleanTier
+      });
+    }
+
+    // Accessible Focus Management
+    if (btnCloseTrustExplainer) {
+      try { btnCloseTrustExplainer.focus(); } catch (e) {}
+    }
+  }
+
+  function closeTrustExplainerModal() {
+    if (!modalTrustExplainer) return;
+    modalTrustExplainer.style.display = 'none';
+    document.body.classList.remove('trust-modal-open');
+
+    if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+      try { lastFocusedElement.focus(); } catch (e) {}
+    }
+  }
+
+  if (btnCloseTrustExplainer) {
+    btnCloseTrustExplainer.addEventListener('click', closeTrustExplainerModal);
+  }
+  if (trustExplainerDismissCta) {
+    trustExplainerDismissCta.addEventListener('click', closeTrustExplainerModal);
+  }
+  if (modalTrustExplainer) {
+    modalTrustExplainer.addEventListener('click', (e) => {
+      if (e.target === modalTrustExplainer) {
+        closeTrustExplainerModal();
+      }
+    });
+  }
+
+  // Focus trap & Escape key listener for Trust Modal
+  document.addEventListener('keydown', (e) => {
+    if (!modalTrustExplainer || modalTrustExplainer.style.display !== 'flex') return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeTrustExplainerModal();
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      const focusable = modalTrustExplainer.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  });
+
+  initTrustBanner();
 
   // Handle browser back/forward navigation
   window.addEventListener("popstate", () => {

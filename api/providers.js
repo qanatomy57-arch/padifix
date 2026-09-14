@@ -97,11 +97,26 @@ function toPublicProvider(row) {
 
   const isVerified = Boolean(row.is_verified);
   const isNinVerified = Boolean(row.nin_verified);
+  const rawPlan = String(row.subscription_plan || row.plan_id || row.plan || 'FREE').toUpperCase();
+  const rawStatus = String(row.subscription_status || row.status || 'active').toLowerCase();
+  const isSubActive = !['expired', 'cancelled', 'canceled', 'payment_failed', 'inactive'].includes(rawStatus);
+  const isPaid = ['BASIC', 'PRO', 'PREMIUM'].includes(rawPlan);
+
+  let badgeTier = null;
   let badgeTitle = 'PadiFix Artisan';
-  if (isNinVerified) {
-    badgeTitle = 'NIN Verified Artisan';
-  } else if (isVerified) {
-    badgeTitle = 'Verified Artisan';
+
+  // Phase 035 / Phase 038 Canonical Tier Badging: Only active paid subscribers display verified badges
+  if ((isVerified || isNinVerified) && isPaid && isSubActive) {
+    if (rawPlan === 'PREMIUM') {
+      badgeTier = 'PREMIUM';
+      badgeTitle = 'Premium Verified';
+    } else if (rawPlan === 'PRO') {
+      badgeTier = 'PRO';
+      badgeTitle = 'Pro Verified';
+    } else {
+      badgeTier = 'BASIC';
+      badgeTitle = 'Verified Artisan';
+    }
   } else if (row.badge_title && !row.badge_title.toLowerCase().includes('verified')) {
     badgeTitle = row.badge_title;
   }
@@ -131,6 +146,7 @@ function toPublicProvider(row) {
     starting_price: row.starting_price ? String(row.starting_price).trim() : null,
     avatar_bg: row.avatar_bg || 'linear-gradient(135deg, #006B3F, #059669)',
     badge_title: badgeTitle,
+    badge_tier: badgeTier,
     response_time: row.response_time || '~15 mins',
     completed_jobs: Number(row.completed_jobs || 0),
     rating: Number(row.rating || 0.0),
@@ -654,9 +670,11 @@ const providersHandler = async (req, res) => {
       filterParams.push(`area=ilike.*${encodeURIComponent(queryLocality)}*`);
     }
 
-    // Verified Filter
+    // Verified Filter (Phase 038 Authoritative Public Verification Filter)
     if (queryVerified === 'true' || queryVerified === true) {
-      filterParams.push(`or=(is_verified.eq.true,nin_verified.eq.true)`);
+      filterParams.push('or=(is_verified.eq.true,nin_verified.eq.true)');
+      filterParams.push('subscription_plan=in.(BASIC,PRO,PREMIUM)');
+      filterParams.push('not.subscription_status=in.(expired,cancelled,canceled,payment_failed,inactive)');
     }
 
     // Available Filter
@@ -672,14 +690,14 @@ const providersHandler = async (req, res) => {
       }
     }
 
-    // Sorting (Section 3)
-    let orderClause = 'id.desc';
+    // Sorting (Section 3 & Phase 038 Organic Ranking Boost)
+    let orderClause = 'is_verified.desc,created_at.desc';
     if (querySort === 'rating-desc') {
-      orderClause = 'rating.desc,reviews_count.desc';
+      orderClause = 'is_verified.desc,rating.desc,reviews_count.desc';
     } else if (querySort === 'jobs-desc') {
-      orderClause = 'completed_jobs.desc';
+      orderClause = 'is_verified.desc,completed_jobs.desc';
     } else if (querySort === 'newest') {
-      orderClause = 'created_at.desc';
+      orderClause = 'is_verified.desc,created_at.desc';
     }
 
     // Target customer-safe columns only
@@ -705,7 +723,9 @@ const providersHandler = async (req, res) => {
       'reviews_count',
       'is_verified',
       'nin_verified',
-      'is_available'
+      'is_available',
+      'subscription_plan',
+      'subscription_status'
     ].join(',');
 
     const queryUrl = `${SUPABASE_URL}/rest/v1/providers?select=${selectColumns}&${filterParams.join('&')}&order=${orderClause}&limit=${pageSize}&offset=${offset}`;
@@ -714,7 +734,34 @@ const providersHandler = async (req, res) => {
     let totalCount = 0;
 
     if (req._mockRows) {
-      rows = req._mockRows;
+      let filtered = [...req._mockRows];
+      if (queryVerified === 'true' || queryVerified === true) {
+        filtered = filtered.filter(r => {
+          const isV = Boolean(r.is_verified || r.nin_verified);
+          const plan = String(r.subscription_plan || r.plan_id || r.plan || 'FREE').toUpperCase();
+          const status = String(r.subscription_status || r.status || 'active').toLowerCase();
+          const isPaid = ['BASIC', 'PRO', 'PREMIUM'].includes(plan);
+          const isSubActive = !['expired', 'cancelled', 'canceled', 'payment_failed', 'inactive'].includes(status);
+          return isV && isPaid && isSubActive;
+        });
+      }
+      // Mirror real PostgREST orderClause: is_verified.desc always first, then secondary sort
+      filtered.sort((a, b) => {
+        const aV = (a.is_verified || a.nin_verified) ? 1 : 0;
+        const bV = (b.is_verified || b.nin_verified) ? 1 : 0;
+        if (bV !== aV) return bV - aV;
+
+        const sortKey = req.query?.sort || 'newest';
+        if (sortKey === 'rating-desc') {
+          const rDiff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
+          if (rDiff !== 0) return rDiff;
+          return (Number(b.reviews_count) || 0) - (Number(a.reviews_count) || 0);
+        } else if (sortKey === 'jobs-desc') {
+          return (Number(b.completed_jobs) || 0) - (Number(a.completed_jobs) || 0);
+        }
+        return (new Date(b.created_at || 0).getTime()) - (new Date(a.created_at || 0).getTime());
+      });
+      rows = filtered;
       totalCount = rows.length;
     } else {
       const controller = new AbortController();
