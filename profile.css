@@ -460,8 +460,8 @@
   width: 100%;
   height: 220px;
   overflow: hidden;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   cursor: ew-resize;
   background: #020D05;
   border-bottom: 1px solid var(--border);
@@ -510,12 +510,14 @@
 .ba-label-before {
   left: 10px;
   background: rgba(220, 38, 38, 0.85);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 
 .ba-label-after {
   right: 10px;
   background: rgba(16, 185, 129, 0.9);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 
@@ -566,6 +568,7 @@
   display: flex;
   gap: 4px;
   background: rgba(0, 0, 0, 0.75);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   padding: 3px;
   border-radius: 999px;
@@ -643,6 +646,7 @@
   top: 10px;
   left: 10px;
   background: rgba(15, 23, 42, 0.85);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   color: #F8FAFC;
   padding: 4px 10px;
@@ -708,6 +712,7 @@
   height: 420px;
   background: #000;
   overflow: hidden;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -1849,7 +1854,6 @@
   .profile-breadcrumbs {
     flex-wrap: nowrap;
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
     white-space: nowrap;
     padding-bottom: 6px;
     margin-bottom: 16px;

@@ -1,0 +1,4 @@
+docs/**
+brain/**
+node_modules/**
+*.log

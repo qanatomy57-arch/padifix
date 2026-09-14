@@ -69,6 +69,7 @@
   font-family: var(--font);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
   user-select: none;
   white-space: nowrap;
 }
@@ -929,8 +930,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 14px;
   padding: 14px;
-  backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   margin-top: 14px;
   max-width: 580px;
@@ -1008,8 +1009,8 @@ body {
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75);
   display: none;
   padding: 6px 0;
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 [data-theme="dark"] .hero-dropdown,
@@ -3253,7 +3254,6 @@ body {
     -webkit-mask-image: none !important;
     mask-image: none !important;
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
     scroll-snap-type: x mandatory;
     padding: 12px 16px 24px;
   }
@@ -4077,7 +4077,6 @@ body {
   border-radius: var(--radius-md, 10px);
   overflow-x: auto;
   white-space: nowrap;
-  -webkit-overflow-scrolling: touch;
 }
 
 .breadcrumb-trail-list {
@@ -5257,7 +5256,6 @@ body {
   flex-direction: column;
   padding: 24px 20px;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 .mobile-nav-drawer.open {
