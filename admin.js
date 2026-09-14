@@ -204,7 +204,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               <td style="font-family: monospace; color: var(--fg-muted);">${maskedRef}</td>
               <td style="font-size: 11px; color: var(--fg-muted);">${safeDate}</td>
               <td>
-                <div style="display: flex; gap: 6px;">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                  <button type="button" class="btn-action-sm btn-inspect-doc" data-id="${req.provider_id}" data-path="${req.file_path || ''}" data-name="${escapeHtml(req.name || `Artisan #${req.provider_id}`)}" data-doc="${escapeHtml(req.document_type || 'ID')}" style="background: #4B5563; color: #FFF;">
+                    🔍 Inspect
+                  </button>
                   <button type="button" class="btn-action-sm btn-approve" data-id="${req.provider_id}">
                     ✓ Approve Pro
                   </button>
@@ -321,63 +324,188 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 6. Action Handlers
-  document.addEventListener('click', async (e) => {
-    const adminKey = getStoredAdminKey();
+  // 6. Action Handlers (Phase 036)
+  let currentInspectProvId = null;
 
-    // 6.1 Approve Verification
-    const btnApprove = e.target.closest('.btn-approve');
-    if (btnApprove) {
-      const provId = btnApprove.getAttribute('data-id');
-      if (!provId) return;
+  async function openDocumentInspection(provId, filePath, provName, docType) {
+    currentInspectProvId = provId;
+    const modal = document.getElementById('modal-doc-inspection');
+    const title = document.getElementById('doc-inspect-title');
+    const meta = document.getElementById('doc-inspect-meta');
+    const img = document.getElementById('doc-inspect-img');
+    const pdfFallback = document.getElementById('doc-inspect-pdf-fallback');
+    const pdfLink = document.getElementById('doc-inspect-pdf-link');
+    const loading = document.getElementById('doc-inspect-loading');
 
-      const confirmApprove = confirm(`Approve artisan #${provId} as Verified Pro?\n\nThis will award the Verified Pro badge and increase search prominence.`);
-      if (!confirmApprove) return;
+    if (title) title.textContent = `Document Inspection — ${provName || `Provider #${provId}`}`;
+    if (meta) meta.textContent = `${docType || 'ID Document'} • Generating 15-min signed compliance URL...`;
 
-      btnApprove.disabled = true;
-      btnApprove.textContent = 'Approving...';
+    if (img) img.style.display = 'none';
+    if (pdfFallback) pdfFallback.style.display = 'none';
+    if (loading) {
+      loading.textContent = 'Generating secure signed document URL...';
+      loading.style.display = 'block';
+    }
+    if (modal) modal.style.display = 'flex';
 
-      try {
-        const res = await fetch('/api/admin-compliance', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-admin-key': adminKey,
-            'Authorization': `Bearer ${adminKey}`
-          },
-          body: JSON.stringify({
-            action: 'approve_verification',
-            provider_id: Number(provId),
-            notes: 'NIN and identity validation confirmed against official standard.',
-            reviewer: 'Chief Compliance Officer'
-          })
-        });
+    try {
+      const adminKey = getStoredAdminKey();
+      const res = await fetch('/api/admin-compliance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminKey,
+          'Authorization': `Bearer ${adminKey}`
+        },
+        body: JSON.stringify({
+          action: 'get_document_url',
+          provider_id: Number(provId),
+          file_path: filePath
+        })
+      });
 
-        if (res.ok) {
-          alert(`✅ Artisan #${provId} has been successfully verified! Notification email dispatched.`);
-          await hydrateCompliancePortal();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          alert(`Failed to approve verification: ${err.error || res.statusText}`);
+      if (!res.ok) {
+        throw new Error(`Failed to sign document URL: HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const signedUrl = data.signed_url;
+
+      if (loading) loading.style.display = 'none';
+      if (meta) meta.textContent = `${docType || 'ID Document'} • Temporary Signed Access (Expires in 15 mins)`;
+
+      if (filePath && filePath.toLowerCase().endsWith('.pdf')) {
+        if (pdfFallback) pdfFallback.style.display = 'block';
+        if (pdfLink) pdfLink.href = signedUrl;
+      } else {
+        if (img) {
+          img.src = signedUrl;
+          img.style.display = 'inline-block';
         }
-      } catch (err) {
-        alert('Network error while approving verification: ' + err.message);
+      }
+    } catch (err) {
+      if (loading) {
+        loading.textContent = 'Notice: Document preview unavailable (' + err.message + ')';
+        loading.style.display = 'block';
       }
     }
+  }
 
-    // 6.2 Reject Verification
-    const btnReject = e.target.closest('.btn-reject');
-    if (btnReject) {
-      const provId = btnReject.getAttribute('data-id');
+  function closeDocumentInspection() {
+    const modal = document.getElementById('modal-doc-inspection');
+    if (modal) modal.style.display = 'none';
+    currentInspectProvId = null;
+  }
+
+  function openRejectionModal(provId) {
+    const modal = document.getElementById('modal-rejection-drawer');
+    const idInput = document.getElementById('reject-provider-id');
+    const notes = document.getElementById('reject-notes');
+    if (idInput) idInput.value = provId;
+    if (notes) notes.value = '';
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeRejectionModal() {
+    const modal = document.getElementById('modal-rejection-drawer');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async function approveProviderAction(provId, triggerBtn) {
+    if (!provId) return;
+    const confirmApprove = confirm(`Approve artisan #${provId} as Verified Pro?\n\nThis permanently certifies identity verification and unlocks their tier badge.`);
+    if (!confirmApprove) return;
+
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.textContent = 'Approving...';
+    }
+
+    try {
+      const adminKey = getStoredAdminKey();
+      const res = await fetch('/api/admin-compliance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminKey,
+          'Authorization': `Bearer ${adminKey}`
+        },
+        body: JSON.stringify({
+          action: 'approve_verification',
+          provider_id: Number(provId),
+          notes: 'Official government ID verification approved according to compliance standards.',
+          reviewer: 'Chief Compliance Officer'
+        })
+      });
+
+      if (res.ok) {
+        alert(`✅ Artisan #${provId} has been successfully verified! Notification email dispatched.`);
+        closeDocumentInspection();
+        await hydrateCompliancePortal();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to approve verification: ${err.error || res.statusText}`);
+      }
+    } catch (err) {
+      alert('Network error while approving verification: ' + err.message);
+    } finally {
+      if (triggerBtn) {
+        triggerBtn.disabled = false;
+        triggerBtn.textContent = '✓ Approve Pro';
+      }
+    }
+  }
+
+  // Bind close buttons and modal actions
+  const btnCloseInspect = document.getElementById('btn-close-doc-inspection');
+  if (btnCloseInspect) btnCloseInspect.addEventListener('click', closeDocumentInspection);
+
+  const btnInspectApprove = document.getElementById('btn-inspect-approve');
+  if (btnInspectApprove) {
+    btnInspectApprove.addEventListener('click', () => {
+      if (currentInspectProvId) approveProviderAction(currentInspectProvId, btnInspectApprove);
+    });
+  }
+
+  const btnInspectReject = document.getElementById('btn-inspect-reject');
+  if (btnInspectReject) {
+    btnInspectReject.addEventListener('click', () => {
+      if (currentInspectProvId) {
+        const pId = currentInspectProvId;
+        closeDocumentInspection();
+        openRejectionModal(pId);
+      }
+    });
+  }
+
+  const btnCloseRejection = document.getElementById('btn-close-rejection-modal');
+  if (btnCloseRejection) btnCloseRejection.addEventListener('click', closeRejectionModal);
+
+  const btnCancelRejection = document.getElementById('btn-cancel-rejection');
+  if (btnCancelRejection) btnCancelRejection.addEventListener('click', closeRejectionModal);
+
+  const formRejection = document.getElementById('form-rejection-submission');
+  if (formRejection) {
+    formRejection.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const provId = document.getElementById('reject-provider-id').value;
+      const reasonCode = document.getElementById('reject-reason-code').value;
+      const notes = document.getElementById('reject-notes').value.trim();
+      const confirmBtn = document.getElementById('btn-confirm-rejection');
+
       if (!provId) return;
+      if (!notes || notes.length < 8) {
+        alert('Please enter at least 8 characters of feedback notes for the artisan.');
+        return;
+      }
 
-      const reason = prompt('Please enter the rejection feedback reason for the artisan:', 'NIN document number does not match registered trade name.');
-      if (!reason) return;
-
-      btnReject.disabled = true;
-      btnReject.textContent = 'Rejecting...';
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Submitting Rejection...';
+      }
 
       try {
+        const adminKey = getStoredAdminKey();
         const res = await fetch('/api/admin-compliance', {
           method: 'POST',
           headers: {
@@ -388,13 +516,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: JSON.stringify({
             action: 'reject_verification',
             provider_id: Number(provId),
-            reason: reason,
+            reason_code: reasonCode,
+            reason: notes,
             reviewer: 'Chief Compliance Officer'
           })
         });
 
         if (res.ok) {
           alert(`Artisan #${provId} verification rejected. Notification with feedback dispatched.`);
+          closeRejectionModal();
           await hydrateCompliancePortal();
         } else {
           const err = await res.json().catch(() => ({}));
@@ -402,7 +532,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } catch (err) {
         alert('Network error while rejecting verification: ' + err.message);
+      } finally {
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Confirm Rejection';
+        }
       }
+    });
+  }
+
+  document.addEventListener('click', async (e) => {
+    const adminKey = getStoredAdminKey();
+
+    // 6.0 Inspect Document
+    const btnInspect = e.target.closest('.btn-inspect-doc');
+    if (btnInspect) {
+      const provId = btnInspect.getAttribute('data-id');
+      const filePath = btnInspect.getAttribute('data-path');
+      const provName = btnInspect.getAttribute('data-name');
+      const docType = btnInspect.getAttribute('data-doc');
+      openDocumentInspection(provId, filePath, provName, docType);
+      return;
+    }
+
+    // 6.1 Approve Verification
+    const btnApprove = e.target.closest('.btn-approve');
+    if (btnApprove && !btnApprove.closest('#modal-doc-inspection')) {
+      const provId = btnApprove.getAttribute('data-id');
+      if (provId) approveProviderAction(provId, btnApprove);
+      return;
+    }
+
+    // 6.2 Reject Verification
+    const btnReject = e.target.closest('.btn-reject');
+    if (btnReject && !btnReject.closest('#modal-doc-inspection')) {
+      const provId = btnReject.getAttribute('data-id');
+      if (provId) openRejectionModal(provId);
+      return;
     }
 
     // 6.3 Resolve Dispute

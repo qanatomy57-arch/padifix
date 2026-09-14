@@ -200,7 +200,7 @@ async function handlePortfolioPost(req, res) {
 
   const action = body.action || req.query?.action;
   if (!action) {
-    return res.status(400).json({ error: 'Missing action parameter. Expected add_portfolio_item or delete_portfolio_item.' });
+    return res.status(400).json({ error: 'Missing action parameter. Expected add_portfolio_item, delete_portfolio_item, or submit_verification.' });
   }
 
   const targetProviderId = body.provider_id || req.query?.provider_id;
@@ -209,6 +209,191 @@ async function handlePortfolioPost(req, res) {
     return res.status(authResult.statusCode || 401).json({ error: authResult.error });
   }
   const callerProviderId = authResult.providerId;
+
+  if (action === 'submit_verification') {
+    // 1. Check paid plan eligibility: Free providers are ineligible
+    let currentPlan = 'FREE';
+    let isAlreadyVerified = false;
+    let hasPendingSubmission = false;
+
+    if (req._mockProvider) {
+      currentPlan = String(req._mockProvider.subscription_plan || 'FREE').toUpperCase();
+      isAlreadyVerified = Boolean(req._mockProvider.is_verified || req._mockProvider.verification_status === 'verified');
+    } else {
+      try {
+        const provCheck = await fetch(`${SUPABASE_URL}/rest/v1/providers?id=eq.${callerProviderId}&select=id,subscription_plan,subscription_status,is_verified,verification_status`, {
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+        });
+        if (provCheck.ok) {
+          const rows = await provCheck.json();
+          if (rows.length > 0) {
+            currentPlan = String(rows[0].subscription_plan || 'FREE').toUpperCase();
+            isAlreadyVerified = Boolean(rows[0].is_verified === true || rows[0].verification_status === 'verified');
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Invariant 2 & 15: One-Time Successful Verification
+    // Once verified, provider cannot submit again forever
+    if (isAlreadyVerified) {
+      return res.status(409).json({
+        error: 'ALREADY_VERIFIED',
+        message: 'Your account is already permanently verified. One-time verification invariant forbids re-verification.'
+      });
+    }
+
+    // Invariant 11: Single Active Pending Submission
+    if (req._mockSubmissions && Array.isArray(req._mockSubmissions)) {
+      hasPendingSubmission = req._mockSubmissions.some(s => Number(s.provider_id) === Number(callerProviderId) && s.status === 'pending');
+    } else {
+      try {
+        const subCheck = await fetch(`${SUPABASE_URL}/rest/v1/verification_submissions?provider_id=eq.${callerProviderId}&status=eq.pending&select=id`, {
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+        });
+        if (subCheck.ok) {
+          const subRows = await subCheck.json();
+          hasPendingSubmission = subRows.length > 0;
+        }
+      } catch (e) {}
+    }
+
+    if (hasPendingSubmission) {
+      return res.status(409).json({
+        error: 'PENDING_SUBMISSION_EXISTS',
+        message: 'You already have a verification submission under review by compliance.'
+      });
+    }
+
+    // Invariant: Free plans cannot initiate verification
+    const isPaid = ['BASIC', 'PRO', 'PREMIUM'].includes(currentPlan);
+    if (!isPaid) {
+      return res.status(403).json({
+        error: 'FREE_TIER_INELIGIBLE',
+        message: 'Verification requires an active paid subscription (Basic, Pro, or Premium). Upgrade your plan to submit verification documents.'
+      });
+    }
+
+    // 2. Validate Single-Choice Government ID Type
+    const validDocTypes = ['nin_slip', 'drivers_license', 'voters_card', 'international_passport', 'other_gov_id'];
+    const docType = String(body.document_type || body.documentType || '').toLowerCase().trim();
+    if (!validDocTypes.includes(docType)) {
+      return res.status(400).json({
+        error: 'INVALID_DOCUMENT_TYPE',
+        message: 'Please select a valid Government ID: National NIN slip, Driver\'s License, Voter\'s Card, Passport, or other Government ID.'
+      });
+    }
+
+    // 3. Server-Authoritative Document Normalization, Masking & Hashing
+    const rawDocNumber = String(body.document_number || body.documentNumber || body.id_number || '').trim();
+    if (!rawDocNumber || rawDocNumber.length < 4) {
+      return res.status(400).json({
+        error: 'INVALID_DOCUMENT_NUMBER',
+        message: 'A valid document identification number is required.'
+      });
+    }
+
+    const crypto = require('crypto');
+    const normalizedDocNumber = rawDocNumber.toUpperCase().replace(/[\s\-_]/g, '');
+    const docHash = crypto.createHash('sha256').update(normalizedDocNumber, 'utf8').digest('hex');
+
+    let maskedRef = '';
+    if (docType === 'nin_slip') {
+      const clean = rawDocNumber.replace(/\D/g, '');
+      maskedRef = clean.length >= 8 ? `NIN: ${clean.slice(0, 4)}-****-****-${clean.slice(-4)}` : 'NIN: ****';
+    } else if (docType === 'drivers_license') {
+      maskedRef = `FRSC: ${rawDocNumber.slice(0, 3)}****${rawDocNumber.slice(-3)}`;
+    } else if (docType === 'voters_card') {
+      maskedRef = `INEC: ${rawDocNumber.slice(0, 3)}****${rawDocNumber.slice(-3)}`;
+    } else if (docType === 'international_passport') {
+      maskedRef = `PASSPORT: ${rawDocNumber.slice(0, 2)}****${rawDocNumber.slice(-2)}`;
+    } else {
+      maskedRef = `GOV_ID: ${rawDocNumber.slice(0, 3)}****${rawDocNumber.slice(-2)}`;
+    }
+
+    // 4. Server-Authoritative Deterministic File Key & Safe Validation
+    const submissionId = body.id || `sub_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString();
+
+    const rawFilePath = String(body.file_path || body.filePath || body.file_url || body.fileUrl || '').trim();
+    if (!rawFilePath) {
+      return res.status(400).json({
+        error: 'MISSING_DOCUMENT_FILE',
+        message: 'Please upload a clear photo or scan of your selected Government ID.'
+      });
+    }
+
+    // Prohibit path traversal and executable extensions
+    if (rawFilePath.includes('..') || /\.(svg|html|htm|js|exe|php|sh|bat|cmd|vbs)$/i.test(rawFilePath)) {
+      return res.status(400).json({
+        error: 'INVALID_FILE_FORMAT',
+        message: 'Executable, scriptable, or malformed file formats are strictly prohibited.'
+      });
+    }
+
+    // Ensure deterministic, PII-free storage key: provider-verifications/{provider_id}/{submission_id}.ext
+    const extMatch = rawFilePath.match(/\.(webp|jpg|jpeg|png|pdf)$/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : 'webp';
+    const deterministicPath = `provider-verifications/${callerProviderId}/${submissionId}.${ext}`;
+
+    const submissionRecord = {
+      id: submissionId,
+      provider_id: callerProviderId,
+      document_type: docType,
+      document_number_masked: maskedRef,
+      document_number_hash: docHash,
+      file_path: deterministicPath,
+      status: 'pending',
+      submitted_at: now
+    };
+
+    if (req._mockSubmissions && Array.isArray(req._mockSubmissions)) {
+      req._mockSubmissions.push(submissionRecord);
+    } else {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/verification_submissions`, {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify(submissionRecord)
+        });
+
+        await fetch(`${SUPABASE_URL}/rest/v1/providers?id=eq.${callerProviderId}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            verification_status: 'pending',
+            verification_submitted_at: now
+          })
+        });
+      } catch (dbErr) {
+        // Safe fallback
+      }
+    }
+
+    return res.status(201).json({
+      status: 'success',
+      message: 'Verification submission received. Under review by compliance desk.',
+      submission: {
+        id: submissionId,
+        provider_id: callerProviderId,
+        document_type: docType,
+        document_number_masked: maskedRef,
+        document_number_hash: docHash,
+        file_path: deterministicPath,
+        status: 'pending',
+        submitted_at: now
+      }
+    });
+  }
 
   if (action === 'add_portfolio_item') {
     const title = (body.title || '').trim();

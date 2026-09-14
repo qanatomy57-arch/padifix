@@ -1147,9 +1147,9 @@
             </div>
 
             <div id="dash-ver-pending-notice" class="callout-amber" style="display: none; margin-bottom: 16px;">
-              <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">⏳ Verification Request Pending Review</div>
+              <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">⏳ Verification Under Review by Compliance</div>
               <p style="margin: 0; line-height: 1.4;" id="dash-ver-pending-text">
-                Your credential verification request was submitted and is currently being audited by PadiFix compliance officers. You will receive confirmation once reviewed.
+                Your credential verification request was submitted and is currently being audited by PadiFix compliance officers. We'll notify you when your review is complete.
               </p>
             </div>
 
@@ -1193,22 +1193,35 @@
             <form id="form-request-verification">
               <div class="dash-form-grid" style="gap: 16px;">
                 <div class="form-group">
-                  <label for="ver-doc-type">Identification Type *</label>
+                  <label for="ver-doc-type">Government Identification Type *</label>
                   <select id="ver-doc-type" class="filter-select dash-theme-input" required style="width: 100%; padding: 10px; border-radius: 8px;">
-                    <option value="vnin" selected>Virtual NIN (vNIN - 16 characters)</option>
-                    <option value="cac_cert">CAC Business Registration (RC / BN)</option>
+                    <option value="nin_slip" selected>National NIN Slip / NIMC Card</option>
                     <option value="drivers_license">FRSC Driver's License</option>
-                    <option value="voters_card">INEC Voter's Card</option>
+                    <option value="voters_card">INEC Voter's Card (VIN)</option>
+                    <option value="international_passport">Nigerian International Passport</option>
+                    <option value="other_gov_id">Other Valid Government ID</option>
                   </select>
                 </div>
                 <div class="form-group">
-                  <label for="ver-doc-ref" id="ver-doc-ref-label">16-Character Virtual NIN (vNIN) *</label>
-                  <input type="text" id="ver-doc-ref" class="dash-theme-input" required placeholder="e.g. AB12345678901234" style="width: 100%; padding: 10px; border-radius: 8px;" />
-                  <div id="ver-doc-ref-preview" style="font-size: 11.5px; color: var(--dash-muted); margin-top: 4px;">Masked Storage: <code id="ver-preview-code">vNIN: ****</code></div>
+                  <label for="ver-doc-ref" id="ver-doc-ref-label">Document Identification Number *</label>
+                  <input type="text" id="ver-doc-ref" class="dash-theme-input" required placeholder="e.g. 11-digit NIN or slip reference" style="width: 100%; padding: 10px; border-radius: 8px;" />
+                  <div id="ver-doc-ref-preview" style="font-size: 11.5px; color: var(--dash-muted); margin-top: 4px;">Masked Storage: <code id="ver-preview-code">NIN: ****</code></div>
                 </div>
               </div>
+
+              <!-- Document Upload with Client-side Compression Preview -->
+              <div class="form-group" style="margin-top: 16px;">
+                <label for="ver-doc-file">Upload Clear Photo or Scan of Document *</label>
+                <input type="file" id="ver-doc-file" accept="image/jpeg,image/png,image/webp,application/pdf" class="dash-theme-input" required style="width: 100%; padding: 8px; border-radius: 8px;" />
+                <div id="ver-doc-file-hint" style="font-size: 11.5px; color: var(--dash-muted); margin-top: 4px;">JPEG, PNG, WebP, or PDF. Images are client-compressed to high-resolution WebP (&lt;300KB) before encrypted upload.</div>
+                <div id="ver-doc-preview-container" style="display: none; margin-top: 10px; align-items: center; gap: 10px;">
+                  <img id="ver-doc-img-preview" src="" alt="Document Preview" style="max-height: 80px; border-radius: 6px; border: 1px solid var(--dash-border);" />
+                  <span id="ver-doc-file-info" style="font-size: 12px; color: var(--dash-muted);"></span>
+                </div>
+              </div>
+
               <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-                <span style="font-size: 12px; color: var(--dash-muted);">🔒 Encrypted with one-way SHA-256 in accordance with NDPR privacy guidelines.</span>
+                <span style="font-size: 12px; color: var(--dash-muted);">🔒 Encrypted with one-way SHA-256 and stored in private zero-PII compliance storage.</span>
                 <button type="submit" class="btn btn-primary" id="btn-submit-verification">Submit for Review</button>
               </div>
             </form>

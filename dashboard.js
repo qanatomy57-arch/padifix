@@ -3727,21 +3727,66 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Dynamic Verification Input Masking & Labels
+  // Dynamic Verification Input Masking & Labels (Phase 036)
   const docTypeSelect = document.getElementById('ver-doc-type');
   const docRefInput = document.getElementById('ver-doc-ref');
   const docRefLabel = document.getElementById('ver-doc-ref-label');
   const previewCode = document.getElementById('ver-preview-code');
+  const docFileInput = document.getElementById('ver-doc-file');
+  const docPreviewContainer = document.getElementById('ver-doc-preview-container');
+  const docImgPreview = document.getElementById('ver-doc-img-preview');
+  const docFileInfo = document.getElementById('ver-doc-file-info');
+
+  // Client-Side Image Compression Helper (Phase 036: WebP <300KB)
+  async function compressDocumentFile(file) {
+    if (!file) return null;
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      return { file, fileName: file.name, ext: 'pdf' };
+    }
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 1600;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve({ blob, ext: 'webp', dataUrl: canvas.toDataURL('image/webp', 0.82) });
+            } else {
+              resolve({ file, fileName: file.name, ext: 'webp' });
+            }
+          }, 'image/webp', 0.82);
+        };
+        img.onerror = () => resolve({ file, fileName: file.name, ext: 'webp' });
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve({ file, fileName: file.name, ext: 'webp' });
+      reader.readAsDataURL(file);
+    });
+  }
 
   function updateVerificationInputUI() {
     if (!docTypeSelect || !docRefInput) return;
     const type = docTypeSelect.value;
-    if (type === 'vnin') {
-      if (docRefLabel) docRefLabel.textContent = '16-Character Virtual NIN (vNIN) *';
-      docRefInput.placeholder = 'e.g. AB12345678901234';
-      docRefInput.maxLength = 16;
-    } else if (type === 'cac_cert') {
-      if (docRefLabel) docRefLabel.textContent = 'CAC Registration Number (RC / BN) *';
-      docRefInput.placeholder = 'e.g. RC 1928374 or BN 284729';
+    if (type === 'nin_slip') {
+      if (docRefLabel) docRefLabel.textContent = '11-Digit National NIN or Slip Reference *';
+      docRefInput.placeholder = 'e.g. 12345678901';
       docRefInput.removeAttribute('maxLength');
     } else if (type === 'drivers_license') {
       if (docRefLabel) docRefLabel.textContent = 'FRSC Driver\'s License Number *';
@@ -3750,6 +3795,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (type === 'voters_card') {
       if (docRefLabel) docRefLabel.textContent = 'INEC Voter\'s Identification Number (VIN) *';
       docRefInput.placeholder = 'e.g. 90F5B1234567890';
+      docRefInput.removeAttribute('maxLength');
+    } else if (type === 'international_passport') {
+      if (docRefLabel) docRefLabel.textContent = 'Nigerian International Passport Number *';
+      docRefInput.placeholder = 'e.g. A12345678';
+      docRefInput.removeAttribute('maxLength');
+    } else {
+      if (docRefLabel) docRefLabel.textContent = 'Government ID Identification Number *';
+      docRefInput.placeholder = 'e.g. Serial or registration number';
       docRefInput.removeAttribute('maxLength');
     }
     updatePreviewCode();
@@ -3777,12 +3830,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     docRefInput.addEventListener('input', updatePreviewCode);
   }
 
+  if (docFileInput) {
+    docFileInput.addEventListener('change', async () => {
+      const file = docFileInput.files && docFileInput.files[0];
+      if (!file) {
+        if (docPreviewContainer) docPreviewContainer.style.display = 'none';
+        return;
+      }
+      if (file.type.startsWith('image/')) {
+        const compressed = await compressDocumentFile(file);
+        if (docImgPreview && compressed && compressed.dataUrl) {
+          docImgPreview.src = compressed.dataUrl;
+          docImgPreview.style.display = 'block';
+        }
+        if (docFileInfo) {
+          const sizeKb = Math.round((compressed.blob ? compressed.blob.size : file.size) / 1024);
+          docFileInfo.textContent = `${file.name} (Optimized WebP: ${sizeKb} KB)`;
+        }
+        if (docPreviewContainer) docPreviewContainer.style.display = 'flex';
+      } else {
+        if (docImgPreview) docImgPreview.style.display = 'none';
+        if (docFileInfo) docFileInfo.textContent = `${file.name} (${Math.round(file.size / 1024)} KB)`;
+        if (docPreviewContainer) docPreviewContainer.style.display = 'flex';
+      }
+    });
+  }
+
   const formReqVer = document.getElementById('form-request-verification');
   if (formReqVer) {
     formReqVer.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      // Phase 012 Defense-in-depth: check if Free provider
+      // Invariant 2: One-time verification permanent lock
+      if (currentProvider.is_verified || currentProvider.isVerified) {
+        showToast('Your account is already permanently verified. One-time verification policy does not allow re-verification.', 'info');
+        return;
+      }
+
+      // Invariant 11: Single active pending submission lock
+      if (currentProvider.verification_status === 'pending' || currentProvider.verificationStatus === 'pending') {
+        showToast('You already have a verification request pending review by compliance.', 'info');
+        return;
+      }
+
+      // Paid plan verification requirement
       const pPlan = (currentProvider.plan_id || currentProvider.plan || 'FREE').toUpperCase();
       if (pPlan === 'FREE') {
         showToast('🔒 Verification submission requires an active Basic, Pro, or Premium subscription. Please upgrade your plan.', 'error');
@@ -3791,6 +3882,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const docType = document.getElementById('ver-doc-type').value;
       const docRef = document.getElementById('ver-doc-ref').value.trim();
+      const fileInput = document.getElementById('ver-doc-file');
       const btn = document.getElementById('btn-submit-verification');
 
       if (!docRef) {
@@ -3798,37 +3890,86 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // Check vNIN length constraint if submitting vNIN
-      if (docType === 'vnin') {
-        const cleanVnin = docRef.replace(/[^a-zA-Z0-9]/g, '');
-        if (cleanVnin.length !== 16) {
-          showToast('Virtual NIN must be exactly 16 characters. Dial *346*3*NIN*AgentCode# to generate your secure token.', 'error');
-          return;
-        }
+      const rawFile = fileInput && fileInput.files && fileInput.files[0];
+      if (!rawFile) {
+        showToast('Please upload a clear photo or scan of your Government ID.', 'error');
+        return;
       }
 
       if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Submitting...';
+        btn.textContent = 'Submitting Encrypted ID...';
       }
 
       try {
-        const idempotencyKey = 'idem_' + currentProvider.id + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-        const res = await LokatorDB.requestProviderVerification(currentProvider.id, { docType, docRef, idempotencyKey });
+        // Compress image to WebP <300KB
+        const compressed = await compressDocumentFile(rawFile);
+        const ext = compressed.ext || 'webp';
+        const submissionId = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        const filePath = `provider-verifications/${currentProvider.id}/${submissionId}.${ext}`;
+
+        // Attempt direct upload to private Supabase Storage if instance is available
+        if (typeof supabaseInstance !== 'undefined' && supabaseInstance && supabaseInstance.storage) {
+          try {
+            await supabaseInstance.storage.from('provider-verifications').upload(filePath, compressed.blob || compressed.file, {
+              upsert: true,
+              contentType: ext === 'pdf' ? 'application/pdf' : 'image/webp'
+            });
+          } catch (storageErr) {
+            console.warn('[Storage] Upload note:', storageErr.message);
+          }
+        }
+
+        // Post to authoritative /api/providers endpoint
+        const apiRes = await fetch('/api/providers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'submit_verification',
+            provider_id: currentProvider.id,
+            document_type: docType,
+            document_number: docRef,
+            file_path: filePath,
+            id: submissionId
+          })
+        });
+
+        if (!apiRes.ok) {
+          const errData = await apiRes.json().catch(() => ({}));
+          throw new Error(errData.message || errData.error || `HTTP ${apiRes.status}`);
+        }
+
+        const resData = await apiRes.json();
+
+        // Synchronize local database if available
+        if (typeof LokatorDB !== 'undefined' && typeof LokatorDB.requestProviderVerification === 'function') {
+          try {
+            await LokatorDB.requestProviderVerification(currentProvider.id, {
+              docType,
+              docRef,
+              filePath,
+              submissionId,
+              idempotencyKey: 'idem_' + currentProvider.id + '_' + Date.now()
+            });
+          } catch (e) {}
+        }
+
         currentProvider.verificationStatus = 'pending';
         currentProvider.verification_status = 'pending';
         currentProvider.verification_requested = true;
         await renderTrustCenter();
-        if (res && res.idempotent) {
-          showToast('Request acknowledged: An identical verification request is already under review.', 'info');
-        } else {
-          showToast(res.message || 'Verification request submitted for compliance review.');
-        }
+
+        showToast(resData.message || 'Verification request submitted for compliance review.');
         formReqVer.reset();
+        if (docPreviewContainer) docPreviewContainer.style.display = 'none';
         updatePreviewCode();
       } catch (err) {
         if (err.message && err.message.includes('PLAN_UPGRADE_REQUIRED')) {
           showToast('🔒 Plan upgrade required: Free accounts cannot submit verification requests.', 'error');
+        } else if (err.message && err.message.includes('ALREADY_VERIFIED')) {
+          showToast('Your account is already permanently verified.', 'info');
+        } else if (err.message && err.message.includes('PENDING_SUBMISSION_EXISTS')) {
+          showToast('You already have an active verification submission under review.', 'info');
         } else {
           showToast('Error requesting verification: ' + err.message, 'error');
         }

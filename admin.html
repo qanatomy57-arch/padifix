@@ -248,6 +248,69 @@
 
   </main>
 
+  <!-- Phase 036: Document Inspection Lightbox Modal -->
+  <div id="modal-doc-inspection" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 10000; align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; max-width: 720px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-lg);">
+      <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 id="doc-inspect-title" style="margin: 0; font-size: 16px; font-weight: 800; color: var(--fg);">Document Inspection</h3>
+          <span id="doc-inspect-meta" style="font-size: 12px; color: var(--fg-muted);">15-Minute Short-Lived Signed URL</span>
+        </div>
+        <button type="button" id="btn-close-doc-inspection" style="background: none; border: none; font-size: 22px; cursor: pointer; color: var(--fg-muted);">&times;</button>
+      </div>
+      <div id="doc-inspect-body" style="padding: 20px; flex: 1; overflow-y: auto; text-align: center; background: rgba(0,0,0,0.2);">
+        <img id="doc-inspect-img" src="" alt="Document Preview" style="max-width: 100%; max-height: 60vh; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none;" />
+        <div id="doc-inspect-pdf-fallback" style="display: none; padding: 30px;">
+          <p style="font-weight: 600; color: var(--fg);">PDF Document Uploaded</p>
+          <a id="doc-inspect-pdf-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">Open PDF in Secure Window</a>
+        </div>
+        <div id="doc-inspect-loading" style="display: none; color: var(--fg-muted); padding: 40px;">Generating secure signed document URL...</div>
+      </div>
+      <div style="padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--card);">
+        <span style="font-size: 11px; color: var(--fg-muted);">🔒 Temporary compliance access only. Expires after 15 minutes.</span>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-inspect-approve" class="btn-action-sm btn-approve">✓ Approve</button>
+          <button type="button" id="btn-inspect-reject" class="btn-action-sm btn-reject">✕ Reject</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 036: Structured Compliance Rejection Modal -->
+  <div id="modal-rejection-drawer" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(8px); z-index: 10001; align-items: center; justify-content: center; padding: 16px;">
+    <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; max-width: 480px; width: 100%; padding: 24px; box-shadow: var(--shadow-lg);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #DC2626;">Reject Verification Submission</h3>
+        <button type="button" id="btn-close-rejection-modal" style="background: none; border: none; font-size: 22px; cursor: pointer; color: var(--fg-muted);">&times;</button>
+      </div>
+      <p style="font-size: 13px; color: var(--fg-muted); margin: 0 0 16px; line-height: 1.4;">
+        Please select the primary reason for rejection. This feedback will be sent to the artisan so they can correct and resubmit their documents.
+      </p>
+      <form id="form-rejection-submission">
+        <input type="hidden" id="reject-provider-id" value="" />
+        <div style="margin-bottom: 14px;">
+          <label for="reject-reason-code" style="display: block; font-size: 12px; font-weight: 700; color: var(--fg-muted); margin-bottom: 6px;">Canonical Rejection Reason *</label>
+          <select id="reject-reason-code" required style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-size: 13px;">
+            <option value="blurry_image" selected>Blurry / Unreadable Image</option>
+            <option value="expired_document">Expired Document</option>
+            <option value="name_mismatch">Name Does Not Match Account</option>
+            <option value="incomplete_document">Incomplete Document / Missing Back Page</option>
+            <option value="fraud_suspected">Suspected Fraudulent / Altered Document</option>
+            <option value="other">Other Compliance Reason</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 18px;">
+          <label for="reject-notes" style="display: block; font-size: 12px; font-weight: 700; color: var(--fg-muted); margin-bottom: 6px;">Feedback Notes for Artisan *</label>
+          <textarea id="reject-notes" required minlength="8" maxlength="500" rows="3" placeholder="Provide specific feedback to help the artisan correct the issue (min 8 characters)..." style="width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-size: 13px; resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" id="btn-cancel-rejection" class="btn btn-outline" style="padding: 8px 16px; font-size: 13px;">Cancel</button>
+          <button type="submit" id="btn-confirm-rejection" class="btn btn-primary" style="background: #DC2626; border-color: #DC2626; padding: 8px 16px; font-size: 13px; font-weight: 700;">Confirm Rejection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="monetization-config.js"></script>
   <script src="verification-providers.js"></script>
   <script src="supabase-client.js"></script>

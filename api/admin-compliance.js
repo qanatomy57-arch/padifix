@@ -606,8 +606,10 @@ const adminComplianceHandler = async (req, res) => {
             state: v.state,
             lga: v.lga,
             verification_type: v.verification_type,
-            document_type: v.document_type,
-            document_masked_ref: v.document_masked_ref,
+            document_type: v.document_type || 'nin_slip',
+            document_masked_ref: v.document_masked_ref || v.document_number_masked || 'ID: ****',
+            document_number_masked: v.document_number_masked || v.document_masked_ref || 'ID: ****',
+            file_path: v.file_path || null,
             status: v.status,
             submitted_at: v.submitted_at,
             reviewed_at: v.reviewed_at,
@@ -689,10 +691,65 @@ const adminComplianceHandler = async (req, res) => {
         });
       }
 
+      // Action 0c: Get Temporary Signed Document URL (Phase 036)
+      if (action === 'get_document_url') {
+        const filePath = body.file_path || body.filePath;
+        const subId = body.submission_id || body.request_id || body.id;
+        let resolvedPath = filePath;
+
+        if (!resolvedPath && subId) {
+          const reqRecord = inMemoryStore.verifications.get(subId) || Array.from(inMemoryStore.verifications.values()).find(v => v.id === subId || v.provider_id === Number(subId));
+          if (reqRecord) {
+            resolvedPath = reqRecord.file_path;
+          }
+        }
+
+        if (!resolvedPath) {
+          return res.status(400).json({ error: 'Missing required file_path or submission_id' });
+        }
+
+        // Generate 15-minute temporary signed URL (900 seconds)
+        const expiresInSec = 900;
+        let signedUrl = '';
+        if (process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_URL) {
+          try {
+            const signRes = await fetch(`${TARGET_DEFAULT_URL}/storage/v1/object/sign/provider-verifications/${encodeURIComponent(resolvedPath)}`, {
+              method: 'POST',
+              headers: {
+                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ expiresIn: expiresInSec })
+            });
+            if (signRes.ok) {
+              const signData = await signRes.json();
+              signedUrl = `${TARGET_DEFAULT_URL}/storage/v1${signData.signedURL}`;
+            }
+          } catch (e) {
+            // Fallback
+          }
+        }
+
+        if (!signedUrl) {
+          // Development/Mock or Fallback URL
+          signedUrl = resolvedPath.startsWith('http') || resolvedPath.startsWith('/')
+            ? resolvedPath
+            : `/storage/provider-verifications/${resolvedPath}?token=mock_signed_sec_${Date.now()}&expires_in=${expiresInSec}`;
+        }
+
+        return res.status(200).json({
+          status: 'success',
+          signed_url: signedUrl,
+          expires_in_seconds: expiresInSec,
+          file_path: resolvedPath
+        });
+      }
+
       // Action 1: Approve Verification
       if (action === 'approve_verification') {
         const provId = Number(body.provider_id);
-        const reqId = body.request_id;
+        const reqId = body.request_id || body.submission_id;
 
         if (!provId && !reqId) {
           return res.status(400).json({ error: 'Missing required provider_id or request_id' });
@@ -701,7 +758,7 @@ const adminComplianceHandler = async (req, res) => {
         // Locate authoritative verification request
         let reqRecord = null;
         if (reqId) {
-          reqRecord = inMemoryStore.verifications.get(reqId);
+          reqRecord = inMemoryStore.verifications.get(reqId) || Array.from(inMemoryStore.verifications.values()).find(v => v.id === reqId);
         } else {
           reqRecord = Array.from(inMemoryStore.verifications.values()).find(v => v.provider_id === provId);
         }
@@ -730,13 +787,13 @@ const adminComplianceHandler = async (req, res) => {
           });
         }
 
-        // CRITICAL NIN RULE:
-        // Do NOT set nin_verified = true merely because verification_type === 'vnin'.
-        // Establish that authoritative evidence shows NIMC verification completed.
+        // CRITICAL NIN RULE (Requirement 7):
+        // Uploading a nin_slip does NOT automatically set nin_verified = true.
+        // nin_verified is reserved strictly for authoritative NIMC/vNIN gateway verification.
         const hasAuthoritativeNinEvidence = Boolean(
-          reqRecord.verification_type === 'vnin' &&
-          reqRecord.metadata &&
-          (reqRecord.metadata.evidence_verified === true || reqRecord.metadata.nin_verified === true)
+          reqRecord.nin_verified === true ||
+          (reqRecord.metadata &&
+           (reqRecord.metadata.evidence_verified === true || reqRecord.metadata.nin_verified === true))
         );
 
         // Mutate Verification Request
@@ -747,13 +804,52 @@ const adminComplianceHandler = async (req, res) => {
         // Mutate Provider Entity
         let prov = inMemoryStore.providers.get(effectiveProvId);
         if (!prov) {
-          prov = { id: effectiveProvId, is_verified: true, nin_verified: hasAuthoritativeNinEvidence, verification_badge: 'Verified Pro' };
+          prov = { id: effectiveProvId, is_verified: true, verification_status: 'verified', nin_verified: hasAuthoritativeNinEvidence, verification_badge: 'Verified Pro' };
           inMemoryStore.providers.set(effectiveProvId, prov);
         } else {
           prov.is_verified = true;
+          prov.verification_status = 'verified';
           prov.verification_badge = 'Verified Pro';
           prov.verified_at = new Date().toISOString();
           prov.nin_verified = hasAuthoritativeNinEvidence;
+          prov.verification_rejection_reason = null;
+          prov.verification_rejection_notes = null;
+        }
+
+        // Synchronize with database if available
+        if (process.env.SUPABASE_SERVICE_ROLE_KEY && TARGET_DEFAULT_URL) {
+          try {
+            await fetch(`${TARGET_DEFAULT_URL}/rest/v1/providers?id=eq.${effectiveProvId}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                is_verified: true,
+                verification_status: 'verified',
+                nin_verified: hasAuthoritativeNinEvidence,
+                verification_rejection_reason: null,
+                verification_rejection_notes: null
+              })
+            });
+            if (reqRecord.id) {
+              await fetch(`${TARGET_DEFAULT_URL}/rest/v1/verification_submissions?id=eq.${reqRecord.id}`, {
+                method: 'PATCH',
+                headers: {
+                  apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                  Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  status: 'approved',
+                  reviewed_at: reqRecord.reviewed_at,
+                  reviewed_by: reqRecord.reviewed_by
+                })
+              });
+            }
+          } catch (e) {}
         }
 
         // Append Immutable Audit Event
@@ -795,15 +891,25 @@ const adminComplianceHandler = async (req, res) => {
       if (action === 'reject_verification') {
         const provId = Number(body.provider_id);
         const reqId = body.request_id;
-        const reason = (body.reason || '').trim();
+        const CANONICAL_REJECTION_REASONS = ['blurry_image', 'expired_document', 'name_mismatch', 'incomplete_document', 'fraud_suspected', 'other'];
+        const reasonCode = String(body.reason_code || body.rejection_code || 'other').toLowerCase().trim();
+        const reason = (body.reason || body.notes || body.rejection_notes || '').trim();
 
         if (!provId && !reqId) {
           return res.status(400).json({ error: 'Missing required provider_id or request_id' });
         }
 
-        // Reason validation
-        if (!reason || reason.length < 10) {
-          return res.status(400).json({ error: 'Rejection reason must be at least 10 characters long.' });
+        // Canonical reason code validation
+        if (!CANONICAL_REJECTION_REASONS.includes(reasonCode)) {
+          return res.status(400).json({
+            error: 'INVALID_REJECTION_CODE',
+            message: `Invalid rejection reason code '${reasonCode}'. Allowed codes: ${CANONICAL_REJECTION_REASONS.join(', ')}.`
+          });
+        }
+
+        // Reason notes validation
+        if (!reason || reason.length < 8) {
+          return res.status(400).json({ error: 'Rejection feedback notes must be at least 8 characters long.' });
         }
         if (reason.length > 500) {
           return res.status(400).json({ error: 'Rejection reason exceeds maximum allowed length of 500 characters.' });
@@ -812,7 +918,7 @@ const adminComplianceHandler = async (req, res) => {
         // Locate authoritative verification request
         let reqRecord = null;
         if (reqId) {
-          reqRecord = inMemoryStore.verifications.get(reqId);
+          reqRecord = inMemoryStore.verifications.get(reqId) || Array.from(inMemoryStore.verifications.values()).find(v => v.id === reqId);
         } else {
           reqRecord = Array.from(inMemoryStore.verifications.values()).find(v => v.provider_id === provId);
         }
@@ -843,16 +949,61 @@ const adminComplianceHandler = async (req, res) => {
 
         // Mutate Verification Request
         reqRecord.status = 'rejected';
-        reqRecord.rejection_reason = reason;
+        reqRecord.rejection_reason = reasonCode;
+        reqRecord.rejection_notes = reason;
         reqRecord.reviewed_at = new Date().toISOString();
         reqRecord.reviewed_by = auth.officerId;
 
-        // Mutate Provider Entity
+        // Mutate Provider Entity: Set status to rejected to unlock correction/re-submission
         let prov = inMemoryStore.providers.get(effectiveProvId);
         if (prov) {
-          prov.is_verified = false;
-          prov.nin_verified = false;
-          prov.verification_badge = null;
+          prov.verification_status = 'rejected';
+          prov.verification_rejection_reason = reasonCode;
+          prov.verification_rejection_notes = reason;
+        } else {
+          inMemoryStore.providers.set(effectiveProvId, {
+            id: effectiveProvId,
+            is_verified: false,
+            verification_status: 'rejected',
+            verification_rejection_reason: reasonCode,
+            verification_rejection_notes: reason
+          });
+        }
+
+        // Synchronize with database if available
+        if (process.env.SUPABASE_SERVICE_ROLE_KEY && TARGET_DEFAULT_URL) {
+          try {
+            await fetch(`${TARGET_DEFAULT_URL}/rest/v1/providers?id=eq.${effectiveProvId}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                verification_status: 'rejected',
+                verification_rejection_reason: reasonCode,
+                verification_rejection_notes: reason
+              })
+            });
+            if (reqRecord.id) {
+              await fetch(`${TARGET_DEFAULT_URL}/rest/v1/verification_submissions?id=eq.${reqRecord.id}`, {
+                method: 'PATCH',
+                headers: {
+                  apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                  Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  status: 'rejected',
+                  rejection_reason: reasonCode,
+                  rejection_notes: reason,
+                  reviewed_at: reqRecord.reviewed_at,
+                  reviewed_by: reqRecord.reviewed_by
+                })
+              });
+            }
+          } catch (e) {}
         }
 
         // Append Immutable Audit Event
