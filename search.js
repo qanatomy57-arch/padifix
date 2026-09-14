@@ -1100,8 +1100,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const providerLoc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || '';
 
+        const verState = (typeof PadiFixMonetization !== 'undefined' && typeof PadiFixMonetization.resolveVerificationState === 'function')
+          ? PadiFixMonetization.resolveVerificationState(provider)
+          : null;
+        const isBadgeShown = verState ? Boolean(verState.badgeVisible) : Boolean(provider.isVerified);
+        const badgeTitle = verState && verState.publicBadgeText ? verState.publicBadgeText : (provider.ninVerified ? 'NIN Verified Professional' : 'Verified Professional');
+
         return `
-          <article class="provider-item-card ${provider.isVerified ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(displayTrade)}" data-provider-location="${escapeHtml(providerLoc)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
+          <article class="provider-item-card ${isBadgeShown ? 'is-verified' : ''} ${isSponsored ? 'is-sponsored' : ''}" id="card-prov-${safeId}" data-provider-id="${safeId}" data-provider-trade="${escapeHtml(displayTrade)}" data-provider-location="${escapeHtml(providerLoc)}" data-position="${index + 1}" data-is-sponsored="${isSponsored}">
             <div class="provider-card-main-row">
               <!-- Avatar Column -->
               <div class="provider-avatar-col">
@@ -1120,8 +1126,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     <h3 class="provider-title-name">${escapeHtml(displayName)}</h3>
                   </a>
                   ${subTitleName ? `<span class="artisan-sub-name" title="Artisan In Charge" style="font-size: 13px; color: #64748B; font-weight: 500;">• ${escapeHtml(subTitleName)}</span>` : ''}
-                  ${provider.isVerified ? `
-                    <span class="verified-badge-icon" title="NIN Verified Professional">
+                  ${isBadgeShown ? `
+                    <span class="verified-badge-icon" title="${escapeHtml(badgeTitle)}">
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="#0284C7"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
                     </span>` : ''
                   }

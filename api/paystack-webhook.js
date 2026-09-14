@@ -62,7 +62,7 @@ const paystackWebhookHandler = async (req, res) => {
     }
 
     // Retrieve raw request body for HMAC verification
-    let rawBody = req.body;
+    let rawBody = req.rawBody !== undefined ? req.rawBody : req.body;
     if (typeof rawBody === 'object' && rawBody !== null && !Buffer.isBuffer(rawBody)) {
       rawBody = JSON.stringify(rawBody);
     } else if (Buffer.isBuffer(rawBody)) {
@@ -211,18 +211,14 @@ const paystackWebhookHandler = async (req, res) => {
         });
       }
 
-      // Branch B: Promoted Category Placement Pilot (200000 kobo = ₦2,000)
-      if (amount === 200000) {
-        return res.status(200).json({
-          status: 'success',
-          event: 'charge.success',
-          reference: reference,
-          provider_id: metadata.provider_id,
-          fulfilled: true,
-          entitlement: 'PROMOTED_LISTING',
-          duration_days: 14
-        });
-      }
+      // Legacy products or unrecognized charges: safely acknowledge without creating entitlements or activating privileges
+      console.warn(`[Webhook:UnrecognizedOrLegacyCharge] Charge received for reference '${reference}' (${amount} kobo). Safely ignored without creating entitlements.`);
+      return res.status(200).json({
+        status: 'ignored',
+        event: 'charge.success',
+        reference: reference,
+        message: 'Non-subscription transaction safely acknowledged without creating entitlements.'
+      });
     }
 
     // 2. Handle Subscription Creation (subscription.create)

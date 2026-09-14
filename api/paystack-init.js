@@ -1,25 +1,23 @@
 /**
- * LOKATOR.NG — VERCEL SERVERLESS API: Paystack Transaction Initialization
+ * PADIFIX — VERCEL SERVERLESS API: Paystack Transaction Initialization
  * POST /api/paystack-init
  *
- * Enforces server-authoritative pricing (₦2,000 / 200000 kobo), 14-day duration,
- * inventory cap check (max 2 sponsored per Category/LGA), and unique reference generation.
- * NEVER trusts client-supplied amounts or currency.
+ * Enforces canonical provider-subscription-only monetization:
+ * Free (₦0), Basic (₦5,500/mo & ₦55,000/yr), Pro (₦11,000/mo & ₦110,000/yr), Premium (₦22,000/mo & ₦220,000/yr).
+ * Rejects legacy products (PROMOTED_LISTING_STARTER, TRUST_VERIFICATION_AUDIT) and client-supplied pricing overrides.
+ * Strictly server-authoritative pricing in kobo.
  */
 
 const https = require('https');
 const { withSentry } = require('../lib/sentry-server');
 
-// Authoritative Pilot Product Specification
-const PILOT_CONFIG = {
-  PRODUCT_ID: 'PROMOTED_LISTING_STARTER',
-  PRODUCT_NAME: 'Promoted Category Placement — Starter Pilot',
-  AMOUNT_KOBO: 200000, // ₦2,000.00
-  CURRENCY: 'NGN',
-  DURATION_DAYS: 14,
-  MAX_INVENTORY_PER_CLUSTER: 2,
-  ALLOWED_PILOT_MARKETS: ['Delta', 'Edo', 'Lagos', 'Abuja']
-};
+// Legacy products explicitly prohibited from initialization in executable code
+const RETIRED_LEGACY_PRODUCTS = new Set([
+  'PROMOTED_LISTING_STARTER',
+  'TRUST_VERIFICATION_AUDIT',
+  'PROMOTED_DISCOVERY',
+  'TRUST_VERIFICATION'
+]);
 
 function postJson(urlStr, data, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -58,7 +56,7 @@ function postJson(urlStr, data, headers = {}) {
   });
 }
 
-// Canonical Provider Subscription Plans (Phase 012 Launch Subscription Pricing)
+// Authoritative Canonical Provider Subscription Plans
 const CANONICAL_PLANS = {
   FREE: { id: 'FREE', name: 'Free', amount_kobo: 0, amount_display: '₦0', contacts: 5, paystack_plan_code: null },
   BASIC: {
@@ -108,10 +106,98 @@ const paystackInitHandler = async (req, res) => {
   }
 
   try {
-    const { provider_id, plan_id, product_id, email, category, state, lga, interval, billing_interval } = req.body || {};
+    const {
+      provider_id,
+      plan_id,
+      product_id,
+      email,
+      interval,
+      billing_interval,
+      amount: clientAmount,
+      currency: clientCurrency
+    } = req.body || {};
 
+    // 1. Reject retired legacy monetization products unconditionally
+    const requestedProduct = String(product_id || '').toUpperCase();
+    if (requestedProduct && RETIRED_LEGACY_PRODUCTS.has(requestedProduct)) {
+      return res.status(400).json({
+        error: 'LEGACY_PRODUCT_DEPRECATED',
+        message: `Product '${product_id}' has been permanently retired. PadiFix monetization is provider-subscription only.`
+      });
+    }
+
+    // 2. Validate required provider identifier
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
+    }
+
+    // 3. Reject initialization attempts without a plan_id (no legacy fallback permitted)
+    if (!plan_id) {
+      return res.status(400).json({
+        error: 'MISSING_PLAN_ID',
+        message: 'Plan ID is required. PadiFix monetization operates strictly on provider subscriptions (FREE, BASIC, PRO, PREMIUM).'
+      });
+    }
+
+    // 4. Validate canonical plan
+    const normPlan = String(plan_id).toUpperCase();
+    const targetPlan = CANONICAL_PLANS[normPlan];
+    if (!targetPlan) {
+      return res.status(400).json({
+        error: 'INVALID_PLAN_ID',
+        message: `Invalid plan_id '${plan_id}'. Authoritative plans are FREE, BASIC, PRO, or PREMIUM.`
+      });
+    }
+
+    // 5. Free plan: Instant direct activation, no payment gateway involvement
+    if (targetPlan.id === 'FREE') {
+      return res.status(200).json({
+        status: 'success',
+        mode: 'DIRECT_ACTIVATION',
+        plan_id: 'FREE',
+        plan_name: targetPlan.name,
+        amount: 0,
+        contacts_allowance: targetPlan.contacts,
+        message: 'Free plan activated successfully.'
+      });
+    }
+
+    // 6. Validate billing interval (Monthly or Annual/Annually)
+    const rawInterval = String(interval || billing_interval || 'monthly').toLowerCase().trim();
+    let canonicalInterval;
+    let isAnnual = false;
+
+    if (rawInterval === 'monthly') {
+      canonicalInterval = 'monthly';
+      isAnnual = false;
+    } else if (rawInterval === 'annual' || rawInterval === 'annually' || rawInterval === 'yearly') {
+      canonicalInterval = 'annually'; // Authoritative Paystack recurring interval naming
+      isAnnual = true;
+    } else {
+      return res.status(400).json({
+        error: 'INVALID_INTERVAL',
+        message: `Invalid billing interval '${rawInterval}'. Must be 'monthly' or 'annually'.`
+      });
+    }
+
+    // 7. Resolve authoritative server-side amount & currency (NEVER TRUST CLIENT VALUES)
+    const amountKobo = isAnnual ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
+    const amountDisplay = isAnnual ? targetPlan.annual_amount_display : targetPlan.amount_display;
+    const durationDays = isAnnual ? 365 : 30;
+
+    // Reject client tamper attempts on amount or currency
+    if (clientAmount !== undefined && Number(clientAmount) !== amountKobo && Number(clientAmount) !== (amountKobo / 100)) {
+      return res.status(400).json({
+        error: 'CLIENT_AMOUNT_OVERRIDE_REJECTED',
+        message: `Amount cannot be overridden by client. Canonical price is ${amountDisplay} (${amountKobo} kobo).`
+      });
+    }
+
+    if (clientCurrency !== undefined && String(clientCurrency).toUpperCase() !== 'NGN') {
+      return res.status(400).json({
+        error: 'CLIENT_CURRENCY_OVERRIDE_REJECTED',
+        message: 'Currency cannot be overridden. PadiFix operates strictly in NGN.'
+      });
     }
 
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
@@ -131,172 +217,58 @@ const paystackInitHandler = async (req, res) => {
       }
     }
 
-    // Branch A: Subscription Plan Initialization (Phase 012 Launch Pricing)
-    if (plan_id) {
-      const normPlan = String(plan_id).toUpperCase();
-      const targetPlan = CANONICAL_PLANS[normPlan];
-      if (!targetPlan) {
-        return res.status(400).json({ error: `Invalid plan_id '${plan_id}'. Must be FREE, BASIC, PRO, or PREMIUM.` });
-      }
-
-      // Free plan requires no payment
-      if (targetPlan.id === 'FREE') {
-        return res.status(200).json({
-          status: 'success',
-          mode: 'DIRECT_ACTIVATION',
-          plan_id: 'FREE',
-          plan_name: targetPlan.name,
-          amount: 0,
-          contacts_allowance: targetPlan.contacts,
-          message: 'Free plan activated successfully.'
-        });
-      }
-
-      const normInterval = String(interval || billing_interval || '').toLowerCase();
-      const isAnnual = normInterval === 'annual' || normInterval === 'annually' || normInterval === 'yearly';
-      const amountKobo = isAnnual ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
-      const amountDisplay = isAnnual ? targetPlan.annual_amount_display : targetPlan.amount_display;
-      const durationDays = isAnnual ? 365 : 30;
-      const selectedInterval = isAnnual ? 'annual' : 'monthly';
-
-      const timestamp = Date.now();
-      const randSuffix = Math.random().toString(36).substring(2, 7);
-      const reference = `lok_sub_${timestamp}_${randSuffix}`;
-      const orderId = `ord_sub_${timestamp}_${provider_id}`;
-
-      const order = {
-        order_id: orderId,
-        provider_id: Number(provider_id),
-        plan_id: targetPlan.id,
-        plan_name: targetPlan.name,
-        amount: amountKobo,
-        amount_display: amountDisplay,
-        currency: 'NGN',
-        billing_interval: selectedInterval,
-        duration_days: durationDays,
-        paystack_plan_code: targetPlan.paystack_plan_code,
-        reference: reference,
-        action: 'subscription_upgrade',
-        status: 'payment_pending',
-        live_mode: isLiveMode,
-        created_at: new Date().toISOString()
-      };
-
-      const providerEmail = email || `artisan_${provider_id}@padifix.ng`;
-      const origin = req.headers.origin || 'https://padifix.vercel.app';
-      const callbackUrl = `${origin}/dashboard.html?payment_ref=${reference}&payment_status=callback&action=subscription`;
-
-      if (secretKey) {
-        const initPayload = {
-          email: providerEmail,
-          amount: amountKobo,
-          reference: reference,
-          currency: 'NGN',
-          callback_url: callbackUrl,
-          metadata: {
-            order_id: orderId,
-            provider_id: Number(provider_id),
-            plan_id: targetPlan.id,
-            plan_name: targetPlan.name,
-            paystack_plan_code: targetPlan.paystack_plan_code,
-            action: 'subscription_upgrade',
-            billing_interval: selectedInterval,
-            duration_days: durationDays
-          }
-        };
-
-        // Attach Paystack Recurring Plan Code if applicable (only monthly currently has plan code)
-        if (targetPlan.paystack_plan_code && !isAnnual) {
-          initPayload.plan = targetPlan.paystack_plan_code;
-        }
-
-        const paystackRes = await postJson('https://api.paystack.co/transaction/initialize', initPayload, {
-          'Authorization': `Bearer ${secretKey}`
-        });
-
-        if (paystackRes.status === 200 && paystackRes.data && paystackRes.data.status) {
-          return res.status(200).json({
-            status: 'success',
-            authorization_url: paystackRes.data.data.authorization_url,
-            access_code: paystackRes.data.data.access_code,
-            reference: reference,
-            plan: targetPlan,
-            paystack_plan_code: targetPlan.paystack_plan_code,
-            order: order
-          });
-        } else {
-          return res.status(502).json({
-            error: 'Paystack subscription transaction initialization failed',
-            details: paystackRes.data ? paystackRes.data.message : 'Unknown gateway error'
-          });
-        }
-      }
-
-      // Fail-closed in live mode: never allow sandbox mock in live mode
-      if (isLiveMode) {
-        return res.status(500).json({ error: 'Server Configuration Error: Live mode requires active secret key.' });
-      }
-
-      // Test sandbox mode fallback
-      const mockAuthUrl = `https://checkout.paystack.com/test-mock-${reference}`;
-      return res.status(200).json({
-        status: 'success',
-        mode: 'TEST_SANDBOX',
-        authorization_url: mockAuthUrl,
-        reference: reference,
-        plan: targetPlan,
-        paystack_plan_code: targetPlan.paystack_plan_code,
-        order: order
-      });
-    }
-
-    // Branch B: Promoted Category Placement Pilot (Backwards-Compatible)
     const timestamp = Date.now();
     const randSuffix = Math.random().toString(36).substring(2, 7);
-    const reference = `lok_plt_${timestamp}_${randSuffix}`;
-    const orderId = `ord_${timestamp}_${provider_id}`;
+    const reference = `lok_sub_${timestamp}_${randSuffix}`;
+    const orderId = `ord_sub_${timestamp}_${provider_id}`;
 
-    // Construct server-authoritative order payload
     const order = {
       order_id: orderId,
       provider_id: Number(provider_id),
-      product_id: PILOT_CONFIG.PRODUCT_ID,
-      product_name: PILOT_CONFIG.PRODUCT_NAME,
-      amount: PILOT_CONFIG.AMOUNT_KOBO,
-      amount_display: '₦2,000',
-      currency: PILOT_CONFIG.CURRENCY,
-      duration_days: PILOT_CONFIG.DURATION_DAYS,
+      plan_id: targetPlan.id,
+      plan_name: targetPlan.name,
+      amount: amountKobo,
+      amount_display: amountDisplay,
+      currency: 'NGN',
+      billing_interval: canonicalInterval,
+      duration_days: durationDays,
+      paystack_plan_code: isAnnual ? null : targetPlan.paystack_plan_code,
       reference: reference,
-      category: String(category || 'artisan').toLowerCase(),
-      state: String(state || 'Delta'),
-      lga: String(lga || 'Warri South'),
+      action: 'subscription_upgrade',
       status: 'payment_pending',
       live_mode: isLiveMode,
       created_at: new Date().toISOString()
     };
 
-    // If Paystack Secret Key is configured, call Paystack API
-    if (secretKey) {
-      const providerEmail = email || `artisan_${provider_id}@padifix.ng`;
-      const origin = req.headers.origin || 'https://padifix.vercel.app';
-      const callbackUrl = `${origin}/dashboard.html?payment_ref=${reference}&payment_status=callback`;
+    const providerEmail = email || `artisan_${provider_id}@padifix.ng`;
+    const origin = (req.headers && req.headers.origin) || 'https://padifix.vercel.app';
+    const callbackUrl = `${origin}/dashboard.html?payment_ref=${reference}&payment_status=callback&action=subscription`;
 
-      const paystackRes = await postJson('https://api.paystack.co/transaction/initialize', {
+    if (secretKey) {
+      const initPayload = {
         email: providerEmail,
-        amount: PILOT_CONFIG.AMOUNT_KOBO,
+        amount: amountKobo,
         reference: reference,
-        currency: PILOT_CONFIG.CURRENCY,
+        currency: 'NGN',
         callback_url: callbackUrl,
         metadata: {
           order_id: orderId,
           provider_id: Number(provider_id),
-          product_id: PILOT_CONFIG.PRODUCT_ID,
-          duration_days: PILOT_CONFIG.DURATION_DAYS,
-          category: order.category,
-          state: order.state,
-          lga: order.lga
+          plan_id: targetPlan.id,
+          plan_name: targetPlan.name,
+          paystack_plan_code: isAnnual ? null : targetPlan.paystack_plan_code,
+          action: 'subscription_upgrade',
+          billing_interval: canonicalInterval,
+          duration_days: durationDays
         }
-      }, {
+      };
+
+      // Attach Paystack Recurring Plan Code if monthly has a configured plan code
+      if (targetPlan.paystack_plan_code && !isAnnual) {
+        initPayload.plan = targetPlan.paystack_plan_code;
+      }
+
+      const paystackRes = await postJson('https://api.paystack.co/transaction/initialize', initPayload, {
         'Authorization': `Bearer ${secretKey}`
       });
 
@@ -306,23 +278,32 @@ const paystackInitHandler = async (req, res) => {
           authorization_url: paystackRes.data.data.authorization_url,
           access_code: paystackRes.data.data.access_code,
           reference: reference,
+          plan: targetPlan,
+          paystack_plan_code: isAnnual ? null : targetPlan.paystack_plan_code,
           order: order
         });
       } else {
         return res.status(502).json({
-          error: 'Paystack transaction initialization failed',
+          error: 'Paystack subscription transaction initialization failed',
           details: paystackRes.data ? paystackRes.data.message : 'Unknown gateway error'
         });
       }
     }
 
-    // Standard test sandbox fallback if secret key is not set
+    // Fail-closed in live mode: never allow sandbox mock in live mode
+    if (isLiveMode) {
+      return res.status(500).json({ error: 'Server Configuration Error: Live mode requires active secret key.' });
+    }
+
+    // Test sandbox mode fallback
     const mockAuthUrl = `https://checkout.paystack.com/test-mock-${reference}`;
     return res.status(200).json({
       status: 'success',
       mode: 'TEST_SANDBOX',
       authorization_url: mockAuthUrl,
       reference: reference,
+      plan: targetPlan,
+      paystack_plan_code: isAnnual ? null : targetPlan.paystack_plan_code,
       order: order
     });
 
@@ -332,3 +313,4 @@ const paystackInitHandler = async (req, res) => {
 };
 
 module.exports = withSentry(paystackInitHandler, 'paystack_init');
+

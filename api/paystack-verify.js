@@ -107,6 +107,16 @@ const paystackVerifyHandler = async (req, res) => {
       return res.status(400).json({ error: 'Missing required reference' });
     }
 
+    // Reject retired legacy products unconditionally (live or sandbox)
+    const reqProduct = String(req.body?.product_id || req.body?.metadata?.product_id || '').toUpperCase();
+    if (reqProduct === 'PROMOTED_LISTING_STARTER' || reqProduct === 'TRUST_VERIFICATION_AUDIT' || reqProduct === 'PROMOTED_DISCOVERY') {
+      return res.status(400).json({
+        status: 'failed',
+        error: 'LEGACY_PRODUCT_DEPRECATED',
+        message: 'Legacy product not eligible for verification or fulfillment. PadiFix monetization is provider-subscription only.'
+      });
+    }
+
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     const isLiveMode = process.env.PAYMENT_LIVE_MODE === 'true';
 
@@ -161,74 +171,47 @@ const paystackVerifyHandler = async (req, res) => {
       const meta = tx.metadata || {};
       const targetProviderId = meta.provider_id || provider_id;
 
-      // Branch A: Subscription Transaction Verification
-      if (isSubscription || meta.action === 'subscription_upgrade' || meta.plan_id) {
-        const resolvedPlanKey = String(meta.plan_id || plan_id || '').toUpperCase();
-        let targetPlan = CANONICAL_PLANS[resolvedPlanKey];
-        if (!targetPlan) {
-          // Fallback resolution by exact amount (monthly or annual)
-          targetPlan = Object.values(CANONICAL_PLANS).find(p => p.amount_kobo === tx.amount || p.annual_amount_kobo === tx.amount);
-        }
-
-        if (!targetPlan) {
-          return res.status(400).json({
-            status: 'failed',
-            error: `Unrecognized subscription plan or amount: ${tx.amount} kobo`
-          });
-        }
-
-        const isAnnualTx = (tx.amount === targetPlan.annual_amount_kobo) || 
-                           (meta.billing_interval === 'annual') || 
-                           (String(interval).toLowerCase() === 'annual');
-        const expectedAmount = isAnnualTx ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
-
-        // Authoritative amount validation
-        if (tx.amount !== expectedAmount) {
-          return res.status(400).json({
-            status: 'failed',
-            error: `Transaction amount mismatch: received ${tx.amount}, expected ${expectedAmount} kobo for ${targetPlan.name}`
-          });
-        }
-
-        const durationDays = isAnnualTx ? 365 : 30;
-        const subDurationMs = durationDays * 24 * 60 * 60 * 1000;
-        const subExpiresAt = new Date(now + subDurationMs).toISOString();
-
-        return res.status(200).json({
-          status: 'success',
-          verified: true,
-          reference: tx.reference,
-          amount: tx.amount,
-          currency: tx.currency,
-          provider_id: targetProviderId,
-          plan_id: targetPlan.id,
-          plan_name: targetPlan.name,
-          subscription: {
-            status: 'active',
-            plan_id: targetPlan.id,
-            plan_name: targetPlan.name,
-            paystack_plan_code: targetPlan.paystack_plan_code,
-            effective_from: new Date(now).toISOString(),
-            effective_until: subExpiresAt,
-            contacts_allowance: targetPlan.contacts,
-            search_boost_percent: targetPlan.search_boost,
-            billing_interval: isAnnualTx ? 'annual' : 'monthly',
-            duration_days: durationDays
-          },
-          message: `Payment verified successfully. ${targetPlan.name} subscription is active.`
-        });
-      }
-
-      // Branch B: Pilot Promoted Listing Verification (₦2,000 / 200,000 kobo)
-      if (tx.amount !== 200000) {
+      // Reject retired legacy products unconditionally
+      const txProduct = String(meta.product_id || '').toUpperCase();
+      if (txProduct === 'PROMOTED_LISTING_STARTER' || txProduct === 'TRUST_VERIFICATION_AUDIT' || txProduct === 'PROMOTED_DISCOVERY') {
         return res.status(400).json({
           status: 'failed',
-          error: `Transaction amount mismatch: received ${tx.amount}, expected 200000 kobo`
+          error: 'LEGACY_PRODUCT_DEPRECATED',
+          message: 'Legacy product not eligible for verification or fulfillment. PadiFix monetization is provider-subscription only.'
         });
       }
 
-      const durationMs = 14 * 24 * 60 * 60 * 1000;
-      const expiresAt = new Date(now + durationMs).toISOString();
+      // Canonical Provider Subscription Verification
+      const resolvedPlanKey = String(meta.plan_id || plan_id || '').toUpperCase();
+      let targetPlan = CANONICAL_PLANS[resolvedPlanKey];
+      if (!targetPlan) {
+        // Fallback resolution by exact canonical amount (monthly or annual)
+        targetPlan = Object.values(CANONICAL_PLANS).find(p => p.amount_kobo === tx.amount || p.annual_amount_kobo === tx.amount);
+      }
+
+      if (!targetPlan) {
+        return res.status(400).json({
+          status: 'failed',
+          error: `Unrecognized subscription plan or amount: ${tx.amount} kobo. PadiFix monetization is provider-subscription only.`
+        });
+      }
+
+      const rawInterval = String(meta.billing_interval || interval || '').toLowerCase();
+      const isAnnualTx = (tx.amount === targetPlan.annual_amount_kobo) || 
+                         (rawInterval === 'annual' || rawInterval === 'annually' || rawInterval === 'yearly');
+      const expectedAmount = isAnnualTx ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
+
+      // Authoritative amount validation
+      if (tx.amount !== expectedAmount) {
+        return res.status(400).json({
+          status: 'failed',
+          error: `Transaction amount mismatch: received ${tx.amount}, expected ${expectedAmount} kobo for ${targetPlan.name}`
+        });
+      }
+
+      const durationDays = isAnnualTx ? 365 : 30;
+      const subDurationMs = durationDays * 24 * 60 * 60 * 1000;
+      const subExpiresAt = new Date(now + subDurationMs).toISOString();
 
       return res.status(200).json({
         status: 'success',
@@ -237,15 +220,21 @@ const paystackVerifyHandler = async (req, res) => {
         amount: tx.amount,
         currency: tx.currency,
         provider_id: targetProviderId,
-        product_id: 'PROMOTED_LISTING_STARTER',
-        entitlement: {
-          key: 'PROMOTED_LISTING',
+        plan_id: targetPlan.id,
+        plan_name: targetPlan.name,
+        subscription: {
           status: 'active',
+          plan_id: targetPlan.id,
+          plan_name: targetPlan.name,
+          paystack_plan_code: targetPlan.paystack_plan_code,
           effective_from: new Date(now).toISOString(),
-          effective_until: expiresAt,
-          duration_days: 14
+          effective_until: subExpiresAt,
+          contacts_allowance: targetPlan.contacts,
+          search_boost_percent: targetPlan.search_boost,
+          billing_interval: isAnnualTx ? 'annually' : 'monthly',
+          duration_days: durationDays
         },
-        message: 'Payment verified successfully. Promoted Category Placement is active.'
+        message: `Payment verified successfully. ${targetPlan.name} subscription is active.`
       });
     }
 
@@ -254,61 +243,38 @@ const paystackVerifyHandler = async (req, res) => {
       return res.status(500).json({ error: 'Server Configuration Error: Live mode requires active secret key.' });
     }
 
-    // Standard test sandbox verification response
-    if (isSubscription) {
-      const resolvedPlanKey = String(plan_id || 'PRO').toUpperCase();
-      const targetPlan = CANONICAL_PLANS[resolvedPlanKey] || CANONICAL_PLANS.PRO;
-      const isAnnualTx = String(interval).toLowerCase() === 'annual';
-      const durationDays = isAnnualTx ? 365 : 30;
-      const subDurationMs = durationDays * 24 * 60 * 60 * 1000;
-      const subExpiresAt = new Date(now + subDurationMs).toISOString();
-      const amountKobo = isAnnualTx ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
-
-      return res.status(200).json({
-        status: 'success',
-        mode: 'TEST_SANDBOX',
-        verified: true,
-        reference: reference,
-        amount: amountKobo,
-        currency: 'NGN',
-        provider_id: provider_id,
-        plan_id: targetPlan.id,
-        plan_name: targetPlan.name,
-        subscription: {
-          status: 'active',
-          plan_id: targetPlan.id,
-          plan_name: targetPlan.name,
-          effective_from: new Date(now).toISOString(),
-          effective_until: subExpiresAt,
-          contacts_allowance: targetPlan.contacts,
-          search_boost_percent: targetPlan.search_boost,
-          billing_interval: isAnnualTx ? 'annual' : 'monthly',
-          duration_days: durationDays
-        },
-        message: `Test sandbox payment verified. ${targetPlan.name} subscription is active.`
-      });
-    }
-
-    const durationMs = 14 * 24 * 60 * 60 * 1000; // 14 days
-    const expiresAt = new Date(now + durationMs).toISOString();
+    // Standard test sandbox verification response (Subscriptions Only)
+    const resolvedPlanKey = String(plan_id || 'BASIC').toUpperCase();
+    const targetPlan = CANONICAL_PLANS[resolvedPlanKey] || CANONICAL_PLANS.BASIC;
+    const rawInterval = String(interval || '').toLowerCase();
+    const isAnnualTx = rawInterval === 'annual' || rawInterval === 'annually' || rawInterval === 'yearly';
+    const durationDays = isAnnualTx ? 365 : 30;
+    const subDurationMs = durationDays * 24 * 60 * 60 * 1000;
+    const subExpiresAt = new Date(now + subDurationMs).toISOString();
+    const amountKobo = isAnnualTx ? targetPlan.annual_amount_kobo : targetPlan.amount_kobo;
 
     return res.status(200).json({
       status: 'success',
       mode: 'TEST_SANDBOX',
       verified: true,
       reference: reference,
-      amount: 200000,
+      amount: amountKobo,
       currency: 'NGN',
       provider_id: provider_id,
-      product_id: 'PROMOTED_LISTING_STARTER',
-      entitlement: {
-        key: 'PROMOTED_LISTING',
+      plan_id: targetPlan.id,
+      plan_name: targetPlan.name,
+      subscription: {
         status: 'active',
+        plan_id: targetPlan.id,
+        plan_name: targetPlan.name,
         effective_from: new Date(now).toISOString(),
-        effective_until: expiresAt,
-        duration_days: 14
+        effective_until: subExpiresAt,
+        contacts_allowance: targetPlan.contacts,
+        search_boost_percent: targetPlan.search_boost,
+        billing_interval: isAnnualTx ? 'annually' : 'monthly',
+        duration_days: durationDays
       },
-      message: 'Test sandbox payment verified. Promoted Category Placement is active.'
+      message: `Test sandbox payment verified. ${targetPlan.name} subscription is active.`
     });
 
   } catch (err) {

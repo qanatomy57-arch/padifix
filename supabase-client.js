@@ -5533,103 +5533,19 @@
       };
     },
 
-    async initializePayment(providerId, metadata = {}) {
-      if (this.isEmergencyLockdown() || !MONETIZATION_FEATURE_FLAGS.PROMOTED_PILOT_ENABLED) {
-        return {
-          status: 'error',
-          code: 'PAYMENTS_DISABLED',
-          message: 'Promoted pilot payments are currently disabled or in operational lockdown.'
-        };
-      }
-      const numId = Number(providerId) || 0;
-      if (!numId) throw new Error('Valid provider ID is required.');
-
-      const providers = getLocalStore(DB_STORE_KEY, []);
-      const provider = providers.find(p => p.id === numId) || {};
-      const cat = metadata.category || provider.category || 'artisan';
-      const st = metadata.state || provider.state || 'Delta';
-      const lga = metadata.lga || provider.lga || 'Warri South';
-
-      // Check eligibility if provider exists
-      if (provider.id) {
-        const elig = this.validateProviderEligibility(numId);
-        if (!elig.eligible) {
-          return {
-            status: 'error',
-            code: 'PROVIDER_NOT_ELIGIBLE',
-            message: elig.reason
-          };
-        }
-      }
-
-      // Check first-live controlled purchase limit (max 3) if in live mode
-      if (MONETIZATION_FEATURE_FLAGS.PAYMENT_LIVE_MODE) {
-        const liveCap = this.checkLiveTransactionCap();
-        if (liveCap.cap_reached) {
-          return {
-            status: 'error',
-            code: 'PILOT_LIVE_CAP_REACHED',
-            message: `First-live controlled purchase limit reached (${liveCap.max_cap}). Awaiting formal reconciliation review.`
-          };
-        }
-      }
-
-      // Check inventory limit before order creation
-      const inv = this.checkInventoryAvailability(cat, st, lga);
-      if (!inv.available) {
-        return {
-          status: 'error',
-          code: 'INVENTORY_LIMIT_REACHED',
-          message: `Maximum sponsored capacity (${inv.max_capacity}) reached for ${cat} in ${lga}, ${st}. Please try again when a slot expires.`
-        };
-      }
-
-      const timestamp = Date.now();
-      const randSuffix = Math.random().toString(36).substring(2, 7);
-      const reference = `lok_plt_${timestamp}_${randSuffix}`;
-      const orderId = `ord_${timestamp}_${numId}`;
-
-      const order = {
-        order_id: orderId,
-        provider_id: numId,
-        product_id: PILOT_PRODUCT_STARTER.id,
-        product_name: PILOT_PRODUCT_STARTER.name,
-        amount: PILOT_PRODUCT_STARTER.price_kobo,
-        amount_display: '₦2,000',
-        currency: PILOT_PRODUCT_STARTER.currency,
-        duration_days: PILOT_PRODUCT_STARTER.duration_days,
-        reference: reference,
-        category: cat,
-        state: st,
-        lga: lga,
-        status: 'payment_pending',
-        live_mode: MONETIZATION_FEATURE_FLAGS.PAYMENT_LIVE_MODE,
-        created_at: new Date().toISOString()
-      };
-
-      const ordersStore = getLocalStore(PILOT_ORDERS_STORAGE_KEY, []);
-      ordersStore.push(order);
-      setLocalStore(PILOT_ORDERS_STORAGE_KEY, ordersStore);
-
-      if (typeof LokatorTelemetry !== 'undefined' && LokatorTelemetry.trackEvent) {
-        LokatorTelemetry.trackEvent('monetization_checkout_started', {
-          product_id: PILOT_PRODUCT_STARTER.id,
-          provider_id: String(numId),
-          amount: 200000,
-          currency: 'NGN',
-          reference: reference
-        });
-      }
-
-      const authUrl = `https://checkout.paystack.com/test-mock-${reference}`;
+    initializeCheckout(providerId, metadata = {}) {
       return {
-        status: 'success',
-        authorization_url: authUrl,
-        reference: reference,
-        order_id: orderId,
-        amount: PILOT_PRODUCT_STARTER.price_kobo,
-        currency: PILOT_PRODUCT_STARTER.currency,
-        order: order
+        status: 'error',
+        code: 'LEGACY_PRODUCT_DEPRECATED',
+        message: 'Promoted listings have been permanently retired. PadiFix monetization is provider-subscription only.'
+      };
+    },
+
+    async initializePayment(providerId, metadata = {}) {
+      return {
+        status: 'error',
+        code: 'LEGACY_PRODUCT_DEPRECATED',
+        message: 'Promoted listings have been permanently retired. PadiFix monetization is provider-subscription only.'
       };
     },
 

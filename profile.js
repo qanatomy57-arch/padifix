@@ -214,28 +214,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
     heroVerifiedBadge.className = verState.badgeClass;
-    if (verState.icon === '🛡️') {
-      heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
-    } else if (verState.icon === '✓') {
-      heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
-    } else {
-      heroVerifiedBadge.innerHTML = `${verState.icon} ${escapeHtml(verState.publicBadgeText)}`;
-    }
-    heroVerifiedBadge.style.display = 'inline-flex';
-    heroVerifiedBadge.setAttribute('title', verState.description || 'View trust details');
-    heroVerifiedBadge.setAttribute('role', 'button');
-    heroVerifiedBadge.setAttribute('tabindex', '0');
-    heroVerifiedBadge.setAttribute('aria-label', `${verState.publicBadgeText}. Click to view verification details.`);
-    heroVerifiedBadge.style.cursor = 'pointer';
-
-    // Interactive Trust Badge Explainer Trigger
-    heroVerifiedBadge.onclick = () => showTrustBadgeExplainer(verState, provider);
-    heroVerifiedBadge.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        showTrustBadgeExplainer(verState, provider);
+    if (verState.badgeVisible && verState.publicBadgeText) {
+      if (verState.icon === '🛡️') {
+        heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
+      } else if (verState.icon === '✓') {
+        heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
+      } else {
+        heroVerifiedBadge.innerHTML = `${verState.icon} ${escapeHtml(verState.publicBadgeText)}`;
       }
-    };
+      heroVerifiedBadge.style.display = 'inline-flex';
+      heroVerifiedBadge.setAttribute('title', verState.description || 'View trust details');
+      heroVerifiedBadge.setAttribute('role', 'button');
+      heroVerifiedBadge.setAttribute('tabindex', '0');
+      heroVerifiedBadge.setAttribute('aria-label', `${verState.publicBadgeText}. Click to view verification details.`);
+      heroVerifiedBadge.style.cursor = 'pointer';
+
+      // Interactive Trust Badge Explainer Trigger
+      heroVerifiedBadge.onclick = () => showTrustBadgeExplainer(verState, provider);
+      heroVerifiedBadge.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          showTrustBadgeExplainer(verState, provider);
+        }
+      };
+    } else {
+      heroVerifiedBadge.style.display = 'none';
+      heroVerifiedBadge.onclick = null;
+      heroVerifiedBadge.onkeydown = null;
+    }
   }
 
   function showTrustBadgeExplainer(verState, prov) {

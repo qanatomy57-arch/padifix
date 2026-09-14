@@ -85,57 +85,11 @@
     ]
   };
 
-  // 3. AUTHORITATIVE MONETIZATION PRODUCTS & PRICING (NGN)
-  // Amounts are stored in both Nigerian Naira and Kobo (1 NGN = 100 Kobo)
-  const PRODUCTS = {
-    PROMOTED_LISTING_STARTER: {
-      id: 'PROMOTED_LISTING_STARTER',
-      name: 'Promoted Category Placement — Starter Pilot',
-      description: 'Priority sponsored visibility at top of category searches within your registered LGA.',
-      priceAmount: 2000,
-      priceKobo: 200000,
-      priceDisplay: '₦2,000',
-      billingInterval: '14_days',
-      durationDays: 14,
-      entitlementKey: 'PROMOTED_LISTING',
-      maxInventoryPerCluster: 2,
-      tier: 'STARTER',
-      priorityRank: 1,
-      allowedPilotMarkets: ['Delta', 'Edo', 'Lagos', 'Abuja']
-    },
+  // 3. AUTHORITATIVE MONETIZATION PRODUCTS & CATALOG
+  // In Phase 035, PadiFix monetization is strictly Provider Subscriptions only.
+  // Legacy transactional products (PROMOTED_LISTING_STARTER, TRUST_VERIFICATION_AUDIT) are PERMANENTLY RETIRED.
+  const PRODUCTS = Object.freeze({});
 
-    TRUST_VERIFICATION_AUDIT: {
-      id: 'TRUST_VERIFICATION_AUDIT',
-      name: 'Verified Trust Assurance & Compliance Review',
-      description: 'Dedicated identity & credential review (vNIN / CAC) by compliance officer with official verified badge.',
-      priceAmount: 3500,
-      priceKobo: 350000,
-      priceDisplay: '₦3,500',
-      billingInterval: 'one_time',
-      durationDays: null,
-      entitlementKey: 'VERIFIED_TRUST_BADGE',
-      maxInventoryPerCluster: null, // Unlimited (subject to passing strict verification criteria)
-      guaranteeApproval: false,
-      tier: 'COMPLIANCE',
-      priorityRank: 2,
-      noticeText: 'Audit review fee covers identity verification processing and does not guarantee badge approval without valid NIMC documentation.'
-    },
-
-    ANNUAL_PRO_SUITE: {
-      id: 'ANNUAL_PRO_SUITE',
-      name: 'PadiFix Pro Artisan Suite (Annual)',
-      description: 'Comprehensive business bundle: Verified Trust Badge, monthly discovery insights, and priority support.',
-      priceAmount: 18000,
-      priceKobo: 1800000,
-      priceDisplay: '₦18,000 / year',
-      billingInterval: 'annual',
-      durationDays: 365,
-      entitlementKey: 'PRO_SUITE',
-      maxInventoryPerCluster: null,
-      tier: 'PRO',
-      priorityRank: 3
-    }
-  };
 
   // 3.1 CANONICAL PROVIDER SUBSCRIPTION PLANS (PHASE 010)
   // Authoritative monthly subscription plans, prices, and entitlements
@@ -608,90 +562,95 @@
     return clean;
   }
 
-  // 8. CLUSTER CAPACITY GUARD
-  // Prevents over-commercialization by capping sponsored placements at max 2 per Category/State/LGA
+  // 8. CLUSTER CAPACITY GUARD (Legacy Promotions Retired)
+  // In Phase 035, sponsored listing products are retired in favor of canonical provider subscriptions
   function checkClusterCapacity(category, state, lga, activePromotions = []) {
-    const normCat = String(category || '').toLowerCase().trim();
-    const normState = String(state || '').toLowerCase().trim();
-    const normLga = String(lga || '').toLowerCase().trim();
-    const nowMs = Date.now();
-    const maxCapacity = PRODUCTS.PROMOTED_LISTING_STARTER.maxInventoryPerCluster;
-
-    const matchingActive = (activePromotions || []).filter(p => {
-      if (!p || p.status !== 'active') return false;
-      if (p.effective_until && new Date(p.effective_until).getTime() <= nowMs) return false;
-      if (p.expiresAt && new Date(p.expiresAt).getTime() <= nowMs) return false;
-      const pCat = String(p.category || '').toLowerCase().trim();
-      const pState = String(p.state || '').toLowerCase().trim();
-      const pLga = String(p.lga || '').toLowerCase().trim();
-      return pCat === normCat && pState === normState && pLga === normLga;
-    });
-
     return {
-      available: matchingActive.length < maxCapacity,
-      activeCount: matchingActive.length,
-      maxCapacity: maxCapacity,
-      remainingSlots: Math.max(0, maxCapacity - matchingActive.length),
+      available: false,
+      activeCount: 0,
+      maxCapacity: 0,
+      remainingSlots: 0,
+      retired: true,
+      message: 'Promoted listings are retired. PadiFix operates on canonical provider subscriptions.',
       category,
       state,
       lga
     };
   }
 
-  // 9. AUTHORITATIVE PROVIDER VERIFICATION LIFECYCLE & STATE RESOLVER
+  // 9. AUTHORITATIVE PROVIDER VERIFICATION LIFECYCLE & STATE RESOLVER (PHASE 035)
+  // Decouples persistent verification status (one-time qualification) from subscription lifecycle.
   const PROVIDER_VERIFICATION_STATES = {
-    NOT_ELIGIBLE: 'Requires Paid Subscription',
-    UNVERIFIED: 'Self-Reported Profile',
+    NOT_ELIGIBLE: 'Verification Unavailable',
+    UNVERIFIED: 'Verification Available',
     AVAILABLE: 'Verification Available',
     PENDING: 'Pending Compliance Review',
+    REJECTED: 'Verification Rejected',
     VERIFIED_PLATFORM: 'Platform Reviewed',
-    VERIFIED_NIN: 'National NIN Verified'
+    VERIFIED_NIN: 'National NIN Verified',
+    VERIFIED_INACTIVE: 'Verified (Subscription Inactive)'
   };
 
   const VERIFICATION_STATE_DETAILS = {
     NOT_ELIGIBLE: {
       key: 'NOT_ELIGIBLE',
-      label: 'Requires Paid Subscription',
+      label: 'Verification Unavailable',
+      stateLabel: 'Verification Unavailable',
       publicBadgeText: 'Self-Reported Profile',
       badgeClass: 'profile-verified-pill unverified',
       icon: '🔒',
       color: '#94A3B8',
-      description: 'Verified Trust Assurance is an entitlement included with Basic, Pro, and Premium plans. Free tier accounts must upgrade to unlock document submission.',
+      description: 'Subscribe to a paid plan (Basic, Pro, or Premium) to become eligible for verification.',
       isVerified: false,
       isNinVerified: false,
       isPending: false,
+      isEligible: false,
+      verification_status: 'never_verified',
+      verification_eligible: false,
+      badgeVisible: false,
       canRequestVerification: false,
       upgradeRequired: true
     },
     UNVERIFIED: {
-      key: 'UNVERIFIED',
-      label: 'Self-Reported Profile',
-      publicBadgeText: 'Self-Reported Profile',
-      badgeClass: 'profile-verified-pill unverified',
-      icon: 'ℹ️',
-      color: '#94A3B8',
-      description: 'Provider registered details independently. Information has not yet undergone official platform document review.',
-      isVerified: false,
-      isNinVerified: false,
-      isPending: false,
-      canRequestVerification: false
-    },
-    AVAILABLE: {
       key: 'AVAILABLE',
       label: 'Verification Available',
+      stateLabel: 'Verification Available',
       publicBadgeText: 'Self-Reported Profile',
       badgeClass: 'profile-verified-pill unverified',
       icon: 'ℹ️',
       color: '#3B82F6',
-      description: 'Profile has met foundational completeness requirements (>= 80%) and has an active paid subscription eligible to submit credentials for official verification.',
+      description: 'Complete verification to receive your verified badge.',
       isVerified: false,
       isNinVerified: false,
       isPending: false,
+      isEligible: true,
+      verification_status: 'never_verified',
+      verification_eligible: true,
+      badgeVisible: false,
+      canRequestVerification: true
+    },
+    AVAILABLE: {
+      key: 'AVAILABLE',
+      label: 'Verification Available',
+      stateLabel: 'Verification Available',
+      publicBadgeText: 'Self-Reported Profile',
+      badgeClass: 'profile-verified-pill unverified',
+      icon: 'ℹ️',
+      color: '#3B82F6',
+      description: 'Complete verification to receive your verified badge.',
+      isVerified: false,
+      isNinVerified: false,
+      isPending: false,
+      isEligible: true,
+      verification_status: 'never_verified',
+      verification_eligible: true,
+      badgeVisible: false,
       canRequestVerification: true
     },
     PENDING: {
       key: 'PENDING',
       label: 'Pending Compliance Review',
+      stateLabel: 'Under Review',
       publicBadgeText: 'Pending Verification',
       badgeClass: 'profile-verified-pill pending',
       icon: '⏳',
@@ -700,12 +659,35 @@
       isVerified: false,
       isNinVerified: false,
       isPending: true,
+      isEligible: true,
+      verification_status: 'pending',
+      verification_eligible: true,
+      badgeVisible: false,
       canRequestVerification: false
+    },
+    REJECTED: {
+      key: 'REJECTED',
+      label: 'Verification Needs Resubmission',
+      stateLabel: 'Verification Rejected',
+      publicBadgeText: 'Self-Reported Profile',
+      badgeClass: 'profile-verified-pill unverified',
+      icon: '⚠️',
+      color: '#EF4444',
+      description: 'Prior verification documents could not be validated. Please resubmit valid credentials.',
+      isVerified: false,
+      isNinVerified: false,
+      isPending: false,
+      isEligible: true,
+      verification_status: 'rejected',
+      verification_eligible: true,
+      badgeVisible: false,
+      canRequestVerification: true
     },
     VERIFIED_PLATFORM: {
       key: 'VERIFIED_PLATFORM',
-      label: 'Platform Reviewed',
-      publicBadgeText: 'Platform Reviewed',
+      label: 'Verified Artisan',
+      stateLabel: 'Verified ✓',
+      publicBadgeText: 'Verified Artisan',
       badgeClass: 'profile-verified-pill verified',
       icon: '✓',
       color: '#00A859',
@@ -713,12 +695,18 @@
       isVerified: true,
       isNinVerified: false,
       isPending: false,
+      isEligible: true,
+      subscriptionActive: true,
+      verification_status: 'verified',
+      verification_eligible: true,
+      badgeVisible: true,
       canRequestVerification: false
     },
     VERIFIED_NIN: {
       key: 'VERIFIED_NIN',
-      label: 'National NIN Verified',
-      publicBadgeText: 'National NIN Verified',
+      label: 'Verified Artisan',
+      stateLabel: 'Verified ✓',
+      publicBadgeText: 'Verified Artisan',
       badgeClass: 'profile-verified-pill verified',
       icon: '🛡️',
       color: '#00A859',
@@ -726,14 +714,72 @@
       isVerified: true,
       isNinVerified: true,
       isPending: false,
+      isEligible: true,
+      subscriptionActive: true,
+      verification_status: 'verified',
+      verification_eligible: true,
+      badgeVisible: true,
+      canRequestVerification: false
+    },
+    VERIFIED_INACTIVE: {
+      key: 'VERIFIED_INACTIVE',
+      label: 'Verified ✓ (Subscription Inactive)',
+      stateLabel: 'Verified (Subscription Inactive)',
+      publicBadgeText: '',
+      badgeClass: 'profile-verified-pill unverified',
+      icon: '✓',
+      color: '#64748B',
+      description: 'Artisan identity is permanently recorded on account. Badge visibility is subscription-dependent and will automatically reappear upon active paid subscription renewal.',
+      isVerified: true,
+      isNinVerified: false,
+      isPending: false,
+      isEligible: false,
+      subscriptionActive: false,
+      verification_status: 'verified',
+      verification_eligible: false,
+      badgeVisible: false,
       canRequestVerification: false
     }
   };
 
   /**
-   * Centrally resolves the authoritative verification state for any provider.
-   * Eliminates ad-hoc or contradictory verification logic across pages.
-   * Free providers are strictly NOT_ELIGIBLE to submit verification documents.
+   * Evaluates whether a provider currently holds an active, non-expired paid subscription.
+   */
+  function isProviderSubscriptionActive(provider) {
+    if (!provider || typeof provider !== 'object') return false;
+    const rawPlan = String(provider.subscription_plan || provider.plan_id || provider.plan || 'FREE').toUpperCase();
+    const isPaidPlan = ['BASIC', 'PRO', 'PREMIUM'].includes(rawPlan);
+    if (!isPaidPlan) return false;
+
+    const rawStatus = String(provider.subscription_status || provider.subscriptionStatus || provider.status || 'active').toLowerCase();
+    const inactiveStatuses = ['expired', 'cancelled', 'canceled', 'payment_failed', 'inactive'];
+    if (inactiveStatuses.includes(rawStatus)) {
+      return false;
+    }
+
+    if (provider.subscription_expires_at || provider.current_period_end) {
+      const expiry = new Date(provider.subscription_expires_at || provider.current_period_end).getTime();
+      if (!isNaN(expiry) && expiry < Date.now()) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Centrally resolves the authoritative verification state for any provider (Phase 035).
+   *
+   * Enforces Canonical Verification & Monetization Separation:
+   * 1. Every paid provider plan (Basic, Pro, Premium) includes eligibility for one-time verification.
+   * 2. Successful verification is permanently recorded on the provider's account (never erased).
+   * 3. Badge visibility is subscription-dependent:
+   *    - Basic displays the standard "Verified Artisan" badge
+   *    - Pro displays the "Pro Verified Artisan" badge
+   *    - Premium displays the "Premium Verified Artisan" badge
+   *    - Free providers display no verification badge
+   * 4. When a subscription expires or is cancelled, the badge disappears, but successful verification record remains permanently.
+   * 5. Upon resubscription, the appropriate badge automatically returns based on the new plan without requiring re-verification.
    */
   function resolveVerificationState(provider) {
     if (!provider || typeof provider !== 'object') {
@@ -745,9 +791,6 @@
       provider.ninVerified === true ||
       (provider.verification_type === 'vnin' && (provider.is_verified || provider.isVerified || provider.verification_status === 'approved'))
     );
-    if (isNin) {
-      return Object.assign({}, VERIFICATION_STATE_DETAILS.VERIFIED_NIN);
-    }
 
     const isPlat = Boolean(
       provider.is_verified === true ||
@@ -755,36 +798,121 @@
       provider.verification_status === 'verified_platform' ||
       provider.verification_status === 'approved'
     );
-    if (isPlat) {
-      return Object.assign({}, VERIFICATION_STATE_DETAILS.VERIFIED_PLATFORM);
+
+    const isVerified = isNin || isPlat;
+    const subActive = isProviderSubscriptionActive(provider);
+    const rawPlan = String(provider.subscription_plan || provider.plan_id || provider.plan || 'FREE').toUpperCase();
+    const isPaidPlan = ['BASIC', 'PRO', 'PREMIUM'].includes(rawPlan);
+
+    // Rule: Once verified, the provider remains permanently verified across all subscription states
+    if (isVerified) {
+      if (subActive && isPaidPlan) {
+        // Active paid subscriber: appropriate badge automatically displayed
+        let badgeText = 'Verified Artisan';
+        let badgeTier = 'BASIC';
+        if (rawPlan === 'PREMIUM') {
+          badgeText = 'Premium Verified Artisan';
+          badgeTier = 'PREMIUM';
+        } else if (rawPlan === 'PRO') {
+          badgeText = 'Pro Verified Artisan';
+          badgeTier = 'PRO';
+        } else {
+          badgeText = 'Verified Artisan';
+          badgeTier = 'BASIC';
+        }
+
+        const base = isNin ? VERIFICATION_STATE_DETAILS.VERIFIED_NIN : VERIFICATION_STATE_DETAILS.VERIFIED_PLATFORM;
+        return Object.assign({}, base, {
+          key: isNin ? 'VERIFIED_NIN' : 'VERIFIED_PLATFORM',
+          isVerified: true,
+          isNinVerified: isNin,
+          verification_status: 'verified',
+          verification_eligible: true,
+          isEligible: true,
+          subscriptionActive: true,
+          badgeVisible: true,
+          badgeTier: badgeTier,
+          publicBadgeText: badgeText,
+          label: badgeText,
+          stateLabel: 'Verified ✓',
+          badgeClass: 'profile-verified-pill verified',
+          icon: isNin ? '🛡️' : '✓',
+          canRequestVerification: false
+        });
+      } else {
+        // Expired, cancelled, past-due, or Free provider:
+        // Verification status remains permanently on account, but badge disappears!
+        return Object.assign({}, VERIFICATION_STATE_DETAILS.VERIFIED_INACTIVE, {
+          key: 'VERIFIED_INACTIVE',
+          isVerified: true,
+          isNinVerified: isNin,
+          publicBadgeText: '',
+          label: 'Verified ✓ (Subscription Inactive)',
+          stateLabel: 'Verified (Inactive)',
+          verification_status: 'verified',
+          verification_eligible: false,
+          isEligible: false,
+          subscriptionActive: false,
+          badgeVisible: false,
+          canRequestVerification: false
+        });
+      }
     }
 
+    // Provider has NOT yet successfully verified
     const isPending = Boolean(
       provider.verification_status === 'pending' ||
       provider.verificationStatus === 'pending' ||
       provider.verification_requested === true
     );
     if (isPending) {
-      return Object.assign({}, VERIFICATION_STATE_DETAILS.PENDING);
+      return Object.assign({}, VERIFICATION_STATE_DETAILS.PENDING, {
+        isVerified: false,
+        verification_status: 'pending',
+        verification_eligible: subActive,
+        isEligible: subActive,
+        badgeVisible: false,
+        canRequestVerification: false
+      });
     }
 
-    // Phase 012 Rule: Paid subscription unlocks verification eligibility
-    const rawPlan = String(provider.subscription_plan || provider.plan_id || provider.plan || 'FREE').toUpperCase();
-    const isPaidSubscriber = ['BASIC', 'PRO', 'PREMIUM'].includes(rawPlan);
-
-    if (!isPaidSubscriber) {
-      return Object.assign({}, VERIFICATION_STATE_DETAILS.NOT_ELIGIBLE);
+    const isRejected = Boolean(
+      provider.verification_status === 'rejected' ||
+      provider.verificationStatus === 'rejected'
+    );
+    if (isRejected) {
+      return Object.assign({}, VERIFICATION_STATE_DETAILS.REJECTED, {
+        isVerified: false,
+        verification_status: 'rejected',
+        verification_eligible: subActive,
+        isEligible: subActive,
+        badgeVisible: false,
+        canRequestVerification: subActive
+      });
     }
 
-    const completeness = calculateProfileCompleteness(provider);
-    if (completeness.isComplete || completeness.score >= 80) {
-      return Object.assign({}, VERIFICATION_STATE_DETAILS.AVAILABLE);
+    // Provider has never verified: Eligibility strictly requires an active paid subscription
+    if (!subActive) {
+      return Object.assign({}, VERIFICATION_STATE_DETAILS.NOT_ELIGIBLE, {
+        isVerified: false,
+        verification_status: 'never_verified',
+        verification_eligible: false,
+        isEligible: false,
+        badgeVisible: false,
+        canRequestVerification: false,
+        upgradeRequired: true
+      });
     }
 
-    // Paid subscriber but profile incomplete
-    const unverifiedState = Object.assign({}, VERIFICATION_STATE_DETAILS.UNVERIFIED);
-    unverifiedState.canRequestVerification = true;
-    return unverifiedState;
+    // Active paid subscriber, never verified: eligible to verify
+    return Object.assign({}, VERIFICATION_STATE_DETAILS.AVAILABLE, {
+      isVerified: false,
+      verification_status: 'never_verified',
+      verification_eligible: true,
+      isEligible: true,
+      badgeVisible: false,
+      canRequestVerification: true
+    });
   }
 
   /**

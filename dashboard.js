@@ -3285,6 +3285,69 @@ document.addEventListener('DOMContentLoaded', async () => {
         : `${usage.remaining_contacts} contacts left`;
     }
 
+    // Monthly / Annual Billing Interval State & Handler (Phase 035)
+    let currentSelectedInterval = 'monthly'; // 'monthly' | 'annually'
+    const btnMonthly = document.getElementById('billing-toggle-monthly');
+    const btnYearly = document.getElementById('billing-toggle-yearly');
+
+    function updatePlanCardPricingDisplay(isYearly) {
+      const basicPriceEl = document.querySelector('#plan-card-BASIC .sub-plan-price');
+      const proPriceEl = document.querySelector('#plan-card-PRO .sub-plan-price');
+      const premiumPriceEl = document.querySelector('#plan-card-PREMIUM .sub-plan-price');
+
+      if (basicPriceEl) {
+        basicPriceEl.innerHTML = isYearly
+          ? `₦55,000 <span style="font-size: 11px; font-weight: 400; color: var(--dash-muted);">/ year</span>`
+          : `₦5,500 <span style="font-size: 11px; font-weight: 400; color: var(--dash-muted);">/ month</span>`;
+      }
+      if (proPriceEl) {
+        proPriceEl.innerHTML = isYearly
+          ? `₦110,000 <span style="font-size: 11px; font-weight: 400; color: var(--dash-muted);">/ year</span>`
+          : `₦11,000 <span style="font-size: 11px; font-weight: 400; color: var(--dash-muted);">/ month</span>`;
+      }
+      if (premiumPriceEl) {
+        premiumPriceEl.innerHTML = isYearly
+          ? `₦220,000 <span style="font-size: 11px; font-weight: 400; color: var(--dash-muted);">/ year</span>`
+          : `₦22,000 <span style="font-size: 11px; font-weight: 400; color: var(--dash-muted);">/ month</span>`;
+      }
+
+      // Update Plan Selection Buttons Text
+      document.querySelectorAll('.btn-select-plan').forEach(btn => {
+        const pId = btn.getAttribute('data-plan');
+        const isCurrent = (pId === sub.plan_id);
+        if (isCurrent) {
+          btn.textContent = '✓ Current Plan';
+        } else if (pId === 'FREE') {
+          btn.textContent = 'Downgrade to Free';
+        } else {
+          const targetPlan = plans[pId];
+          const displayPrice = isYearly
+            ? (targetPlan.annual_price_amount_display || `₦${(targetPlan.price_ngn * 10).toLocaleString()}/yr`)
+            : `₦${targetPlan.price_ngn.toLocaleString()}/mo`;
+          btn.textContent = `Upgrade to ${targetPlan ? targetPlan.name : pId} (${displayPrice})`;
+        }
+      });
+    }
+
+    if (btnMonthly && btnYearly) {
+      btnMonthly.onclick = () => {
+        currentSelectedInterval = 'monthly';
+        btnMonthly.style.background = '#00A859';
+        btnMonthly.style.color = '#fff';
+        btnYearly.style.background = 'transparent';
+        btnYearly.style.color = 'var(--dash-muted)';
+        updatePlanCardPricingDisplay(false);
+      };
+      btnYearly.onclick = () => {
+        currentSelectedInterval = 'annually';
+        btnYearly.style.background = '#00A859';
+        btnYearly.style.color = '#fff';
+        btnMonthly.style.background = 'transparent';
+        btnMonthly.style.color = 'var(--dash-muted)';
+        updatePlanCardPricingDisplay(true);
+      };
+    }
+
     // Plan Selection Buttons
     document.querySelectorAll('.btn-select-plan').forEach(btn => {
       const pId = btn.getAttribute('data-plan');
@@ -3303,7 +3366,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           btn.textContent = 'Downgrade to Free';
         } else {
           const targetPlan = plans[pId];
-          btn.textContent = `Upgrade to ${targetPlan ? targetPlan.name : pId} (₦${targetPlan ? targetPlan.price_ngn.toLocaleString() : 0})`;
+          btn.textContent = `Upgrade to ${targetPlan ? targetPlan.name : pId} (₦${targetPlan ? targetPlan.price_ngn.toLocaleString() : 0}/mo)`;
         }
 
         btn.onclick = async () => {
@@ -3322,9 +3385,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
 
           // Paid plan upgrade flow via Paystack
+          const isYearly = currentSelectedInterval === 'annually';
+          const priceDisplay = isYearly
+            ? `₦${(targetPlan.price_ngn * 10).toLocaleString()} / year (2 months free)`
+            : `₦${targetPlan.price_ngn.toLocaleString()} / month`;
+
           const confirmPay = confirm(
             `💳 UPGRADE TO PADIFIX ${targetPlan.name.toUpperCase()} PLAN\n\n` +
-            `Price: ₦${targetPlan.price_ngn.toLocaleString()} / month\n` +
+            `Billing: ${isYearly ? 'Annual / Yearly' : 'Monthly'}\n` +
+            `Price: ${priceDisplay}\n` +
             `Allowance: ${targetPlan.contact_allowance === Infinity ? 'Unlimited (Fair Use)' : targetPlan.contact_allowance + ' contacts/month'}\n\n` +
             `Click OK to proceed to Paystack checkout.`
           );
@@ -3335,7 +3404,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           btn.textContent = 'Processing...';
 
           try {
-            // Attempt API call to paystack-init or test simulator
+            // Server is authoritative: we only pass plan_id and interval. Amount/currency are resolved server-side.
             let initRes;
             try {
               const res = await fetch('/api/paystack-init', {
@@ -3344,6 +3413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({
                   provider_id: providerId,
                   plan_id: pId,
+                  interval: currentSelectedInterval,
                   email: currentProvider.email || `artisan${providerId}@padifix.ng`
                 })
               });
@@ -3354,18 +3424,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                   window.location.href = initRes.authorization_url;
                   return;
                 }
+              } else {
+                const errData = await res.json().catch(() => ({}));
+                console.warn('Paystack init API notice:', errData.message || res.statusText);
               }
             } catch (netErr) {
               console.warn('API init fetch notice, using local test simulator:', netErr.message);
             }
 
             // Test Mode Simulation fallback if serverless API isn't live or test keys
-            const ref = (initRes && initRes.data && initRes.data.reference) ? initRes.data.reference : `sub_pay_${providerId}_${Date.now()}`;
+            const ref = (initRes && initRes.reference) || (initRes && initRes.data && initRes.data.reference) || `sub_pay_${providerId}_${Date.now()}`;
             
             if (typeof LokatorDB !== 'undefined' && LokatorDB.subscriptions) {
               LokatorDB.subscriptions.activateSubscription(providerId, pId, {
                 reference: ref,
-                customer_code: `CUS_${providerId}`
+                customer_code: `CUS_${providerId}`,
+                billing_interval: currentSelectedInterval
               });
             }
 
@@ -3373,7 +3447,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               LokatorTelemetry.trackEvent('subscription_activated', {
                 provider_id: providerId,
                 plan_id: pId,
-                amount_ngn: targetPlan.price_ngn,
+                billing_interval: currentSelectedInterval,
                 reference: ref
               });
             }
@@ -3513,14 +3587,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     const freeNotice = document.getElementById('dash-ver-free-tier-notice');
     const rejectedNotice = document.getElementById('dash-ver-rejected-notice');
     const unavailableNotice = document.getElementById('dash-ver-unavailable-notice');
+    const inactiveNotice = document.getElementById('dash-ver-inactive-notice');
     const rejectedText = document.getElementById('dash-ver-rejected-text');
     const resubmitBtn = document.getElementById('btn-resubmit-verification');
 
-    // Manage Status Notice Banners & Form Usability
+    // Manage Status Notice Banners & Form Usability (Phase 035 Canonical States)
     const isRejected = (verState.key === 'REJECTED' || currentProvider.verification_status === 'rejected' || currentProvider.verificationStatus === 'rejected');
     const isFreeIneligible = (verState.key === 'NOT_ELIGIBLE' || verState.upgradeRequired || ((currentProvider.plan_id || currentProvider.plan || 'FREE').toUpperCase() === 'FREE'));
 
-    if (isFreeIneligible && !verState.isVerified) {
+    if (verState.isVerified) {
+      // State 3 & 4: Successfully Verified Provider (Persistent across all subscription states)
+      if (freeNotice) freeNotice.style.display = 'none';
+      if (pendingNotice) pendingNotice.style.display = 'none';
+      if (rejectedNotice) rejectedNotice.style.display = 'none';
+
+      if (verState.subscriptionActive === false) {
+        // State 4: Verified + Subscription Expired/Cancelled/Inactive
+        if (approvedNotice) approvedNotice.style.display = 'none';
+        if (inactiveNotice) inactiveNotice.style.display = 'block';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Verified (Subscription Inactive)';
+        }
+      } else {
+        // State 3: Verified + Subscription Active
+        if (inactiveNotice) inactiveNotice.style.display = 'none';
+        if (approvedNotice) approvedNotice.style.display = 'block';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Profile Verified';
+        }
+      }
+      if (formReqVer) {
+        formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
+      }
+    } else if (isFreeIneligible) {
+      // State 1: Free Provider + Never Verified (Verification Unavailable)
+      if (inactiveNotice) inactiveNotice.style.display = 'none';
       if (freeNotice) freeNotice.style.display = 'block';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'none';
@@ -3533,6 +3636,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
       }
     } else if (verState.isPending) {
+      // Verification Under Review
+      if (inactiveNotice) inactiveNotice.style.display = 'none';
       if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'block';
       if (approvedNotice) approvedNotice.style.display = 'none';
@@ -3544,19 +3649,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (formReqVer) {
         formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
       }
-    } else if (verState.isVerified) {
-      if (freeNotice) freeNotice.style.display = 'none';
-      if (pendingNotice) pendingNotice.style.display = 'none';
-      if (approvedNotice) approvedNotice.style.display = 'block';
-      if (rejectedNotice) rejectedNotice.style.display = 'none';
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Profile Verified';
-      }
-      if (formReqVer) {
-        formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
-      }
     } else if (isRejected) {
+      // Verification Rejected
+      if (inactiveNotice) inactiveNotice.style.display = 'none';
       if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'none';
@@ -3580,6 +3675,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
       }
     } else {
+      // State 2: Paid Subscriber + Never Verified (Verification Available)
+      if (inactiveNotice) inactiveNotice.style.display = 'none';
       if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'none';
