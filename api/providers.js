@@ -347,8 +347,16 @@ async function handlePortfolioPost(req, res) {
       submitted_at: now
     };
 
+    let isResubmission = false;
     if (req._mockSubmissions && Array.isArray(req._mockSubmissions)) {
+      isResubmission = req._mockSubmissions.some(s => Number(s.provider_id) === Number(callerProviderId) && s.status === 'rejected');
       req._mockSubmissions.push(submissionRecord);
+      if (req._mockProvider) {
+        req._mockProvider.verification_status = 'pending';
+        req._mockProvider.verification_submitted_at = now;
+        req._mockProvider.verification_rejection_reason = null;
+        req._mockProvider.verification_rejection_notes = null;
+      }
     } else {
       try {
         await fetch(`${SUPABASE_URL}/rest/v1/verification_submissions`, {
@@ -371,7 +379,9 @@ async function handlePortfolioPost(req, res) {
           },
           body: JSON.stringify({
             verification_status: 'pending',
-            verification_submitted_at: now
+            verification_submitted_at: now,
+            verification_rejection_reason: null,
+            verification_rejection_notes: null
           })
         });
       } catch (dbErr) {
@@ -382,6 +392,7 @@ async function handlePortfolioPost(req, res) {
     return res.status(201).json({
       status: 'success',
       message: 'Verification submission received. Under review by compliance desk.',
+      is_resubmission: isResubmission,
       submission: {
         id: submissionId,
         provider_id: callerProviderId,

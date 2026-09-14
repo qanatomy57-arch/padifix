@@ -383,6 +383,44 @@ document.addEventListener('DOMContentLoaded', async () => {
           img.style.display = 'inline-block';
         }
       }
+
+      // Phase 037: Fetch and render review history
+      const histList = document.getElementById('doc-inspect-history-list');
+      const histCount = document.getElementById('doc-inspect-history-count');
+      try {
+        const histRes = await fetch('/api/admin-compliance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-key': adminKey,
+            'Authorization': `Bearer ${adminKey}`
+          },
+          body: JSON.stringify({
+            action: 'get_submission_history',
+            provider_id: Number(provId)
+          })
+        });
+        if (histRes.ok) {
+          const histData = await histRes.json();
+          const items = (histData.history || []).filter(h => h.file_path !== filePath);
+          if (histCount) histCount.textContent = `${items.length} past audit${items.length === 1 ? '' : 's'}`;
+          if (histList) {
+            if (items.length === 0) {
+              histList.innerHTML = '<span style="color: var(--fg-muted);">First-time submission. No previous compliance audits on record.</span>';
+            } else {
+              histList.innerHTML = items.map(item => {
+                const dateStr = item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : 'Previous';
+                const statusColor = item.status === 'approved' ? '#10B981' : item.status === 'rejected' ? '#EF4444' : '#F59E0B';
+                const reasonInfo = item.rejection_reason ? ` • <strong>${item.rejection_reason}</strong>` : '';
+                const notesInfo = item.rejection_notes ? ` — <em>"${item.rejection_notes}"</em>` : '';
+                return `<div style="padding: 4px 0; border-bottom: 1px dashed rgba(0,0,0,0.1);"><span style="color: ${statusColor}; font-weight: 700; text-transform: uppercase; font-size: 11px;">[${item.status}]</span> <span style="color: var(--fg);">${dateStr}: ${item.document_type || 'Document'}${reasonInfo}${notesInfo}</span></div>`;
+              }).join('');
+            }
+          }
+        }
+      } catch (histErr) {
+        if (histList) histList.textContent = 'History unavailable.';
+      }
     } catch (err) {
       if (loading) {
         loading.textContent = 'Notice: Document preview unavailable (' + err.message + ')';

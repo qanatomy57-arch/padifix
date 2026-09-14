@@ -3591,9 +3591,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rejectedText = document.getElementById('dash-ver-rejected-text');
     const resubmitBtn = document.getElementById('btn-resubmit-verification');
 
-    // Manage Status Notice Banners & Form Usability (Phase 035 Canonical States)
+    // Manage Status Notice Banners & Form Usability (Phase 035/037 Canonical States)
+    const rawPlan = String(currentProvider.subscription_plan || currentProvider.plan_id || currentProvider.plan || 'FREE').toUpperCase();
+    const isPaidPlan = ['BASIC', 'PRO', 'PREMIUM'].includes(rawPlan);
     const isRejected = (verState.key === 'REJECTED' || currentProvider.verification_status === 'rejected' || currentProvider.verificationStatus === 'rejected');
-    const isFreeIneligible = (verState.key === 'NOT_ELIGIBLE' || verState.upgradeRequired || ((currentProvider.plan_id || currentProvider.plan || 'FREE').toUpperCase() === 'FREE'));
+    const isFreeIneligible = !isPaidPlan || (verState.key === 'NOT_ELIGIBLE' && !isRejected) || verState.upgradeRequired;
 
     if (verState.isVerified) {
       // State 3 & 4: Successfully Verified Provider (Persistent across all subscription states)
@@ -3650,28 +3652,50 @@ document.addEventListener('DOMContentLoaded', async () => {
         formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = true);
       }
     } else if (isRejected) {
-      // Verification Rejected
+      // Verification Rejected (Phase 037 In-App Correction & Resubmission)
       if (inactiveNotice) inactiveNotice.style.display = 'none';
       if (freeNotice) freeNotice.style.display = 'none';
       if (pendingNotice) pendingNotice.style.display = 'none';
       if (approvedNotice) approvedNotice.style.display = 'none';
       if (rejectedNotice) {
         rejectedNotice.style.display = 'block';
-        if (rejectedText && currentProvider.rejection_reason) {
-          rejectedText.textContent = currentProvider.rejection_reason;
+        const rawReason = currentProvider.verification_rejection_reason || currentProvider.rejection_reason || 'other';
+        const rawNotes = currentProvider.verification_rejection_notes || currentProvider.rejection_notes || '';
+        
+        const CANONICAL_REJECTION_TITLES = {
+          'blurry_image': 'Blurry or Unreadable Image',
+          'expired_document': 'Expired Identification Document',
+          'name_mismatch': 'Name Does Not Match Account',
+          'incomplete_document': 'Incomplete Document / Missing Back Page',
+          'fraud_suspected': 'Suspected Fraudulent / Altered Document',
+          'other': 'Compliance Policy Requirement'
+        };
+        const reasonTitle = CANONICAL_REJECTION_TITLES[rawReason] || 'Compliance Review Requirement';
+
+        const badgeEl = document.getElementById('dash-ver-rejected-badge');
+        if (badgeEl) badgeEl.textContent = reasonTitle;
+
+        if (rejectedText) {
+          rejectedText.textContent = `Your prior verification could not be validated due to: ${reasonTitle}. Please review the compliance notes and submit a corrected document.`;
+        }
+
+        const notesEl = document.getElementById('dash-ver-rejected-notes');
+        if (notesEl) {
+          notesEl.textContent = rawNotes ? `"${rawNotes}"` : 'No specific feedback notes recorded. Please ensure your document is fully visible, valid, and authentic.';
         }
       }
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Resubmit for Review';
+        submitBtn.textContent = 'Submit Corrected Documents';
       }
       if (formReqVer) {
         formReqVer.querySelectorAll('input, select').forEach(el => el.disabled = false);
       }
       if (resubmitBtn) {
         resubmitBtn.onclick = () => {
-          const refInput = document.getElementById('ver-doc-ref');
-          if (refInput) { refInput.focus(); refInput.select(); }
+          if (formReqVer) formReqVer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const fileInput = document.getElementById('ver-doc-file');
+          if (fileInput) fileInput.focus();
         };
       }
     } else {

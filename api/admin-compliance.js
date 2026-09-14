@@ -30,6 +30,7 @@
 
 const crypto = require('crypto');
 const ResendEmailService = require('../lib/resend-email-service');
+const { dispatchVerificationApprovedSms, dispatchVerificationRejectedSms } = require('../lib/artisan-notification-service');
 const { withSentry } = require('../lib/sentry-server');
 
 // -------------------------------------------------------------
@@ -746,6 +747,41 @@ const adminComplianceHandler = async (req, res) => {
         });
       }
 
+      // Action 0d: Get Submission History for a Provider (Phase 037)
+      if (action === 'get_submission_history') {
+        const provId = Number(body.provider_id || req.query?.provider_id);
+        if (!provId) {
+          return res.status(400).json({ error: 'Missing required provider_id' });
+        }
+
+        let history = [];
+        if (process.env.SUPABASE_SERVICE_ROLE_KEY && TARGET_DEFAULT_URL) {
+          try {
+            const resp = await fetch(`${TARGET_DEFAULT_URL}/rest/v1/verification_submissions?provider_id=eq.${provId}&order=submitted_at.desc&select=id,document_type,document_number_masked,status,rejection_reason,rejection_notes,submitted_at,reviewed_at,reviewed_by`, {
+              headers: {
+                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+              }
+            });
+            if (resp.ok) {
+              history = await resp.json();
+            }
+          } catch (e) {}
+        }
+
+        if (history.length === 0 && inMemoryStore && inMemoryStore.verifications) {
+          history = Array.from(inMemoryStore.verifications.values())
+            .filter(v => Number(v.provider_id) === provId)
+            .sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0));
+        }
+
+        return res.status(200).json({
+          status: 'success',
+          provider_id: provId,
+          history
+        });
+      }
+
       // Action 1: Approve Verification
       if (action === 'approve_verification') {
         const provId = Number(body.provider_id);
@@ -876,6 +912,17 @@ const adminComplianceHandler = async (req, res) => {
           providerName: providerName,
           badgeType: 'Verified Pro'
         }).catch(err => console.error('[ComplianceEmailError:Approve]', err.message));
+
+        // Dispatch Termii Notification SMS (Non-blocking & failure-isolated)
+        const provRecord = inMemoryStore.providers.get(effectiveProvId) || {};
+        const recipientPhone = reqRecord.phone || provRecord.phone || null;
+        if (recipientPhone) {
+          dispatchVerificationApprovedSms({
+            phone: recipientPhone,
+            providerName: providerName,
+            providerId: effectiveProvId
+          }).catch(err => console.error('[ComplianceSmsError:Approve]', err.message));
+        }
 
         return res.status(200).json({
           status: 'success',
@@ -1033,6 +1080,19 @@ const adminComplianceHandler = async (req, res) => {
           reason: reason,
           docType: docType
         }).catch(err => console.error('[ComplianceEmailError:Reject]', err.message));
+
+        // Dispatch Termii Notification SMS (Non-blocking & failure-isolated)
+        const provRecord = inMemoryStore.providers.get(effectiveProvId) || {};
+        const recipientPhone = reqRecord.phone || provRecord.phone || null;
+        if (recipientPhone) {
+          dispatchVerificationRejectedSms({
+            phone: recipientPhone,
+            providerName: providerName,
+            reasonCode: reasonCode,
+            reasonNotes: reason,
+            providerId: effectiveProvId
+          }).catch(err => console.error('[ComplianceSmsError:Reject]', err.message));
+        }
 
         return res.status(200).json({
           status: 'success',

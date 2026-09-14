@@ -1173,13 +1173,22 @@
               </a>
             </div>
 
-            <div id="dash-ver-rejected-notice" class="callout-red" style="display: none; margin-bottom: 16px;">
-              <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">⚠️ Verification Needs Resubmission</div>
+            <div id="dash-ver-rejected-notice" class="callout-red" style="display: none; margin-bottom: 16px; border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.08); padding: 16px; border-radius: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <div style="font-weight: 800; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                  <span>⚠️</span> Action Required: Verification Update Needed
+                </div>
+                <span id="dash-ver-rejected-badge" style="background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; text-transform: uppercase;">Review Required</span>
+              </div>
               <p style="font-size: 13px; margin: 0 0 8px 0; line-height: 1.4;" id="dash-ver-rejected-text">
-                Your prior verification documents could not be validated. Please double-check your credentials and resubmit for compliance review.
+                Your prior verification documents could not be validated. Please review the officer feedback below and resubmit clear credentials.
               </p>
-              <button type="button" id="btn-resubmit-verification" class="btn btn-outline" style="padding: 4px 10px; font-size: 12px; border-color: currentColor; color: inherit; font-weight: 700;">
-                Resubmit Documents
+              <div id="dash-ver-rejected-feedback-box" style="background: rgba(0,0,0,0.06); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px; border-left: 3px solid #ef4444;">
+                <div style="font-weight: 700; margin-bottom: 4px; color: var(--dash-text, inherit);">Compliance Officer Feedback:</div>
+                <div id="dash-ver-rejected-notes" style="font-style: italic; color: var(--dash-muted, #666);">No specific feedback provided.</div>
+              </div>
+              <button type="button" id="btn-resubmit-verification" class="btn btn-outline" style="padding: 6px 14px; font-size: 12.5px; border-color: #ef4444; color: #ef4444; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                <span>🔄</span> Resubmit Documents
               </button>
             </div>
 
