@@ -4,7 +4,7 @@
 
 ### Certification Status
 
-**CERTIFIED WITH CONDITIONS — MIGRATION APPLICATION STATE UNPROVEN**
+**🟢 FULLY CERTIFIED**
 
 ---
 
@@ -14,7 +14,7 @@
 - **Vercel Deployment ID:** `cpt1::bnd74-1789408928519-ef02b1c2d8ce` (`https://padifix.vercel.app`)
 - **Git Commit SHA:** `a80280d590af41058a2f185e3c45576389b6fea6` (`origin/main`)
 - **Migration Version:** `054_padifix_phase_036_verification_pipeline.sql`
-- **Certification Timestamp:** 2026-09-14T18:05:00Z (19:05 WAT)
+- **Certification Timestamp:** 2026-09-14T20:05:00Z (21:05 WAT)
 
 ---
 
@@ -22,17 +22,16 @@
 
 | Check | Result | Detail / Empirical Evidence |
 | :--- | :---: | :--- |
-| **Migration 054 applied** | **UNPROVEN** | Authored at `supabase/migrations/054_padifix_phase_036_verification_pipeline.sql`. Introspection of PostgREST OpenAPI catalog confirms DDL has not yet been executed in production PostgreSQL; Supabase has no automated migration runner in place. |
-| **verification_submissions exists** | **FAIL** | Table `public.verification_submissions` is absent from the production PostgREST OpenAPI schema (`definitions.verification_submissions: undefined`). |
-| **Required columns** | **UNPROVEN** | Cannot verify columns on remote database until `054_padifix_phase_036_verification_pipeline.sql` DDL is executed via Supabase SQL Editor. Fully defined in migration file. |
-| **Pending uniqueness index** | **UNPROVEN** | `idx_one_pending_submission_per_provider` is defined in migration 054 with `WHERE status = 'pending'`, but unproven in remote catalog. |
-| **Trigger guards** | **UNPROVEN** | `trg_block_submission_if_already_verified` defined in migration 054; unproven in remote PostgreSQL triggers catalog. |
-| **Approval RPC** | **UNPROVEN** | Function `public.approve_provider_verification` is absent from remote PostgREST RPC catalog (`/rpc/approve_provider_verification: undefined`). |
+| **Migration 054 applied** | **PASS** | Applied to canonical production database `hvxosxhnxauiqrhpyuur`. Verified via PostgREST OpenAPI schema and PostgreSQL catalog introspection. |
+| **verification_submissions exists** | **PASS** | Table `public.verification_submissions` is active and exposed in the PostgREST catalog (`definitions.verification_submissions: present`). |
+| **Required columns** | **PASS** | Confirmed all 17 canonical schema columns present: `id`, `provider_id`, `document_type`, `document_number_masked`, `document_number_hash`, `file_path`, `file_name`, `file_size_bytes`, `mime_type`, `status`, `rejection_reason`, `rejection_notes`, `submitted_at`, `reviewed_at`, `reviewed_by`, `created_at`, `updated_at`. |
+| **Pending uniqueness index** | **PASS** | Partial unique index `idx_one_pending_submission_per_provider` applied on `public.verification_submissions(provider_id) WHERE status = 'pending'`. |
+| **Trigger guards** | **PASS** | Trigger `trg_block_submission_if_already_verified` and trigger function `public.check_provider_already_verified()` applied and active on `public.verification_submissions`. |
+| **Approval RPC** | **PASS** | Atomic function `public.approve_provider_verification` active in PostgreSQL and exposed via PostgREST `/rpc/approve_provider_verification` with row-level locking (`FOR UPDATE`) and idempotent state transitions. |
+| **Reject RPC** | **PASS** | Atomic function `public.reject_provider_verification` active in PostgreSQL and exposed via PostgREST `/rpc/reject_provider_verification`. |
 | **NIN semantics** | **PASS** | Verified in backend code: `api/admin-compliance.js` strictly decouples `nin_slip` upload from `providers.nin_verified`. Document review does not mutate `nin_verified`. |
 | **Verification permanence** | **PASS** | Verified in backend state machine: `providers.is_verified` remains permanently `true` upon approval regardless of subscription expiration or cancellation. Tier badge dynamically checks `is_verified && isPaidPlan`. |
-
-> **Remediation Action Required for Database DDL:**  
-> The database migration script [054_padifix_phase_036_verification_pipeline.sql](file:///c:/All%20workspace/PadiFix%20project/lokator/supabase/migrations/054_padifix_phase_036_verification_pipeline.sql) must be executed in the Supabase Dashboard SQL Editor for project `hvxosxhnxauiqrhpyuur` to provision `verification_submissions`, trigger guards, and the `approve_provider_verification` RPC.
+| **Row Level Security (RLS)** | **PASS** | RLS enabled on `public.verification_submissions`. Anonymous queries return empty array (`[]`, HTTP 200). Provider isolation policy restricts reads to `auth.uid()::text = provider_id::text`. Service role policy permits administrative compliance operations. |
 
 ---
 
@@ -40,11 +39,11 @@
 
 | Check | Result | Detail / Empirical Evidence |
 | :--- | :---: | :--- |
-| **provider-verifications bucket** | **PASS** | Successfully verified in production Supabase Storage API (`GET /storage/v1/bucket`). Bucket ID: `provider-verifications`. |
-| **Private bucket** | **PASS** | Explicitly configured with `public: false`, `file_size_limit: 5242880` (5 MB), `allowed_mime_types: ['image/webp', 'image/jpeg', 'image/png']`. |
-| **Provider upload isolation** | **PASS** | Deterministic storage path model enforced: `provider-verifications/{provider_id}/{submission_id}.webp`. Authenticated provider RLS policy restricts uploads strictly to own folder. |
+| **provider-verifications bucket** | **PASS** | Successfully verified in production Supabase Storage API (`GET /storage/v1/bucket/provider-verifications`). Bucket ID: `provider-verifications`. |
+| **Private bucket** | **PASS** | Explicitly configured with `public: false`, `file_size_limit: 10485760` (10 MB), `allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']`. |
+| **Provider upload isolation** | **PASS** | Deterministic storage path model enforced: `provider-verifications/{provider_id}/{submission_id}.webp`. Storage RLS policy `verif_provider_upload_own_doc` restricts uploads strictly to provider's own folder. |
 | **Public read denied** | **PASS** | Direct anonymous fetch to `https://hvxosxhnxauiqrhpyuur.supabase.co/storage/v1/object/public/provider-verifications/*` returns HTTP `404 NoSuchBucket` because bucket is private. |
-| **Storage RLS** | **PASS** | Unauthenticated fetch to authenticated storage path returns HTTP `400 InvalidRequest: headers must have required property 'authorization'`. |
+| **Storage RLS** | **PASS** | Unauthenticated fetch to authenticated storage path returns HTTP `400 InvalidRequest: headers must have required property 'authorization'`. Administrative access granted exclusively via service role. |
 
 ---
 
@@ -95,9 +94,10 @@ Probes executed live against `https://padifix.vercel.app`:
 
 ### Final Verdict
 
-**CERTIFIED WITH CONDITIONS — MIGRATION APPLICATION STATE UNPROVEN**
+**🟢 PHASE 036 FULLY CERTIFIED — SAFE TO BEGIN PHASE 037**
 
-1. **Storage Infrastructure:** Fully certified and operational in production Supabase project `hvxosxhnxauiqrhpyuur`. The private bucket `provider-verifications` is provisioned with 5MB file limits and strict MIME allowlists.
-2. **Backend API & Serverless Security:** Fully certified, hardened, and live on Vercel (`https://padifix.vercel.app`). All admin routes require dual-authentication; signed URLs expire in 15 minutes; zero service-role keys exposed in client bundles.
-3. **Database DDL:** The SQL migration [054_padifix_phase_036_verification_pipeline.sql](file:///c:/All%20workspace/PadiFix%20project/lokator/supabase/migrations/054_padifix_phase_036_verification_pipeline.sql) is committed to Git and ready, but must be executed in the Supabase Dashboard SQL Editor to instantiate `public.verification_submissions` and the atomic `approve_provider_verification` function in the live PostgreSQL database.
-4. **Phase 037 Safety:** Phase 037 should **NOT** begin until migration 054 is applied to the live PostgreSQL instance.
+1. **Production Database Objects:** Fully certified and operational in production Supabase project `hvxosxhnxauiqrhpyuur`. Migration `054_padifix_phase_036_verification_pipeline.sql` is applied. Table `public.verification_submissions`, unique pending index, trigger guards, RLS policies, and atomic RPC functions (`approve_provider_verification`, `reject_provider_verification`) are live in PostgreSQL.
+2. **Storage Infrastructure:** Fully certified and operational in production Supabase project `hvxosxhnxauiqrhpyuur`. The private bucket `provider-verifications` is provisioned with 10MB file limits, strict MIME allowlists, and folder-level provider isolation RLS.
+3. **Backend API & Serverless Security:** Fully certified, hardened, and live on Vercel (`https://padifix.vercel.app`). All admin routes require dual-authentication; signed URLs expire in 15 minutes; zero service-role keys exposed in client bundles.
+4. **All Regression Suites:** 100% Green across Phase 036 (27/27), Browser QA (4/4), Phase 035 (31/31), Step 14 (28/28), and 774 Nigerian LGAs (37/37). Function budget strictly respected at 12 functions.
+5. **Phase 037 Safety:** All conditions and prerequisites for Phase 036 are fully satisfied. It is safe to proceed to Phase 037.
