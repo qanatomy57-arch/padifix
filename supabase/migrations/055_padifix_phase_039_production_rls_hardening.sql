@@ -431,24 +431,32 @@ CREATE POLICY "Service role manages contact events"
   ON public.contact_events FOR ALL
   USING (auth.role() = 'service_role');
 
--- Contact Quotas
-DROP POLICY IF EXISTS "Providers view own contact quotas" ON public.contact_quotas;
-DROP POLICY IF EXISTS "Service role manages contact_quotas" ON public.contact_quotas;
+-- Contact Quotas (Conditional on table existence)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'contact_quotas'
+  ) THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Providers view own contact quotas" ON public.contact_quotas';
+    EXECUTE 'DROP POLICY IF EXISTS "Service role manages contact_quotas" ON public.contact_quotas';
 
-CREATE POLICY "Providers view own contact quotas"
-  ON public.contact_quotas FOR SELECT
-  USING (
-    auth.role() = 'service_role' OR
-    EXISTS (
-      SELECT 1 FROM public.providers p
-      WHERE p.id = contact_quotas.provider_id
-        AND p.user_id = auth.uid()
-    )
-  );
+    EXECUTE 'CREATE POLICY "Providers view own contact quotas"
+      ON public.contact_quotas FOR SELECT
+      USING (
+        auth.role() = ''service_role'' OR
+        EXISTS (
+          SELECT 1 FROM public.providers p
+          WHERE p.id = contact_quotas.provider_id
+            AND p.user_id = auth.uid()
+        )
+      )';
 
-CREATE POLICY "Service role manages contact_quotas"
-  ON public.contact_quotas FOR ALL
-  USING (auth.role() = 'service_role');
+    EXECUTE 'CREATE POLICY "Service role manages contact_quotas"
+      ON public.contact_quotas FOR ALL
+      USING (auth.role() = ''service_role'')';
+  END IF;
+END $$;
 
 -- Provider Subscriptions
 DROP POLICY IF EXISTS "Providers view own subscription" ON public.provider_subscriptions;
