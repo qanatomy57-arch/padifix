@@ -1,7 +1,7 @@
 -- ============================================================================
--- LOKATOR.NG / PADIFIX — PRODUCTION ROW LEVEL SECURITY (RLS) & HARDENED DATA POLICIES
--- Paste and Run this in your Supabase SQL Editor (Project: hvxosxhnxauiqrhpyuur)
--- Synchronized with Migration 055 (Phase 039 Certified Baseline)
+-- PADIFIX PHASE 039: PRODUCTION ROW LEVEL SECURITY (RLS) & HARDENED DATA POLICIES
+-- Migration: 055_padifix_phase_039_production_rls_hardening.sql
+-- Project Ref: hvxosxhnxauiqrhpyuur
 -- ============================================================================
 
 -- 1. ENABLE ROW LEVEL SECURITY ACROSS ALL CORE & SECURITY-SENSITIVE TABLES
