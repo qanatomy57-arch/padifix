@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const PORT = 8094;
+const PORT = process.env.TEST_PORT || 8097;
 const ROOT = path.resolve(__dirname, '..');
 const ARTIFACTS_DIR = path.resolve('C:\\Users\\HP\\.gemini\\antigravity-ide\\brain\\820fd804-fbe0-45b5-ae8e-3ac7773dadb7');
 if (!fs.existsSync(ARTIFACTS_DIR)) {
