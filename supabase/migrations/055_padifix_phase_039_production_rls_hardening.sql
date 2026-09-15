@@ -1,8 +1,8 @@
 -- ============================================================================
--- PADIFIX PHASE 039: PRODUCTION ROW LEVEL SECURITY (RLS) & HARDENED DATA POLICIES
--- Migration: 055_padifix_phase_039_production_rls_hardening.sql
--- Project Ref: hvxosxhnxauiqrhpyuur
+-- LOKATOR.NG / PADIFIX — MIGRATION 055: PRODUCTION ROW LEVEL SECURITY (RLS) HARDENING
+-- Synchronized with Phase 039 Production Security Gates & Supabase Advisor
 -- ============================================================================
+
 
 -- ----------------------------------------------------------------------------
 -- 1. ENABLE ROW LEVEL SECURITY ACROSS ALL CORE & SECURITY-SENSITIVE TABLES
@@ -96,10 +96,14 @@ REVOKE UPDATE (
 -- 3. PROVIDERS TABLE RLS POLICIES
 -- ----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Allow public read on active providers" ON public.providers;
+DROP POLICY IF EXISTS "Public read on active providers" ON public.providers;
 DROP POLICY IF EXISTS "Allow public provider registration" ON public.providers;
+DROP POLICY IF EXISTS "Authenticated user create own provider record" ON public.providers;
 DROP POLICY IF EXISTS "Allow authenticated provider insert" ON public.providers;
 DROP POLICY IF EXISTS "Allow providers to update own profile" ON public.providers;
+DROP POLICY IF EXISTS "Provider update own profile" ON public.providers;
 DROP POLICY IF EXISTS "Allow providers to delete own profile" ON public.providers;
+DROP POLICY IF EXISTS "Provider delete own profile" ON public.providers;
 DROP POLICY IF EXISTS "Service role full access on providers" ON public.providers;
 
 CREATE POLICY "Allow public read on active providers"
@@ -141,9 +145,13 @@ CREATE POLICY "Service role full access on providers"
 -- ----------------------------------------------------------------------------
 -- Provider Services
 DROP POLICY IF EXISTS "Allow public read on provider services" ON public.provider_services;
+DROP POLICY IF EXISTS "Public read on active provider services" ON public.provider_services;
 DROP POLICY IF EXISTS "Allow provider services insert" ON public.provider_services;
+DROP POLICY IF EXISTS "Provider insert own services" ON public.provider_services;
 DROP POLICY IF EXISTS "Allow provider services update" ON public.provider_services;
+DROP POLICY IF EXISTS "Provider update own services" ON public.provider_services;
 DROP POLICY IF EXISTS "Allow provider services delete" ON public.provider_services;
+DROP POLICY IF EXISTS "Provider delete own services" ON public.provider_services;
 
 CREATE POLICY "Allow public read on provider services"
   ON public.provider_services FOR SELECT
@@ -194,9 +202,13 @@ CREATE POLICY "Allow provider services delete"
 
 -- Portfolio Items
 DROP POLICY IF EXISTS "Allow public read on portfolio" ON public.portfolio_items;
+DROP POLICY IF EXISTS "Public read on portfolio items" ON public.portfolio_items;
 DROP POLICY IF EXISTS "Allow portfolio insert" ON public.portfolio_items;
+DROP POLICY IF EXISTS "Provider insert own portfolio" ON public.portfolio_items;
 DROP POLICY IF EXISTS "Allow portfolio update" ON public.portfolio_items;
+DROP POLICY IF EXISTS "Provider update own portfolio" ON public.portfolio_items;
 DROP POLICY IF EXISTS "Allow portfolio delete" ON public.portfolio_items;
+DROP POLICY IF EXISTS "Provider delete own portfolio" ON public.portfolio_items;
 
 CREATE POLICY "Allow public read on portfolio"
   ON public.portfolio_items FOR SELECT
@@ -248,9 +260,15 @@ CREATE POLICY "Allow portfolio delete"
 
 -- Working Hours
 DROP POLICY IF EXISTS "Allow public read on working hours" ON public.working_hours;
+DROP POLICY IF EXISTS "Public read on working hours" ON public.working_hours;
 DROP POLICY IF EXISTS "Allow working hours upsert" ON public.working_hours;
+DROP POLICY IF EXISTS "Provider manage own working hours" ON public.working_hours;
 DROP POLICY IF EXISTS "Allow working hours update" ON public.working_hours;
 DROP POLICY IF EXISTS "Allow working hours delete" ON public.working_hours;
+
+-- Service Categories Legacy Policies Cleanup
+DROP POLICY IF EXISTS "Public read on active service categories" ON public.service_categories;
+DROP POLICY IF EXISTS "Admin write on service categories" ON public.service_categories;
 
 CREATE POLICY "Allow public read on working hours"
   ON public.working_hours FOR SELECT
@@ -389,8 +407,11 @@ CREATE TRIGGER trg_recalculate_provider_rating_aggregate
 
 -- Reviews RLS Policies
 DROP POLICY IF EXISTS "Allow public read on reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Public read on approved reviews" ON public.reviews;
 DROP POLICY IF EXISTS "Allow public review insert" ON public.reviews;
+DROP POLICY IF EXISTS "Authenticated user create review" ON public.reviews;
 DROP POLICY IF EXISTS "Service role manages reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Admin full access on reviews" ON public.reviews;
 
 CREATE POLICY "Allow public read on reviews"
   ON public.reviews FOR SELECT
@@ -483,6 +504,9 @@ REVOKE UPDATE, INSERT, DELETE ON public.provider_subscriptions FROM anon, authen
 -- 7. VERIFICATION SUBMISSIONS & REQUESTS HARDENING
 -- ----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Providers view own verification submissions" ON public.verification_submissions;
+DROP POLICY IF EXISTS "Providers view their own submissions" ON public.verification_submissions;
+DROP POLICY IF EXISTS "Providers create their own submissions" ON public.verification_submissions;
+DROP POLICY IF EXISTS "Service role manages submissions" ON public.verification_submissions;
 DROP POLICY IF EXISTS "Service role manages verification submissions" ON public.verification_submissions;
 
 CREATE POLICY "Providers view own verification submissions"
@@ -501,6 +525,7 @@ CREATE POLICY "Service role manages verification submissions"
   USING (auth.role() = 'service_role');
 
 -- Verification Requests (Legacy compatibility table)
+DROP POLICY IF EXISTS "Paid providers can submit own verification request" ON public.verification_requests;
 DROP POLICY IF EXISTS "Providers view own verification requests" ON public.verification_requests;
 DROP POLICY IF EXISTS "Service role manages verification_requests" ON public.verification_requests;
 
@@ -740,9 +765,7 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.is_admin() FROM anon;
-GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.is_admin() TO service_role;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated, service_role;
 
 -- F. purge_expired_analytics_events
 CREATE OR REPLACE FUNCTION public.purge_expired_analytics_events()

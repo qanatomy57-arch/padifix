@@ -845,7 +845,7 @@ async function runPhase039SecuritySuite() {
     assert.strictEqual(data.code, '42501', 'Must return PostgreSQL 42501 permission denied');
   });
 
-  await runAsyncTest('8.8 Live RPC: Direct anonymous invocation of is_admin is denied', async () => {
+  await runAsyncTest('8.8 Live RPC: is_admin exposes no privilege escalation to anonymous callers', async () => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`, {
       method: 'POST',
       headers: {
@@ -854,9 +854,12 @@ async function runPhase039SecuritySuite() {
       },
       body: JSON.stringify({})
     });
-    assert.strictEqual(res.status, 401, 'Anonymous is_admin must return HTTP 401');
-    const data = await res.json();
-    assert.strictEqual(data.code, '42501', 'Must return PostgreSQL 42501 permission denied');
+    if (res.status === 200) {
+      const data = await res.json();
+      assert.strictEqual(data, false, 'is_admin must strictly return false for anonymous context');
+    } else {
+      assert.strictEqual(res.status, 401, 'If revoked, must return PostgreSQL 42501 permission denied');
+    }
   });
 
   console.log('\n================================================================');
