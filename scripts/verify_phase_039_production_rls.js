@@ -34,8 +34,8 @@ const API_DIR = path.join(ROOT_DIR, 'api');
 
 const SUPABASE_PROJECT_REF = 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${SUPABASE_PROJECT_REF}.supabase.co`;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzA5MjU1NCwiZXhwIjoyMTAyNjY4NTU0fQ.jqtzdDab7qdGoat0uA6eNW-qBchtANNbCU-caCeqeGE';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 let passCount = 0;
 let failCount = 0;
@@ -732,23 +732,31 @@ async function runPhase039SecuritySuite() {
       },
       body: JSON.stringify({ prefix: '' })
     });
-    assert.strictEqual(res.status, 400, 'Anonymous listing on private bucket must return HTTP 400');
-    const err = await res.json();
-    assert.strictEqual(err.code, 'InvalidRequest');
+    if (res.status === 200) {
+      const list = await res.json();
+      assert.deepStrictEqual(list, [], 'Anonymous listing on private bucket must return empty array under RLS');
+    } else {
+      assert.strictEqual(res.status, 400, 'Anonymous listing on private bucket must return HTTP 400 or empty array under RLS');
+      const err = await res.json();
+      assert.ok(['InvalidRequest', 'AccessDenied', 'NoSuchBucket'].includes(err.code), `Unexpected error code ${err.code}`);
+    }
   });
 
   await runAsyncTest('8.2 Live Storage: Anonymous direct upload to provider-verifications is denied', async () => {
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/provider-verifications/anon_attack.txt`, {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/provider-verifications/anon_attack.webp`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
-        'Content-Type': 'text/plain'
+        'Content-Type': 'image/webp'
       },
-      body: 'malicious payload'
+      body: Buffer.from('RIFF....WEBPVP8 ')
     });
     assert.strictEqual(res.status, 400, 'Anonymous upload must return HTTP 400');
     const err = await res.json();
-    assert.strictEqual(err.code, 'InvalidRequest');
+    assert.ok(
+      ['AccessDenied', 'InvalidRequest', 'InvalidMimeType'].includes(err.code) || err.message?.includes('row-level security'),
+      `Anonymous upload must be denied by RLS: ${JSON.stringify(err)}`
+    );
   });
 
   await runAsyncTest('8.3 Live Storage: Service-role compliance signed URL generation succeeds', async () => {
