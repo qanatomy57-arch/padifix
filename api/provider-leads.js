@@ -17,6 +17,7 @@
 const { withSentry } = require('../lib/sentry-server');
 const { verifyProviderAuth } = require('../lib/supabase-auth-verifier');
 const LeadStore = require('../lib/lead-store');
+const { generateReviewToken } = require('../lib/review-token');
 
 // Supabase PostgreSQL Ledger Configuration
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
@@ -794,9 +795,38 @@ const providerLeadsHandler = async (req, res) => {
         const rawAuth = req.headers['authorization'] || req.headers['Authorization'] || '';
         const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
 
+        let reviewToken = null;
+        let reviewRequestedAt = null;
+
         const recRes = LeadStore.recordReviewRequested(activeProviderId, String(lead_id).trim());
-        if (recRes.error) {
-          return res.status(recRes.statusCode || 400).json({ error: recRes.error });
+        if (!recRes.error) {
+          reviewToken = recRes.review_token;
+          reviewRequestedAt = recRes.review_requested_at;
+        } else if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
+          // Check PostgreSQL if lead is not in memory store
+          try {
+            const pgLeadRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(String(lead_id).trim())}&provider_id=eq.${activeProviderId}&select=*&limit=1`, {
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (pgLeadRes.ok) {
+              const rows = await pgLeadRes.json();
+              if (rows.length > 0) {
+                const pgLead = rows[0];
+                if (pgLead.status !== 'completed') {
+                  return res.status(400).json({ error: 'Review invitations can only be issued for completed jobs.' });
+                }
+                reviewToken = pgLead.review_token || generateReviewToken({ leadId: pgLead.id, providerId: activeProviderId });
+                reviewRequestedAt = new Date().toISOString();
+              }
+            }
+          } catch (e) {}
+        }
+
+        if (!reviewToken) {
+          return res.status(recRes.statusCode || 404).json({ error: recRes.error || 'Lead not found or unauthorized.' });
         }
 
         if (SUPABASE_URL && SUPABASE_ANON_KEY && token) {
@@ -809,8 +839,8 @@ const providerLeadsHandler = async (req, res) => {
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                review_token: recRes.review_token,
-                review_requested_at: recRes.review_requested_at,
+                review_token: reviewToken,
+                review_requested_at: reviewRequestedAt,
                 updated_at: new Date().toISOString()
               })
             });
@@ -824,14 +854,14 @@ const providerLeadsHandler = async (req, res) => {
             origin = parsed.origin;
           } catch (e) {}
         }
-        const reviewUrl = `${origin}/review.html?token=${recRes.review_token}`;
+        const reviewUrl = `${origin}/review.html?token=${reviewToken}`;
 
         return res.status(200).json({
           status: 'success',
           lead_id: String(lead_id).trim(),
-          review_token: recRes.review_token,
+          review_token: reviewToken,
           review_url: reviewUrl,
-          review_requested_at: recRes.review_requested_at
+          review_requested_at: reviewRequestedAt
         });
       }
 

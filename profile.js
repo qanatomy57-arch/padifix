@@ -1256,7 +1256,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
             ` : ''}
 
-            <p class="review-comment-text">${escapeHtml(r.comment)}</p>
+            ${r.comment ? `<p class="review-comment-text">${escapeHtml(r.comment)}</p>` : ''}
 
             <!-- Attached Work Photos -->
             ${photos.length > 0 ? `
@@ -1281,10 +1281,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             ` : ''}
 
             <div class="review-item-footer">
-              <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; ${isVerifiedClient ? 'color: #006B3F; background: rgba(0, 107, 63, 0.1); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(0, 107, 63, 0.25);' : 'color: var(--fg-muted);'}">
+              <span class="review-trust-badge" style="display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; ${isVerifiedClient ? 'color: #00A859; background: rgba(0, 168, 89, 0.12); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(0, 168, 89, 0.25);' : 'color: var(--fg-muted);'}">
                 ${isVerifiedClient
-                  ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#006B3F" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Verified Customer'
-                  : '💬 Customer Review'}
+                  ? '🛡️ Verified Customer'
+                  : 'Customer Review'}
               </span>
               <div style="display: flex; gap: 8px; align-items: center;">
                 <button type="button" class="btn-report-review" data-rev-id="${safeRevId}" style="background: none; border: none; color: var(--fg-muted); font-size: 11.5px; cursor: pointer; padding: 4px 8px; border-radius: 4px;">

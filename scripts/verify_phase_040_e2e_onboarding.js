@@ -31,15 +31,35 @@ const {
   dispatchVerificationRejectedSms
 } = require(path.join(ROOT_DIR, 'lib', 'artisan-notification-service.js'));
 
+const ENV_PATH = path.join(ROOT_DIR, '.env');
+if (fs.existsSync(ENV_PATH)) {
+  const envContent = fs.readFileSync(ENV_PATH, 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const [key, ...vals] = trimmed.split('=');
+    if (key && vals.length && !process.env[key.trim()]) {
+      process.env[key.trim()] = vals.join('=').trim().replace(/^["']|["']$/g, '');
+    }
+  }
+}
+
 const TEST_JWT_SECRET = 'phase_012e_test_jwt_secret_key_minimum_32_bytes_long';
 process.env.TEST_JWT_SECRET = TEST_JWT_SECRET;
 process.env.SUPABASE_JWT_SECRET = TEST_JWT_SECRET;
+
+if (!process.env.TERMII_API_KEY) {
+  process.env.TERMII_API_KEY = 'test_termii_api_key_sandbox_2026';
+  process.env.TERMII_SENDER_ID = 'PadiFix';
+  process.env.TERMII_BASE_URL = 'https://api.ng.termii.com';
+  process.env.TERMII_CHANNEL = 'generic';
+}
 
 const SUPABASE_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${SUPABASE_PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_e5282436d4dfb5ff3f9baea46ae9b813875dc16e';
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_synthetic_mock_paystack_secret_key_040';
 
 // Authoritative Admin Key resolution for compliance controller
 const ADMIN_KEY = (process.env.PADIFIX_ADMIN_KEY || process.env.PADIFIX_ADMIN_KEYS || '44a516f48825c56cba47e923e320f781dfb1ec01c70e28f3a3d6d67866893620').split(',')[0].trim();

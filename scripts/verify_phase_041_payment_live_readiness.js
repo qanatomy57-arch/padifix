@@ -35,7 +35,23 @@ try {
   Monetization = sandbox.window.PadiFixMonetization;
 }
 
-const TEST_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_e53bd66d33c78aef29da4e876f6d08b0aa5dc16e';
+const ENV_PATH = path.join(ROOT_DIR, '.env');
+if (fs.existsSync(ENV_PATH)) {
+  const envContent = fs.readFileSync(ENV_PATH, 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const [key, ...vals] = trimmed.split('=');
+    if (key && vals.length && !process.env[key.trim()]) {
+      process.env[key.trim()] = vals.join('=').trim().replace(/^["']|["']$/g, '');
+    }
+  }
+}
+
+const TEST_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_synthetic_mock_paystack_secret_key_041';
+if (!process.env.PAYSTACK_SECRET_KEY) {
+  process.env.PAYSTACK_SECRET_KEY = TEST_SECRET_KEY;
+}
 
 let passCount = 0;
 let failCount = 0;

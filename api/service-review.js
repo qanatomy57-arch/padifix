@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const { withSentry } = require('../lib/sentry-server');
 const { verifyProviderAuth } = require('../lib/supabase-auth-verifier');
 const LeadStore = require('../lib/lead-store');
+const { verifyReviewToken, generateReviewToken } = require('../lib/review-token');
 
 // Supabase PostgreSQL Ledger Configuration
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
@@ -36,6 +37,21 @@ function getAdminAuthKey() {
 const memoryReviewFallback = new Map();
 const memoryTokensFallback = new Set();
 const ipRateLimits = new Map();
+const unverifiedIpLimits = new Map();
+
+/**
+ * Phase 043 Section 17: Maximum 5 unverified public reviews per IP per day
+ */
+function checkUnverifiedReviewRateLimit(ip, maxPerDay = 5) {
+  const cleanIp = String(ip || '127.0.0.1').trim();
+  const todayKey = `${cleanIp}_${new Date().toISOString().split('T')[0]}`;
+  const currentCount = unverifiedIpLimits.get(todayKey) || 0;
+  if (currentCount >= maxPerDay) {
+    return { allowed: false, count: currentCount };
+  }
+  unverifiedIpLimits.set(todayKey, currentCount + 1);
+  return { allowed: true, count: currentCount + 1 };
+}
 
 // Strict Praise Tag Server Allowlist (Section 9)
 const ALLOWED_PRAISE_TAGS = new Set([
@@ -272,13 +288,29 @@ const serviceReviewHandler = async (req, res) => {
 
         const cleanToken = token.trim();
 
-        // 1. Resolve lead from LeadStore or PostgreSQL
-        let lead = LeadStore.getLeadByReviewToken(cleanToken);
+        // 1. Verify HMAC token cryptographically if signed format
+        let tokenLeadId = null;
+        let tokenProviderId = null;
+        if (cleanToken.startsWith('pfx_rev_') && cleanToken.includes('.')) {
+          const verified = verifyReviewToken(cleanToken);
+          if (!verified.valid) {
+            return res.status(400).json({ error: verified.error || 'Review invitation is invalid or expired.' });
+          }
+          tokenLeadId = verified.payload.leadId;
+          tokenProviderId = verified.payload.providerId;
+        }
+
+        // 2. Resolve lead from LeadStore or PostgreSQL
+        let lead = LeadStore.getLeadByReviewToken(cleanToken) || (tokenLeadId ? LeadStore.getLeadById(tokenLeadId) : null);
 
         if (!lead && SUPABASE_URL) {
           try {
             const adminKey = getAdminAuthKey();
-            const pgLeadRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?review_token=eq.${encodeURIComponent(cleanToken)}&select=*&limit=1`, {
+            let query = `${SUPABASE_URL}/rest/v1/contact_events?review_token=eq.${encodeURIComponent(cleanToken)}&select=*&limit=1`;
+            if (tokenLeadId) {
+              query = `${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(tokenLeadId)}&select=*&limit=1`;
+            }
+            const pgLeadRes = await fetch(query, {
               headers: {
                 'apikey': adminKey,
                 'Authorization': `Bearer ${adminKey}`
@@ -291,10 +323,16 @@ const serviceReviewHandler = async (req, res) => {
           } catch (e) {}
         }
 
-        // Must exist and lead MUST be completed
+        // Must exist, lead MUST be completed, and provider binding must match
         if (!lead || lead.status !== 'completed') {
           return res.status(404).json({
             error: 'Invalid or expired review invitation. Reviews can only be submitted for completed services.'
+          });
+        }
+
+        if (tokenProviderId && Number(lead.provider_id) !== Number(tokenProviderId)) {
+          return res.status(400).json({
+            error: 'Review invitation is invalid: provider binding mismatch.'
           });
         }
 
@@ -424,30 +462,43 @@ const serviceReviewHandler = async (req, res) => {
       let isVerifiedCustomer = false;
       let effectiveInteractionToken = null;
 
-      // 1. Self-Review Protection (Section 8)
-      // Check A: Authenticated provider attempt
+      // 1. Self-Review Protection: Initial client-supplied check
       const auth = await verifyProviderAuth(req).catch(() => ({ valid: false }));
       if (auth.valid && effectiveProviderId && Number(auth.providerId) === effectiveProviderId) {
         return res.status(403).json({ error: 'Self-Review Prohibited: Providers cannot review their own profile.' });
       }
-
-      // Check B: Explicit customer identifier attempt matching provider
       if (customer_identifier && effectiveProviderId && String(customer_identifier).trim() === String(effectiveProviderId).trim()) {
         return res.status(403).json({ error: 'Self-Review Prohibited: Providers cannot review their own profile.' });
       }
 
-      // 2. Token Verification & Completed-Job Check (Section 4 & 6)
+      // 2. Dual Review Pathway: Verified Customer Review vs. Unverified Public Review
       const suppliedToken = review_token || interaction_token;
       if (suppliedToken && typeof suppliedToken === 'string' && suppliedToken.trim().length >= 16) {
         const cleanToken = suppliedToken.trim();
 
-        // Resolve lead authoritatively
-        let matchedLead = LeadStore.getLeadByReviewToken(cleanToken);
+        // 2A. Cryptographic HMAC Token Verification
+        let tokenLeadId = null;
+        let tokenProviderId = null;
+        if (cleanToken.startsWith('pfx_rev_') && cleanToken.includes('.')) {
+          const verified = verifyReviewToken(cleanToken);
+          if (!verified.valid) {
+            return res.status(400).json({ error: verified.error || 'Review invitation is invalid or expired.' });
+          }
+          tokenLeadId = verified.payload.leadId;
+          tokenProviderId = verified.payload.providerId;
+        }
+
+        // Resolve lead authoritatively from memory store or PostgreSQL
+        let matchedLead = LeadStore.getLeadByReviewToken(cleanToken) || (tokenLeadId ? LeadStore.getLeadById(tokenLeadId) : null);
 
         if (!matchedLead && SUPABASE_URL) {
           try {
             const adminKey = getAdminAuthKey();
-            const pgLeadRes = await fetch(`${SUPABASE_URL}/rest/v1/contact_events?review_token=eq.${encodeURIComponent(cleanToken)}&select=*&limit=1`, {
+            let query = `${SUPABASE_URL}/rest/v1/contact_events?review_token=eq.${encodeURIComponent(cleanToken)}&select=*&limit=1`;
+            if (tokenLeadId) {
+              query = `${SUPABASE_URL}/rest/v1/contact_events?id=eq.${encodeURIComponent(tokenLeadId)}&select=*&limit=1`;
+            }
+            const pgLeadRes = await fetch(query, {
               headers: {
                 'apikey': adminKey,
                 'Authorization': `Bearer ${adminKey}`
@@ -466,36 +517,59 @@ const serviceReviewHandler = async (req, res) => {
           });
         }
 
-        // Server-Side Verification: Bind directly to lead's provider_id (Ignore client manipulation!)
+        // Provider binding verification
+        if (tokenProviderId && Number(matchedLead.provider_id) !== Number(tokenProviderId)) {
+          return res.status(400).json({
+            error: 'Review invitation is invalid: provider binding mismatch.'
+          });
+        }
+
+        // Bind authoritatively to lead's provider_id (overriding client manipulation)
         effectiveProviderId = Number(matchedLead.provider_id);
         isVerifiedCustomer = true;
         effectiveInteractionToken = cleanToken;
 
-        // Check A authenticated provider matching resolved lead provider
+        // Check self-review against authoritatively resolved provider
         if (auth.valid && Number(auth.providerId) === effectiveProviderId) {
           return res.status(403).json({ error: 'Self-Review Prohibited: Providers cannot review their own profile.' });
         }
+        if (customer_identifier && String(customer_identifier).trim() === String(effectiveProviderId).trim()) {
+          return res.status(403).json({ error: 'Self-Review Prohibited: Providers cannot review their own profile.' });
+        }
       } else {
-        // Public / Community review (cannot claim verified customer without completed lead token)
-        isVerifiedCustomer = false;
-        if (!effectiveProviderId) {
+        // 2B. Unverified Public Review Path
+        isVerifiedCustomer = false; // Client cannot self-assign verification!
+        if (!effectiveProviderId || isNaN(effectiveProviderId) || effectiveProviderId <= 0) {
           return res.status(400).json({ error: 'Missing required provider_id' });
+        }
+
+        // Section 17: Maximum 5 unverified public reviews per IP per day
+        const rateCheck = checkUnverifiedReviewRateLimit(clientIp, 5);
+        if (!rateCheck.allowed) {
+          return res.status(429).json({
+            error: 'Daily review limit reached. Maximum 5 public reviews per day per IP.'
+          });
+        }
+
+        // Self-review check for public review
+        if (auth.valid && Number(auth.providerId) === effectiveProviderId) {
+          return res.status(403).json({ error: 'Self-Review Prohibited: Providers cannot review their own profile.' });
+        }
+        if (customer_identifier && String(customer_identifier).trim() === String(effectiveProviderId).trim()) {
+          return res.status(403).json({ error: 'Self-Review Prohibited: Providers cannot review their own profile.' });
         }
       }
 
-      // 3. Review Content Validation (Section 9)
-      const cleanName = sanitizeText(customer_name, 80) || 'Verified Client';
+      // 3. Review Content Validation (Section 18)
+      const cleanName = sanitizeText(customer_name, 80) || 'Customer';
 
       const numRating = Number(rating);
       if (!Number.isInteger(numRating) || numRating < 1 || numRating > 5) {
         return res.status(400).json({ error: 'Rating must be an integer between 1 and 5 stars.' });
       }
 
-      const cleanComment = sanitizeText(comment, 1000);
-      if (!cleanComment || cleanComment.length === 0) {
-        return res.status(400).json({ error: 'Please provide a feedback comment.' });
-      }
-
+      // Section 18: Comment is optional — star-only reviews are valid
+      const cleanComment = comment ? sanitizeText(comment, 1000) : '';
       const cleanLocation = sanitizeText(author_location, 80) || 'Local Area';
 
       // Praise Tags: Explicit Allowlist (Section 9)
@@ -524,7 +598,7 @@ const serviceReviewHandler = async (req, res) => {
       // Compute durable interaction token for deduplication if not provided
       if (!effectiveInteractionToken) {
         effectiveInteractionToken = crypto.createHash('sha256')
-          .update(`${effectiveProviderId}_${cleanName.toLowerCase()}_${customer_identifier || clientIp}`)
+          .update(`pub_${effectiveProviderId}_${cleanName.toLowerCase()}_${cleanComment}_${customer_identifier || clientIp}_${Date.now()}_${Math.random()}`)
           .digest('hex');
       }
 

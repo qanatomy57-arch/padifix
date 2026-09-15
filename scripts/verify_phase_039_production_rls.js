@@ -32,6 +32,19 @@ const MIGRATION_055_PATH = path.join(ROOT_DIR, 'supabase', 'migrations', '055_pa
 const APPLY_RLS_PATH = path.join(ROOT_DIR, 'supabase', 'apply_production_rls.sql');
 const API_DIR = path.join(ROOT_DIR, 'api');
 
+const ENV_PATH = path.join(ROOT_DIR, '.env');
+if (fs.existsSync(ENV_PATH)) {
+  const envContent = fs.readFileSync(ENV_PATH, 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const [key, ...vals] = trimmed.split('=');
+    if (key && vals.length && !process.env[key.trim()]) {
+      process.env[key.trim()] = vals.join('=').trim().replace(/^["']|["']$/g, '');
+    }
+  }
+}
+
 const SUPABASE_PROJECT_REF = 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${SUPABASE_PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;

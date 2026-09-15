@@ -509,10 +509,10 @@
           </div>
         </div>
 
-        <!-- 3. Review Feedback Comment -->
+        <!-- 3. Review Feedback Comment (Optional) -->
         <div class="form-section input-group">
-          <label for="rev-comment" class="input-label">Tell us about your experience</label>
-          <textarea id="rev-comment" class="textarea-input" placeholder="Explain how the job was handled, the artisan's punctuality, and whether you would recommend them..." maxlength="1000" required></textarea>
+          <label for="rev-comment" class="input-label">Tell us about your experience (Optional)</label>
+          <textarea id="rev-comment" class="textarea-input" placeholder="(Optional) Share details about the job, or leave empty for star-only rating..." maxlength="1000"></textarea>
           <div class="char-counter" id="char-counter">0 / 1000</div>
         </div>
 
@@ -814,20 +814,8 @@
           e.preventDefault();
 
           const cleanComment = (commentInput ? commentInput.value : '').trim();
-          const clientName = (document.getElementById('client-name')?.value || '').trim();
-          const clientLoc = (document.getElementById('client-location')?.value || '').trim();
-
-          if (!clientName || clientName.length < 2) {
-            alert('Please enter your name (minimum 2 characters).');
-            document.getElementById('client-name')?.focus();
-            return;
-          }
-
-          if (!cleanComment) {
-            alert('Please enter a brief feedback comment about the job.');
-            commentInput?.focus();
-            return;
-          }
+          const clientName = (document.getElementById('client-name')?.value || '').trim() || (currentLead?.client_display_name || 'Customer');
+          const clientLoc = (document.getElementById('client-location')?.value || '').trim() || (currentLead?.locality || 'Local Area');
 
           submitBtn.disabled = true;
           submitBtn.innerHTML = '<span>Publishing Review...</span>';
