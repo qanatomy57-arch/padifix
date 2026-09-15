@@ -681,6 +681,142 @@ async function runPhase039SecuritySuite() {
     assert.strictEqual(err.code, 'NoSuchBucket');
   });
 
+  // --- SECTION 7: Security Advisor Findings & Function Search Path Remediation ---
+  console.log('\n--- SECTION 7: Security Advisor Findings & Search Path Remediation ---');
+  runTest('7.1 Migration 055 and apply_production_rls pin search_path on all SECURITY DEFINER functions', () => {
+    const sql = fs.readFileSync(MIGRATION_055_PATH, 'utf8');
+    const requiredFunctions = [
+      'prevent_privileged_provider_column_update',
+      'prevent_self_review',
+      'recalculate_provider_rating_aggregate',
+      'check_provider_already_verified',
+      'approve_provider_verification',
+      'reject_provider_verification',
+      'is_admin',
+      'purge_expired_analytics_events'
+    ];
+    for (const fn of requiredFunctions) {
+      assert.ok(
+        sql.includes(fn) && sql.includes('SET search_path = public, pg_temp'),
+        `Function ${fn} must have hardened search_path = public, pg_temp`
+      );
+    }
+  });
+
+  runTest('7.2 Migration 055 revokes execution on compliance operations from anon and authenticated', () => {
+    const sql = fs.readFileSync(MIGRATION_055_PATH, 'utf8');
+    assert.ok(sql.includes('REVOKE ALL ON FUNCTION public.approve_provider_verification'), 'Must revoke approve_provider_verification');
+    assert.ok(sql.includes('GRANT EXECUTE ON FUNCTION public.approve_provider_verification(UUID, TEXT, BOOLEAN) TO service_role'), 'Grant approve to service_role');
+    assert.ok(sql.includes('REVOKE ALL ON FUNCTION public.reject_provider_verification'), 'Must revoke reject_provider_verification');
+    assert.ok(sql.includes('GRANT EXECUTE ON FUNCTION public.reject_provider_verification(UUID, TEXT, TEXT, TEXT) TO service_role'), 'Grant reject to service_role');
+    assert.ok(sql.includes('REVOKE ALL ON FUNCTION public.consume_contact_entitlement'), 'Must revoke consume_contact_entitlement');
+  });
+
+  runTest('7.3 Migration 055 configures explicit policies on zero-policy tables', () => {
+    const sql = fs.readFileSync(MIGRATION_055_PATH, 'utf8');
+    assert.ok(sql.includes('Service role manages analytics_events'), 'Explicit policy on analytics_events');
+    assert.ok(sql.includes('Service role manages billing_transactions'), 'Explicit policy on billing_transactions');
+    assert.ok(sql.includes('Service role manages retention_policies'), 'Explicit policy on retention_policies');
+    assert.ok(sql.includes('Service role manages contact_quotas'), 'Explicit policy on contact_quotas');
+    assert.ok(sql.includes('Service role manages verification_requests'), 'Explicit policy on verification_requests');
+  });
+
+  // --- SECTION 8: Real Live Production Storage & RPC Behavioral Attack Tests ---
+  console.log('\n--- SECTION 8: Real Live Production Storage & RPC Behavioral Attacks ---');
+  await runAsyncTest('8.1 Live Storage: Anonymous object listing on provider-verifications is denied', async () => {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/provider-verifications`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prefix: '' })
+    });
+    assert.strictEqual(res.status, 400, 'Anonymous listing on private bucket must return HTTP 400');
+    const err = await res.json();
+    assert.strictEqual(err.code, 'InvalidRequest');
+  });
+
+  await runAsyncTest('8.2 Live Storage: Anonymous direct upload to provider-verifications is denied', async () => {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/provider-verifications/anon_attack.txt`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'text/plain'
+      },
+      body: 'malicious payload'
+    });
+    assert.strictEqual(res.status, 400, 'Anonymous upload must return HTTP 400');
+    const err = await res.json();
+    assert.strictEqual(err.code, 'InvalidRequest');
+  });
+
+  await runAsyncTest('8.3 Live Storage: Service-role compliance signed URL generation succeeds', async () => {
+    const testFileName = `test_compliance_${Date.now()}.webp`;
+    // 1. Upload sample document via service role
+    const upRes = await fetch(`${SUPABASE_URL}/storage/v1/object/provider-verifications/${testFileName}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'image/webp'
+      },
+      body: Buffer.from('RIFF....WEBPVP8 ')
+    });
+    assert.strictEqual(upRes.status, 200, 'Service role upload must return 200');
+
+    // 2. Generate 15-minute signed URL
+    const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/provider-verifications/${testFileName}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ expiresIn: 900 })
+    });
+    assert.strictEqual(signRes.status, 200, 'Service role signed URL creation must return HTTP 200');
+    const data = await signRes.json();
+    assert.ok(data.signedURL, 'Must return signedURL token');
+
+    // 3. Clean up test file
+    await fetch(`${SUPABASE_URL}/storage/v1/object/provider-verifications`, {
+      method: 'DELETE',
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prefixes: [testFileName] })
+    });
+  });
+
+  await runAsyncTest('8.4 Live RPC: Direct anonymous invocation of consume_contact_entitlement is denied', async () => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/consume_contact_entitlement`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p_provider_id: 1, p_channel: 'phone' })
+    });
+    assert.strictEqual(res.status, 401, 'Anonymous consume_contact_entitlement must return HTTP 401');
+    const data = await res.json();
+    assert.strictEqual(data.code, '42501', 'Must return PostgreSQL 42501 permission denied');
+  });
+
+  await runAsyncTest('8.5 Live DB Investigation: verification_documents is NOT a public table', async () => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/verification_documents?limit=1`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+      }
+    });
+    assert.strictEqual(res.status, 404, 'verification_documents does not exist in schema cache');
+    const err = await res.json();
+    assert.strictEqual(err.code, 'PGRST205', 'PostgREST returns PGRST205 table not found');
+  });
+
   console.log('\n================================================================');
   console.log(`PHASE 039 AUTOMATED SUITE: ${passCount} PASSED, ${failCount} FAILED`);
   console.log('================================================================\n');

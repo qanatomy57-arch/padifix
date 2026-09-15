@@ -1,10 +1,12 @@
 -- ============================================================================
 -- LOKATOR.NG / PADIFIX — PRODUCTION ROW LEVEL SECURITY (RLS) & HARDENED DATA POLICIES
 -- Paste and Run this in your Supabase SQL Editor (Project: hvxosxhnxauiqrhpyuur)
--- Synchronized with Migration 055 (Phase 039 Certified Baseline)
+-- Synchronized with Migration 055 (Phase 039 Security Hardened Baseline)
 -- ============================================================================
 
+-- ----------------------------------------------------------------------------
 -- 1. ENABLE ROW LEVEL SECURITY ACROSS ALL CORE & SECURITY-SENSITIVE TABLES
+-- ----------------------------------------------------------------------------
 ALTER TABLE IF EXISTS public.providers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.provider_services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.portfolio_items ENABLE ROW LEVEL SECURITY;
@@ -12,8 +14,13 @@ ALTER TABLE IF EXISTS public.working_hours ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.service_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.verification_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.verification_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.contact_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.contact_quotas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.provider_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.analytics_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.billing_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.retention_policies ENABLE ROW LEVEL SECURITY;
 
 -- ----------------------------------------------------------------------------
 -- 2. PRIVILEGED COLUMN PROTECTION TRIGGER (public.providers)
@@ -25,6 +32,7 @@ CREATE OR REPLACE FUNCTION public.prevent_privileged_provider_column_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   -- Service role and database internal maintenance (e.g. review recalculation) are fully permitted
@@ -299,6 +307,7 @@ CREATE OR REPLACE FUNCTION public.prevent_self_review()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_artisan_user_id UUID;
@@ -335,6 +344,7 @@ CREATE OR REPLACE FUNCTION public.recalculate_provider_rating_aggregate()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_target_provider_id BIGINT;
@@ -400,7 +410,7 @@ CREATE POLICY "Service role manages reviews"
   USING (auth.role() = 'service_role');
 
 -- ----------------------------------------------------------------------------
--- 6. CONTACT EVENTS & PROVIDER SUBSCRIPTIONS HARDENING
+-- 6. CONTACT EVENTS, QUOTAS & SUBSCRIPTIONS ISOLATION
 -- ----------------------------------------------------------------------------
 -- Contact Events
 DROP POLICY IF EXISTS "Providers view own contact events" ON public.contact_events;
@@ -419,6 +429,25 @@ CREATE POLICY "Providers view own contact events"
 
 CREATE POLICY "Service role manages contact events"
   ON public.contact_events FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- Contact Quotas
+DROP POLICY IF EXISTS "Providers view own contact quotas" ON public.contact_quotas;
+DROP POLICY IF EXISTS "Service role manages contact_quotas" ON public.contact_quotas;
+
+CREATE POLICY "Providers view own contact quotas"
+  ON public.contact_quotas FOR SELECT
+  USING (
+    auth.role() = 'service_role' OR
+    EXISTS (
+      SELECT 1 FROM public.providers p
+      WHERE p.id = contact_quotas.provider_id
+        AND p.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Service role manages contact_quotas"
+  ON public.contact_quotas FOR ALL
   USING (auth.role() = 'service_role');
 
 -- Provider Subscriptions
@@ -443,7 +472,295 @@ CREATE POLICY "Service role manages provider subscriptions"
 REVOKE UPDATE, INSERT, DELETE ON public.provider_subscriptions FROM anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- 7. STORAGE BUCKETS & OBJECT RLS POLICIES
+-- 7. VERIFICATION SUBMISSIONS & REQUESTS HARDENING
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Providers view own verification submissions" ON public.verification_submissions;
+DROP POLICY IF EXISTS "Service role manages verification submissions" ON public.verification_submissions;
+
+CREATE POLICY "Providers view own verification submissions"
+  ON public.verification_submissions FOR SELECT
+  USING (
+    auth.role() = 'service_role' OR
+    EXISTS (
+      SELECT 1 FROM public.providers p
+      WHERE p.id = verification_submissions.provider_id
+        AND p.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Service role manages verification submissions"
+  ON public.verification_submissions FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- Verification Requests (Legacy compatibility table)
+DROP POLICY IF EXISTS "Providers view own verification requests" ON public.verification_requests;
+DROP POLICY IF EXISTS "Service role manages verification_requests" ON public.verification_requests;
+
+CREATE POLICY "Providers view own verification requests"
+  ON public.verification_requests FOR SELECT
+  USING (
+    auth.role() = 'service_role' OR
+    EXISTS (
+      SELECT 1 FROM public.providers p
+      WHERE p.id = verification_requests.provider_id
+        AND p.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Service role manages verification_requests"
+  ON public.verification_requests FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- ----------------------------------------------------------------------------
+-- 8. ZERO-POLICY TABLES EXPLICIT SERVICE ROLE POLICIES
+-- ----------------------------------------------------------------------------
+-- Explicitly configure service-role-only policies to satisfy Supabase Advisor
+-- and document that these are strictly server-managed ledgers.
+
+-- Analytics Events
+DROP POLICY IF EXISTS "Service role manages analytics_events" ON public.analytics_events;
+CREATE POLICY "Service role manages analytics_events"
+  ON public.analytics_events FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- Billing Transactions
+DROP POLICY IF EXISTS "Service role manages billing_transactions" ON public.billing_transactions;
+CREATE POLICY "Service role manages billing_transactions"
+  ON public.billing_transactions FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- Retention Policies
+DROP POLICY IF EXISTS "Service role manages retention_policies" ON public.retention_policies;
+CREATE POLICY "Service role manages retention_policies"
+  ON public.retention_policies FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- ----------------------------------------------------------------------------
+-- 9. HARDEN SECURITY DEFINER FUNCTIONS & PIN SEARCH PATHS
+-- ----------------------------------------------------------------------------
+
+-- A. check_provider_already_verified
+CREATE OR REPLACE FUNCTION public.check_provider_already_verified()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_already_verified BOOLEAN;
+BEGIN
+  SELECT is_verified INTO v_already_verified
+  FROM public.providers
+  WHERE id = NEW.provider_id;
+
+  IF v_already_verified IS TRUE THEN
+    RAISE EXCEPTION 'Provider #% has already been successfully verified. One-time verification invariant forbids re-verification.', NEW.provider_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- B. approve_provider_verification
+CREATE OR REPLACE FUNCTION public.approve_provider_verification(
+  target_submission_id UUID,
+  admin_identity TEXT DEFAULT 'compliance_officer',
+  p_nin_verified BOOLEAN DEFAULT FALSE
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_sub RECORD;
+BEGIN
+  -- Strict Administrative Execution Authorization Gate
+  IF auth.role() != 'service_role' AND current_user != 'postgres' THEN
+    RAISE EXCEPTION 'Unauthorized: approve_provider_verification is restricted to PadiFix Compliance Desk (service_role).';
+  END IF;
+
+  SELECT * INTO v_sub FROM public.verification_submissions WHERE id = target_submission_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Submission not found');
+  END IF;
+
+  -- Idempotency check: Already approved
+  IF v_sub.status = 'approved' THEN
+    RETURN jsonb_build_object(
+      'success', TRUE,
+      'idempotent', TRUE,
+      'provider_id', v_sub.provider_id,
+      'status', 'approved'
+    );
+  END IF;
+
+  -- Conflicting transition check
+  IF v_sub.status = 'rejected' THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Conflicting transition: Cannot approve already rejected submission.');
+  END IF;
+
+  -- Update submission status
+  UPDATE public.verification_submissions
+  SET status = 'approved',
+      reviewed_at = NOW(),
+      reviewed_by = admin_identity,
+      updated_at = NOW()
+  WHERE id = target_submission_id;
+
+  -- Temporarily enable internal maintenance setting to bypass column update lock
+  PERFORM set_config('padifix.internal_maintenance', 'on', true);
+
+  -- Permanently anchor successful verification to provider
+  UPDATE public.providers
+  SET is_verified = TRUE,
+      verification_status = 'verified',
+      nin_verified = COALESCE(p_nin_verified, FALSE),
+      verification_rejection_reason = NULL,
+      verification_rejection_notes = NULL,
+      updated_at = NOW()
+  WHERE id = v_sub.provider_id;
+
+  RETURN jsonb_build_object(
+    'success', TRUE,
+    'provider_id', v_sub.provider_id,
+    'document_type', v_sub.document_type,
+    'status', 'approved',
+    'nin_verified', COALESCE(p_nin_verified, FALSE)
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.approve_provider_verification(UUID, TEXT, BOOLEAN) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.approve_provider_verification(UUID, TEXT, BOOLEAN) FROM anon;
+REVOKE ALL ON FUNCTION public.approve_provider_verification(UUID, TEXT, BOOLEAN) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_provider_verification(UUID, TEXT, BOOLEAN) TO service_role;
+
+-- C. reject_provider_verification
+CREATE OR REPLACE FUNCTION public.reject_provider_verification(
+  target_submission_id UUID,
+  reason_code TEXT,
+  notes TEXT,
+  admin_identity TEXT DEFAULT 'compliance_officer'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_sub RECORD;
+BEGIN
+  -- Strict Administrative Execution Authorization Gate
+  IF auth.role() != 'service_role' AND current_user != 'postgres' THEN
+    RAISE EXCEPTION 'Unauthorized: reject_provider_verification is restricted to PadiFix Compliance Desk (service_role).';
+  END IF;
+
+  SELECT * INTO v_sub FROM public.verification_submissions WHERE id = target_submission_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Submission not found');
+  END IF;
+
+  -- Idempotency check: Already rejected
+  IF v_sub.status = 'rejected' THEN
+    RETURN jsonb_build_object(
+      'success', TRUE,
+      'idempotent', TRUE,
+      'provider_id', v_sub.provider_id,
+      'status', 'rejected'
+    );
+  END IF;
+
+  -- Conflicting transition check
+  IF v_sub.status = 'approved' THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Conflicting transition: Cannot reject already approved verification.');
+  END IF;
+
+  -- Update submission status
+  UPDATE public.verification_submissions
+  SET status = 'rejected',
+      rejection_reason = reason_code,
+      rejection_notes = notes,
+      reviewed_at = NOW(),
+      reviewed_by = admin_identity,
+      updated_at = NOW()
+  WHERE id = target_submission_id;
+
+  -- Temporarily enable internal maintenance setting to bypass column update lock
+  PERFORM set_config('padifix.internal_maintenance', 'on', true);
+
+  -- Set provider status to rejected to unlock correction/re-submission
+  UPDATE public.providers
+  SET verification_status = 'rejected',
+      verification_rejection_reason = reason_code,
+      verification_rejection_notes = notes,
+      updated_at = NOW()
+  WHERE id = v_sub.provider_id;
+
+  RETURN jsonb_build_object(
+    'success', TRUE,
+    'provider_id', v_sub.provider_id,
+    'status', 'rejected',
+    'rejection_reason', reason_code
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reject_provider_verification(UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.reject_provider_verification(UUID, TEXT, TEXT, TEXT) FROM anon;
+REVOKE ALL ON FUNCTION public.reject_provider_verification(UUID, TEXT, TEXT, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.reject_provider_verification(UUID, TEXT, TEXT, TEXT) TO service_role;
+
+-- D. consume_contact_entitlement
+REVOKE ALL ON FUNCTION public.consume_contact_entitlement(BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.consume_contact_entitlement(BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM anon;
+REVOKE ALL ON FUNCTION public.consume_contact_entitlement(BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_contact_entitlement(BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) TO service_role;
+
+-- E. is_admin
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT (
+    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+    OR coalesce(auth.jwt() ->> 'role', '') = 'service_role'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_admin() FROM anon;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO service_role;
+
+-- F. purge_expired_analytics_events
+CREATE OR REPLACE FUNCTION public.purge_expired_analytics_events()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_deleted_count INTEGER;
+BEGIN
+  DELETE FROM public.analytics_events
+  WHERE created_at < NOW() - INTERVAL '30 days';
+
+  GET DIAGNOSTICS v_deleted_count = ROW_COUNT;
+  RETURN v_deleted_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.purge_expired_analytics_events() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.purge_expired_analytics_events() FROM anon;
+REVOKE ALL ON FUNCTION public.purge_expired_analytics_events() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.purge_expired_analytics_events() TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- 10. STORAGE BUCKETS & OBJECT RLS POLICIES
 -- ----------------------------------------------------------------------------
 -- Ensure buckets exist with canonical public/private configurations
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
