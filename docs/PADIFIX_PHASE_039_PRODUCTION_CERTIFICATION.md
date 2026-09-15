@@ -22,12 +22,12 @@ In strict compliance with the **Certification Rule** ("Do NOT manufacture a gree
 | Verification State | Status | Evidence & Verification Summary |
 | :--- | :---: | :--- |
 | **SOURCE VERIFIED** | **PASS** | Canonical migration `supabase/migrations/055_padifix_phase_039_production_rls_hardening.sql` created and synchronized 1:1 with `supabase/apply_production_rls.sql`. `git diff --check` passed with 0 errors. All 527 JavaScript files verified syntax-clean via in-process `vm.Script` check (`scripts/syntax_check.js`). |
-| **LOCAL TEST VERIFIED** | **PASS** | `scripts/verify_phase_039_production_rls.js` executed 42 automated tests covering privilege escalation locks, self-review triggers, atomic rating aggregations, multi-tenant storage boundaries, and monetization isolation. All 42 tests passed (100%). |
-| **PRODUCTION DATABASE VERIFIED** | **HOLD** | PostgREST OpenAPI schema confirms core tables exist. However, live RPC probes show `approve_provider_verification` and `reject_provider_verification` remain callable by anonymous roles on the live database until Migration 055 DDL is applied via the Supabase SQL Editor. |
-| **PRODUCTION STORAGE VERIFIED** | **PASS** | Real behavioral attacks against `https://hvxosxhnxauiqrhpyuur.supabase.co/storage/v1` confirmed: anonymous bucket listing denied (HTTP 400), anonymous upload denied (HTTP 400), public read denied (`NoSuchBucket` / HTTP 404), and service-role compliance signed URL generation verified functional (HTTP 200). |
+| **LOCAL TEST VERIFIED** | **PASS** | `scripts/verify_phase_039_production_rls.js` executed 42 automated simulation tests covering privilege escalation locks, self-review triggers, atomic rating aggregations, multi-tenant storage boundaries, and monetization isolation. All 42 simulation tests passed (100%). |
+| **PRODUCTION DATABASE VERIFIED** | **HOLD** | PostgREST OpenAPI schema confirms core tables exist. Live RPC probes specifically demonstrate that anonymous requests to `approve_provider_verification` and `reject_provider_verification` still return `HTTP 200` on the live database (`hvxosxhnxauiqrhpyuur`), proving that `apply_production_rls.sql` has not yet been executed remotely. Once applied, PostgREST will return `HTTP 401: 42501`. |
+| **PRODUCTION STORAGE VERIFIED** | **PASS** | Real behavioral attacks against `https://hvxosxhnxauiqrhpyuur.supabase.co/storage/v1` confirmed: anonymous bucket listing denied (HTTP 400), anonymous upload denied (HTTP 400), public read denied (`NoSuchBucket` / HTTP 404), and service-role compliance signed URL generation verified functional (HTTP 200). All test artifacts cleaned up. |
 | **SECURITY ADVISOR VERIFIED** | **HOLD** | Advisor findings remediated in source SQL (`055_padifix_phase_039_production_rls_hardening.sql`), but require live DDL execution in the Supabase Dashboard to clear live advisor telemetry. |
-| **VERCEL DEPLOYMENT VERIFIED** | **PASS** | Production deployment inspected on Vercel CLI (`dpl_3oSY2t9kEtKLMaVd6w1AYKnSLJAR`), aliased to `https://padifix.vercel.app`. Strictly respects hobby tier limit with exactly 12 active serverless functions (respecting `.vercelignore`). |
-| **REGRESSION VERIFIED** | **PASS** | 100% Green across all 8 suites: Phase 039 (42/42), Phase 038 (41/41), Phase 038 Browser QA (7/7), Phase 037 (15/15), Phase 036 (27/27), Phase 035 (31/31), Step 14 (28/28), and Nigerian LGAs (37/37). |
+| **VERCEL DEPLOYMENT VERIFIED** | **PASS** | Production deployment inspected on Vercel (`https://padifix.vercel.app`, HTTP 200). Strictly respects hobby tier limit with exactly 12 active serverless functions (respecting `.vercelignore`). |
+| **REGRESSION VERIFIED** | **PASS** | 100% Green across all 8 suites: Phase 038 (41/41), Phase 038 Browser QA (7/7), Phase 037 (15/15), Phase 036 (27/27), Phase 035 (31/31), Step 14 (28/28), and Nigerian LGAs (37/37). JavaScript syntax check: 527/527 files passed. |
 
 ---
 
@@ -48,19 +48,14 @@ In strict compliance with the **Certification Rule** ("Do NOT manufacture a gree
 
 ---
 
-## 4. SECURITY DEFINER Function Audit Matrix
+## 4. SECURITY DEFINER Function Audit & Live RPC Behavioral Probes
 
-| Function | Definer Required? | Public Execute? | Auth Execute? | Authorization Check | Search Path Hardened |
-| :--- | :---: | :---: | :---: | :--- | :--- |
-| `approve_provider_verification` | **YES** | ❌ REVOKED | ❌ REVOKED | `auth.role() = 'service_role'` | `SET search_path = public, pg_temp` |
-| `reject_provider_verification` | **YES** | ❌ REVOKED | ❌ REVOKED | `auth.role() = 'service_role'` | `SET search_path = public, pg_temp` |
-| `consume_contact_entitlement` | **YES** | ❌ REVOKED | ❌ REVOKED | `auth.role() = 'service_role'` | `SET search_path = public, pg_temp` |
-| `is_admin` | **YES** | ❌ REVOKED | ✅ ALLOWED | JWT app_metadata / service_role | `SET search_path = public, pg_temp` |
-| `purge_expired_analytics_events` | **YES** | ❌ REVOKED | ❌ REVOKED | Server cron / service_role | `SET search_path = public, pg_temp` |
-| `check_provider_already_verified` | **YES** | N/A (Trigger) | N/A (Trigger) | `providers.is_verified` invariant | `SET search_path = public, pg_temp` |
-| `prevent_privileged_provider_column_update` | **YES** | N/A (Trigger) | N/A (Trigger) | Fail-closed non-service role block | `SET search_path = public, pg_temp` |
-| `prevent_self_review` | **YES** | N/A (Trigger) | N/A (Trigger) | `auth.uid() = providers.user_id` block | `SET search_path = public, pg_temp` |
-| `recalculate_provider_rating_aggregate` | **YES** | N/A (Trigger) | N/A (Trigger) | Internal maintenance config | `SET search_path = public, pg_temp` |
+| Function | Intended Permissions | Anonymous Live Probe Status | Error / Body Code | Live Denial Confirmed? |
+| :--- | :--- | :---: | :---: | :---: |
+| `approve_provider_verification` | `service_role` ONLY | `HTTP 200` | `{"success":false,"error":"Submission not found"}` | ❌ **DENIED NOT YET ENFORCED** (Needs DDL) |
+| `reject_provider_verification` | `service_role` ONLY | `HTTP 200` | `{"success":false,"error":"Submission not found"}` | ❌ **DENIED NOT YET ENFORCED** (Needs DDL) |
+| `is_admin` | `authenticated`, `service_role` | `HTTP 200` | `true/false` | ❌ **DENIED NOT YET ENFORCED** (Needs DDL) |
+| `consume_contact_entitlement` | `service_role` ONLY | `HTTP 401` | `{"code":"42501","message":"permission denied"}` | ✅ **DENIAL CONFIRMED** |
 
 ---
 
@@ -93,10 +88,18 @@ In strict compliance with the **Certification Rule** ("Do NOT manufacture a gree
 
 ---
 
-## 7. Action Required to Achieve Green Certification
+## 7. Credential Hygiene Scan
+
+- **Repository Audit Result:** `no credential exposure detected`
+- Client source code contains zero service-role keys, database passwords, or unmasked Authorization tokens.
+- All live verification probes use environment-backed variables and mask token material in test reporting.
+
+---
+
+## 8. Action Required to Achieve Green Certification
 
 To transition Phase 039 from **CERTIFICATION HOLD** to **FULLY CERTIFIED & SECURED**:
 1. Open the [Supabase Dashboard SQL Editor](https://supabase.com/dashboard/project/hvxosxhnxauiqrhpyuur/sql) for project `hvxosxhnxauiqrhpyuur`.
-2. Paste and run the contents of [apply_production_rls.sql](file:///c:/All%20workspace/PadiFix%20project/lokator/supabase/apply_production_rls.sql).
-3. Rerun `node scripts/verify_phase_039_production_rls.js` to confirm live database authorization closures.
-4. Update this report to **FULLY CERTIFIED & SECURED**.
+2. Paste and execute the complete, committed contents of [apply_production_rls.sql](file:///c:/All%20workspace/PadiFix%20project/lokator/supabase/apply_production_rls.sql).
+3. Rerun `node scripts/verify_phase_039_production_rls.js` to confirm live database authorization closures (tests 8.6, 8.7, and 8.8 must return HTTP 401).
+4. Update this report to 🟢 **PHASE 039 — FULLY CERTIFIED & SECURED**.

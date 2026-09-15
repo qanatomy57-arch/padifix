@@ -817,6 +817,48 @@ async function runPhase039SecuritySuite() {
     assert.strictEqual(err.code, 'PGRST205', 'PostgREST returns PGRST205 table not found');
   });
 
+  await runAsyncTest('8.6 Live RPC: Direct anonymous invocation of approve_provider_verification is denied', async () => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/approve_provider_verification`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ target_submission_id: '00000000-0000-0000-0000-000000000000' })
+    });
+    assert.strictEqual(res.status, 401, 'Anonymous approve_provider_verification must return HTTP 401');
+    const data = await res.json();
+    assert.strictEqual(data.code, '42501', 'Must return PostgreSQL 42501 permission denied');
+  });
+
+  await runAsyncTest('8.7 Live RPC: Direct anonymous invocation of reject_provider_verification is denied', async () => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reject_provider_verification`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ target_submission_id: '00000000-0000-0000-0000-000000000000', reason_code: 'FRAUD_SUSPECTED', notes: 'Verification test' })
+    });
+    assert.strictEqual(res.status, 401, 'Anonymous reject_provider_verification must return HTTP 401');
+    const data = await res.json();
+    assert.strictEqual(data.code, '42501', 'Must return PostgreSQL 42501 permission denied');
+  });
+
+  await runAsyncTest('8.8 Live RPC: Direct anonymous invocation of is_admin is denied', async () => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+    assert.strictEqual(res.status, 401, 'Anonymous is_admin must return HTTP 401');
+    const data = await res.json();
+    assert.strictEqual(data.code, '42501', 'Must return PostgreSQL 42501 permission denied');
+  });
+
   console.log('\n================================================================');
   console.log(`PHASE 039 AUTOMATED SUITE: ${passCount} PASSED, ${failCount} FAILED`);
   console.log('================================================================\n');
