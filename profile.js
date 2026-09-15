@@ -506,7 +506,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       sidePhone.textContent = provider.phoneDisplay || provider.phone;
     }
     if (stickCall && heroTelUrl) stickCall.href = heroTelUrl;
-    if (waSend && heroWaUrl) waSend.href = heroWaUrl;
+    if (waSend) {
+      if (heroWaUrl) waSend.href = heroWaUrl;
+      waSend.onclick = (e) => {
+        if (typeof window.PadiFixIntake !== 'undefined' && typeof window.PadiFixIntake.open === 'function') {
+          e.preventDefault();
+          window.PadiFixIntake.open(provider, {
+            source: 'profile_wa_card',
+            fallbackHref: heroWaUrl
+          });
+        }
+      };
+    }
     if (typeof updateWhatsAppPreview === 'function') {
       try { updateWhatsAppPreview(); } catch (e) {}
     }
@@ -574,6 +585,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnWaHero.style.display = 'inline-flex';
     if (heroWaUrl) btnWaHero.href = heroWaUrl;
     btnWaHero.addEventListener('click', async (e) => {
+      // Phase 042: Launch Universal Pre-WhatsApp Customer Intake Modal
+      if (typeof window.PadiFixIntake !== 'undefined' && typeof window.PadiFixIntake.open === 'function') {
+        e.preventDefault();
+        window.PadiFixIntake.open(provider, {
+          source: 'profile_hero',
+          fallbackHref: heroWaUrl
+        });
+        return;
+      }
+
       // Phase 026 Invariant A: Non-blocking asynchronous lead alert dispatch for WhatsApp
       checkOrMeterContact('whatsapp', e);
 

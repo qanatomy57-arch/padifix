@@ -619,7 +619,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const channelIcon = isWa ? '💬' : '📞';
     const channelClass = isWa ? 'whatsapp' : 'call';
     const locality = escapeHtml(lead.locality || 'Local Area');
-    const intent = escapeHtml(lead.intent_tag || 'Direct Customer Inquiry');
+    const rawIntent = lead.intent_tag || 'Direct Customer Inquiry';
+    let urgencyBadgeHtml = '';
+    let displayIntent = rawIntent;
+
+    if (rawIntent.startsWith('[URGENT]')) {
+      urgencyBadgeHtml = `<span class="crm-badge-urgency urgent" style="background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; margin-right: 6px; display: inline-block;">⚡ URGENT</span>`;
+      displayIntent = rawIntent.replace(/^\[URGENT\]\s*/, '');
+    } else if (rawIntent.startsWith('[2-3 DAYS]')) {
+      urgencyBadgeHtml = `<span class="crm-badge-urgency standard" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; margin-right: 6px; display: inline-block;">📅 2-3 DAYS</span>`;
+      displayIntent = rawIntent.replace(/^\[2-3 DAYS\]\s*/, '');
+    } else if (rawIntent.startsWith('[FLEXIBLE]')) {
+      urgencyBadgeHtml = `<span class="crm-badge-urgency flexible" style="background: rgba(107, 114, 128, 0.15); color: #9CA3AF; border: 1px solid rgba(107, 114, 128, 0.3); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; margin-right: 6px; display: inline-block;">🔄 FLEXIBLE</span>`;
+      displayIntent = rawIntent.replace(/^\[FLEXIBLE\]\s*/, '');
+    }
+
+    const intent = escapeHtml(displayIntent || 'Direct Customer Inquiry');
     const time = escapeHtml(lead.relative_time || 'Just now');
     const notes = lead.notes ? escapeHtml(lead.notes) : '';
     const status = lead.status || 'new';
@@ -695,7 +710,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
               <div style="min-width: 0;">
                 <div class="dash-lead-name dash-lead-locality">📍 ${locality}</div>
-                <div class="dash-lead-service dash-lead-intent">${intent}</div>
+                <div class="dash-lead-service dash-lead-intent">${urgencyBadgeHtml}${intent}</div>
                 ${clientName ? `<div class="crm-client-tag">👤 ${clientName}</div>` : ''}
               </div>
             </div>

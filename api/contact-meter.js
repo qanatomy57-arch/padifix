@@ -476,11 +476,67 @@ const contactMeterHandler = async (req, res) => {
       reset_period,
       locality,
       intent_tag,
+      urgency,
+      service_details,
       mode,
       soft_cap,
       _inject
     } = req.body || {};
     const effectiveInject = _inject || req._inject || {};
+
+    // --------------------------------------------------------------------------
+    // PHASE 042: INPUT SANITIZATION, BOUNDS & CANONICAL INTENT FORMATTING
+    // --------------------------------------------------------------------------
+    // Strict urgency allowlist mapping
+    const URGENCY_PREFIX_MAP = {
+      'today': '[URGENT]',
+      '2-3_days': '[2-3 DAYS]',
+      'flexible': '[FLEXIBLE]'
+    };
+    const validUrgency = (urgency && typeof urgency === 'string' && URGENCY_PREFIX_MAP[urgency.toLowerCase().trim()])
+      ? urgency.toLowerCase().trim()
+      : null;
+    const urgencyPrefix = validUrgency ? URGENCY_PREFIX_MAP[validUrgency] : null;
+
+    // Sanitize locality: max 80 chars, no HTML tags, strip control characters
+    const rawLocality = locality != null ? String(locality) : '';
+    const cleanLocality = rawLocality
+      .replace(/<[^>]*>/g, '')
+      .replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 80) || null;
+
+    // Sanitize service_details: max 80 chars, no HTML tags, strip control characters
+    const rawService = service_details != null ? String(service_details) : '';
+    const cleanService = rawService
+      .replace(/<[^>]*>/g, '')
+      .replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 80);
+
+    // Resolve canonical intent_tag with backward-compatibility for existing plain intent_tag callers
+    let effectiveIntentTag = null;
+    if (urgencyPrefix && cleanService) {
+      effectiveIntentTag = `${urgencyPrefix} ${cleanService}`.substring(0, 80);
+    } else if (cleanService) {
+      effectiveIntentTag = cleanService.substring(0, 80);
+    } else if (intent_tag != null) {
+      const rawIntent = String(intent_tag)
+        .replace(/<[^>]*>/g, '')
+        .replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 80);
+      if (urgencyPrefix && !rawIntent.startsWith(urgencyPrefix)) {
+        effectiveIntentTag = `${urgencyPrefix} ${rawIntent}`.substring(0, 80);
+      } else {
+        effectiveIntentTag = rawIntent || null;
+      }
+    } else if (urgencyPrefix) {
+      effectiveIntentTag = `${urgencyPrefix} Inquiry`.substring(0, 80);
+    }
 
     if (!provider_id) {
       return res.status(400).json({ error: 'Missing required provider_id' });
@@ -599,8 +655,8 @@ const contactMeterHandler = async (req, res) => {
       rpcEntitlement = await consumeContactEntitlementPg({
         provider_id: provId,
         channel: normChannel,
-        locality,
-        intent_tag,
+        locality: cleanLocality,
+        intent_tag: effectiveIntentTag,
         idempotency_key: effectiveKey,
         billing_period: period,
         session_token
@@ -620,8 +676,8 @@ const contactMeterHandler = async (req, res) => {
       pgResult = await persistContactEvent({
         provider_id: provId,
         channel: normChannel,
-        locality,
-        intent_tag,
+        locality: cleanLocality,
+        intent_tag: effectiveIntentTag,
         idempotency_key: effectiveKey,
         billing_period: period,
         session_token
@@ -634,8 +690,8 @@ const contactMeterHandler = async (req, res) => {
     LeadStore.logContactLead({
       provider_id: provId,
       channel: normChannel,
-      locality,
-      intent_tag,
+      locality: cleanLocality,
+      intent_tag: effectiveIntentTag,
       idempotency_key: effectiveKey,
       billing_period: period,
       session_token
@@ -760,8 +816,9 @@ const contactMeterHandler = async (req, res) => {
         dispatchArtisanLeadAlert({
           contactEventId: canonicalEventId,
           providerId: provId,
-          locality,
-          intentTag: intent_tag,
+          locality: cleanLocality,
+          intentTag: effectiveIntentTag,
+          urgency: validUrgency,
           _inject
         }).catch(alertErr => {
           console.error('[ContactMeter:AlertError:Pg]', alertErr.message);
@@ -771,8 +828,8 @@ const contactMeterHandler = async (req, res) => {
           eventId: canonicalEventId,
           providerId: provId,
           channel: normChannel,
-          locality,
-          intentTag: intent_tag,
+          locality: cleanLocality,
+          intentTag: effectiveIntentTag,
           _inject
         }).catch(broadcastErr => {
           console.error('[ContactMeter:BroadcastError:Pg]', broadcastErr.message);
@@ -886,8 +943,9 @@ const contactMeterHandler = async (req, res) => {
         dispatchArtisanLeadAlert({
           contactEventId: canonicalEventId,
           providerId: provId,
-          locality,
-          intentTag: intent_tag,
+          locality: cleanLocality,
+          intentTag: effectiveIntentTag,
+          urgency: validUrgency,
           _inject: effectiveInject
         }).catch(alertErr => {
           console.error('[ContactMeter:AlertError:Memory]', alertErr.message);
@@ -897,8 +955,8 @@ const contactMeterHandler = async (req, res) => {
           eventId: canonicalEventId,
           providerId: provId,
           channel: normChannel,
-          locality,
-          intentTag: intent_tag,
+          locality: cleanLocality,
+          intentTag: effectiveIntentTag,
           _inject: effectiveInject
         }).catch(broadcastErr => {
           console.error('[ContactMeter:BroadcastError:Memory]', broadcastErr.message);

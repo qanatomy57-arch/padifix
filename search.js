@@ -1370,9 +1370,29 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
           } else if (e.target.closest('.message-btn')) {
+            const msgBtn = e.target.closest('.message-btn');
             const card = e.target.closest('.provider-item-card');
             const provName = card ? (card.querySelector('.provider-title-name')?.textContent || '').trim() : '';
             const provLoc = card ? (card.dataset.providerLocation || card.querySelector('.provider-location-row')?.textContent?.replace('📍', '').trim() || '') : '';
+
+            // Phase 042: Launch Universal Pre-WhatsApp Customer Intake Modal
+            if (typeof window.PadiFixIntake !== 'undefined' && typeof window.PadiFixIntake.open === 'function') {
+              e.preventDefault();
+              e.stopPropagation();
+              const fullProv = (state.allProviders || []).find(p => Number(p.id) === providerId) || {
+                id: providerId,
+                first_name: provName,
+                business_name: provName,
+                trade: trade,
+                location: provLoc
+              };
+              window.PadiFixIntake.open(fullProv, {
+                source: 'search_card',
+                fallbackHref: msgBtn.getAttribute('href')
+              });
+              return;
+            }
+
             // Phase 014: Cryptographic attempt UUID with 30s duplicate-tap debounce
             if (!window._padifixContactAttempts) window._padifixContactAttempts = new Map();
             const attemptCacheKey = `${providerId}_whatsapp`;
