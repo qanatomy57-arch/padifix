@@ -585,6 +585,102 @@ async function handlePortfolioPost(req, res) {
   return res.status(400).json({ error: `Unsupported action: ${action}` });
 }
 
+/**
+ * Phase 038.1: Balanced Marketplace Search Ranking Model
+ * Prioritizes:
+ * 1. Exact category match (highest)
+ * 2. State/LGA proximity (high)
+ * 3. Review rating (high) - average_rating DESC NULLS LAST
+ * 4. Review count (medium)
+ * 5. Verification status (medium)
+ * 6. Subscription tier (low-medium)
+ * 7. Recency / activity (low)
+ */
+function getSubscriptionTierRank(p) {
+  const isV = Boolean(p.is_verified || p.nin_verified);
+  const plan = String(p.subscription_plan || p.plan_id || p.plan || 'FREE').toUpperCase();
+  const status = String(p.subscription_status || p.status || 'active').toLowerCase();
+  const isSubActive = !['expired', 'cancelled', 'canceled', 'payment_failed', 'inactive'].includes(status);
+  if (!isV || !isSubActive) return 0;
+  if (plan === 'PREMIUM') return 3;
+  if (plan === 'PRO') return 2;
+  if (plan === 'BASIC') return 1;
+  return 0;
+}
+
+function getCategoryRelevance(p, ctx) {
+  const catQuery = String(ctx.category || ctx.queryTerm || '').toLowerCase().trim();
+  if (!catQuery) return 0;
+  const pCat = String(p.primary_category_slug || p.category || '').toLowerCase();
+  const pTrade = String(p.trade_title || p.trade || '').toLowerCase();
+  if (pCat === catQuery || pTrade === catQuery) return 100;
+  if (pCat.includes(catQuery) || pTrade.includes(catQuery) || catQuery.includes(pCat)) return 50;
+  const skills = Array.isArray(p.skills) ? p.skills : [];
+  if (skills.some(s => String(s).toLowerCase().includes(catQuery))) return 25;
+  return 0;
+}
+
+function getLocationScore(p, ctx) {
+  const lgaQuery = String(ctx.lga || '').toLowerCase().trim();
+  const stateQuery = String(ctx.state || '').toLowerCase().trim();
+  let score = 0;
+  const pLga = String(p.lga || '').toLowerCase().trim();
+  const pState = String(p.state || '').toLowerCase().trim();
+  if (lgaQuery && pLga && (pLga === lgaQuery || pLga.includes(lgaQuery))) {
+    score += 50;
+  }
+  if (stateQuery && pState && (pState === stateQuery || pState.includes(stateQuery))) {
+    score += 25;
+  }
+  return score;
+}
+
+function compareProvidersByRelevance(a, b, ctx) {
+  // 1. Exact category match (highest)
+  const catA = getCategoryRelevance(a, ctx);
+  const catB = getCategoryRelevance(b, ctx);
+  if (catB !== catA) return catB - catA;
+
+  // 2. State/LGA proximity (high)
+  const locA = getLocationScore(a, ctx);
+  const locB = getLocationScore(b, ctx);
+  if (locB !== locA) return locB - locA;
+
+  // Explicit user sorting options
+  if (ctx.sort === 'jobs-desc') {
+    const jDiff = (Number(b.completed_jobs) || 0) - (Number(a.completed_jobs) || 0);
+    if (jDiff !== 0) return jDiff;
+  } else if (ctx.sort === 'newest') {
+    const tDiff = (new Date(b.created_at || 0).getTime()) - (new Date(a.created_at || 0).getTime());
+    if (tDiff !== 0) return tDiff;
+  } else {
+    // 3. Review rating (high) - average_rating DESC NULLS LAST
+    const rA = a.rating != null ? Number(a.rating) : -1;
+    const rB = b.rating != null ? Number(b.rating) : -1;
+    if (rB !== rA) return rB - rA;
+  }
+
+  // 4. Review count (medium)
+  const revA = Number(a.reviews_count) || 0;
+  const revB = Number(b.reviews_count) || 0;
+  if (revB !== revA) return revB - revA;
+
+  // 5. Verification status (medium)
+  const verA = (a.is_verified || a.nin_verified) ? 1 : 0;
+  const verB = (b.is_verified || b.nin_verified) ? 1 : 0;
+  if (verB !== verA) return verB - verA;
+
+  // 6. Subscription tier (low-medium)
+  const tierA = getSubscriptionTierRank(a);
+  const tierB = getSubscriptionTierRank(b);
+  if (tierB !== tierA) return tierB - tierA;
+
+  // 7. Recency / activity (low)
+  const recA = new Date(a.last_active_at || a.updated_at || a.created_at || 0).getTime();
+  const recB = new Date(b.last_active_at || b.updated_at || b.created_at || 0).getTime();
+  return recB - recA;
+}
+
 const providersHandler = async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -623,7 +719,8 @@ const providersHandler = async (req, res) => {
     const queryLocality = (req.query?.locality || req.query?.area || params.get('locality') || params.get('area') || '').trim();
     const queryVerified = req.query?.verified || params.get('verified');
     const queryAvailable = req.query?.available || params.get('available');
-    const querySort = (req.query?.sort || params.get('sort') || 'newest').trim().toLowerCase();
+    const rawSort = req.query?.sort || params.get('sort');
+    const querySort = rawSort ? rawSort.trim().toLowerCase() : 'default';
 
     // Bounded Pagination (Section 6)
     const rawPage = parseInt(req.query?.page || params.get('page') || '1', 10);
@@ -690,14 +787,14 @@ const providersHandler = async (req, res) => {
       }
     }
 
-    // Sorting (Section 3 & Phase 038 Organic Ranking Boost)
-    let orderClause = 'is_verified.desc,created_at.desc';
+    // Sorting (Phase 038.1: Balanced Marketplace Ranking Model)
+    let orderClause = 'rating.desc.nullslast,reviews_count.desc,is_verified.desc,created_at.desc';
     if (querySort === 'rating-desc') {
-      orderClause = 'is_verified.desc,rating.desc,reviews_count.desc';
+      orderClause = 'rating.desc.nullslast,reviews_count.desc,is_verified.desc';
     } else if (querySort === 'jobs-desc') {
-      orderClause = 'is_verified.desc,completed_jobs.desc';
+      orderClause = 'completed_jobs.desc,rating.desc.nullslast,is_verified.desc';
     } else if (querySort === 'newest') {
-      orderClause = 'is_verified.desc,created_at.desc';
+      orderClause = 'created_at.desc,rating.desc.nullslast,is_verified.desc';
     }
 
     // Target customer-safe columns only
@@ -725,10 +822,20 @@ const providersHandler = async (req, res) => {
       'nin_verified',
       'is_available',
       'subscription_plan',
-      'subscription_status'
+      'subscription_status',
+      'created_at',
+      'last_active_at'
     ].join(',');
 
     const queryUrl = `${SUPABASE_URL}/rest/v1/providers?select=${selectColumns}&${filterParams.join('&')}&order=${orderClause}&limit=${pageSize}&offset=${offset}`;
+
+    const searchContext = {
+      category: queryCategory,
+      queryTerm: queryTerm,
+      state: queryState,
+      lga: queryLga,
+      sort: querySort
+    };
 
     let rows = [];
     let totalCount = 0;
@@ -745,22 +852,8 @@ const providersHandler = async (req, res) => {
           return isV && isPaid && isSubActive;
         });
       }
-      // Mirror real PostgREST orderClause: is_verified.desc always first, then secondary sort
-      filtered.sort((a, b) => {
-        const aV = (a.is_verified || a.nin_verified) ? 1 : 0;
-        const bV = (b.is_verified || b.nin_verified) ? 1 : 0;
-        if (bV !== aV) return bV - aV;
-
-        const sortKey = req.query?.sort || 'newest';
-        if (sortKey === 'rating-desc') {
-          const rDiff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
-          if (rDiff !== 0) return rDiff;
-          return (Number(b.reviews_count) || 0) - (Number(a.reviews_count) || 0);
-        } else if (sortKey === 'jobs-desc') {
-          return (Number(b.completed_jobs) || 0) - (Number(a.completed_jobs) || 0);
-        }
-        return (new Date(b.created_at || 0).getTime()) - (new Date(a.created_at || 0).getTime());
-      });
+      // Phase 038.1: Multi-factor weighted ranking model
+      filtered.sort((a, b) => compareProvidersByRelevance(a, b, searchContext));
       rows = filtered;
       totalCount = rows.length;
     } else {
@@ -783,6 +876,9 @@ const providersHandler = async (req, res) => {
         }
 
         rows = await dbRes.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          rows.sort((a, b) => compareProvidersByRelevance(a, b, searchContext));
+        }
         const contentRange = dbRes.headers.get('content-range');
         totalCount = rows.length;
         if (contentRange) {

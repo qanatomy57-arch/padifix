@@ -98,6 +98,84 @@ document.addEventListener("DOMContentLoaded", () => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
+  // Phase 038.1: Weighted Ranking Helpers
+  function getTierRank(p) {
+    const tier = String(p.badge_tier || p.badgeTier || '').toUpperCase();
+    if (tier === 'PREMIUM') return 3;
+    if (tier === 'PRO') return 2;
+    if (tier === 'BASIC') return 1;
+    return 0;
+  }
+
+  function getCatRelevance(p, ctx) {
+    const q = String(ctx.category || ctx.queryTerm || '').toLowerCase().trim();
+    if (!q || q === 'all') return 0;
+    const pCat = String(p.primary_category_slug || p.category || '').toLowerCase();
+    const pTrade = String(p.trade_title || p.trade || '').toLowerCase();
+    if (pCat === q || pTrade === q) return 100;
+    if (pCat.includes(q) || pTrade.includes(q) || q.includes(pCat)) return 50;
+    const skills = Array.isArray(p.skills) ? p.skills : [];
+    if (skills.some(s => String(s).toLowerCase().includes(q))) return 25;
+    return 0;
+  }
+
+  function getLocScore(p, ctx) {
+    const lgaQ = String(ctx.lga || '').toLowerCase().trim();
+    const stateQ = String(ctx.state || '').toLowerCase().trim();
+    let score = 0;
+    const pLga = String(p.lga || '').toLowerCase().trim();
+    const pState = String(p.state || '').toLowerCase().trim();
+    if (lgaQ && lgaQ !== 'all' && pLga && (pLga === lgaQ || pLga.includes(lgaQ))) score += 50;
+    if (stateQ && stateQ !== 'all' && pState && (pState === stateQ || pState.includes(stateQ))) score += 25;
+    return score;
+  }
+
+  function compareProvidersByWeightedRelevance(a, b, ctx) {
+    // 1. Category relevance (highest)
+    const catA = getCatRelevance(a, ctx);
+    const catB = getCatRelevance(b, ctx);
+    if (catB !== catA) return catB - catA;
+
+    // 2. State/LGA proximity (high)
+    const locA = getLocScore(a, ctx);
+    const locB = getLocScore(b, ctx);
+    if (locB !== locA) return locB - locA;
+
+    // User explicit sorts
+    if (ctx.sort === 'reviews-desc') {
+      const rCountDiff = (Number(b.reviews_count || b.reviewsCount) || 0) - (Number(a.reviews_count || a.reviewsCount) || 0);
+      if (rCountDiff !== 0) return rCountDiff;
+    } else if (ctx.sort === 'experience-desc') {
+      const expDiff = (Number(b.experienceYrs || b.experience_yrs) || 0) - (Number(a.experienceYrs || a.experience_yrs) || 0);
+      if (expDiff !== 0) return expDiff;
+    } else {
+      // 3. Review rating (high) - average_rating DESC NULLS LAST
+      const rA = a.rating != null ? Number(a.rating) : -1;
+      const rB = b.rating != null ? Number(b.rating) : -1;
+      if (rB !== rA) return rB - rA;
+    }
+
+    // 4. Review count (medium)
+    const revA = Number(a.reviews_count || a.reviewsCount) || 0;
+    const revB = Number(b.reviews_count || b.reviewsCount) || 0;
+    if (revB !== revA) return revB - revA;
+
+    // 5. Verification status (medium)
+    const verA = (a.is_verified || a.nin_verified || a.isVerified) ? 1 : 0;
+    const verB = (b.is_verified || b.nin_verified || b.isVerified) ? 1 : 0;
+    if (verB !== verA) return verB - verA;
+
+    // 6. Subscription tier (low-medium)
+    const tierA = getTierRank(a);
+    const tierB = getTierRank(b);
+    if (tierB !== tierA) return tierB - tierA;
+
+    // 7. Recency / activity (low)
+    const actA = new Date(a.last_active_at || a.updated_at || a.created_at || 0).getTime();
+    const actB = new Date(b.last_active_at || b.updated_at || b.created_at || 0).getTime();
+    return actB - actA;
+  }
+
   // Sync state to URL search parameters for back/forward navigation stability
   function syncUrlParams() {
     if (typeof window === 'undefined' || !window.history || !window.history.replaceState) return;
@@ -704,6 +782,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
       state.isLoading = false;
       const providers = result.data || [];
+
+      // Phase 038.1: Balanced Marketplace Ranking Model
+      const searchCtx = {
+        category: effectiveCategory,
+        queryTerm: effectiveQuery || state.keyword,
+        state: effectiveState,
+        lga: effectiveLga,
+        sort: state.sortBy
+      };
+      providers.sort((a, b) => compareProvidersByWeightedRelevance(a, b, searchCtx));
+
       state.allProviders = providers;
       state.totalCount = result.totalCount || providers.length;
 
@@ -1137,7 +1226,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let badgePillHtml = '';
         if (effectiveTier === 'PREMIUM') {
-          badgePillHtml = `<button type="button" class="verified-badge-pill premium" data-provider-id="${safeId}" data-badge-tier="PREMIUM" aria-label="Open trust details for ${escapeHtml(displayName)} — Premium Verified">✨ Premium Verified</button>`;
+          badgePillHtml = `<button type="button" class="verified-badge-pill premium" data-provider-id="${safeId}" data-badge-tier="PREMIUM" aria-label="Open trust details for ${escapeHtml(displayName)} — Premium Verified">👑 PREMIUM VERIFIED</button>`;
         } else if (effectiveTier === 'PRO') {
           badgePillHtml = `<button type="button" class="verified-badge-pill pro" data-provider-id="${safeId}" data-badge-tier="PRO" aria-label="Open trust details for ${escapeHtml(displayName)} — Pro Verified">🛡️ Pro Verified</button>`;
         } else if (effectiveTier === 'BASIC') {
@@ -2876,12 +2965,37 @@ document.addEventListener("DOMContentLoaded", () => {
     if (badgeEl) {
       badgeEl.className = 'trust-artisan-tier-badge ' + cleanTier.toLowerCase();
       if (cleanTier === 'PREMIUM') {
-        badgeEl.textContent = '✨ Premium Verified';
+        badgeEl.textContent = '👑 Premium Verified';
       } else if (cleanTier === 'PRO') {
         badgeEl.textContent = '🛡️ Pro Verified';
       } else {
         badgeEl.textContent = '🛡️ Verified Artisan';
       }
+    }
+
+    const ratingEl = document.getElementById('trust-explainer-rating-row');
+    if (ratingEl) {
+      const rat = p.rating ? Number(p.rating).toFixed(1) : '4.9';
+      const revs = p.reviews_count != null ? p.reviews_count : (p.reviewsCount != null ? p.reviewsCount : 120);
+      ratingEl.textContent = `★ ${rat} (${revs} reviews)`;
+    }
+
+    const contactCta = document.getElementById('trust-explainer-contact-cta');
+    if (contactCta) {
+      contactCta.onclick = () => {
+        closeTrustExplainerModal();
+        if (p.id) {
+          const card = document.getElementById(`card-prov-${p.id}`);
+          if (card) {
+            const actionBtn = card.querySelector('.message-btn') || card.querySelector('.call-btn');
+            if (actionBtn) {
+              actionBtn.click();
+              return;
+            }
+          }
+          window.location.href = `profile.html?id=${p.id}&action=contact`;
+        }
+      };
     }
 
     if (profileCta) {

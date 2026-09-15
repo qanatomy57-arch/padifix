@@ -192,7 +192,10 @@ async function runBrowserQA() {
     if (!bannerText.includes('Vetted Identity') || !bannerText.includes('Direct Deals') || !bannerText.includes('Zero Escrow')) {
       throw new Error('Trust banner missing canonical 3 pillars (Vetted Identity, Direct Deals, Zero Escrow Risk)');
     }
-    console.log('   ✓ Trust Banner Contains All 3 Pillars (Vetted Identity, Direct Deals, Zero Escrow Risk)');
+    if (!bannerText.includes('Government ID verification conducted by the PadiFix Compliance Desk.')) {
+      throw new Error('Trust banner missing updated Phase 038.1 pillar 1 copy ("Government ID verification conducted by the PadiFix Compliance Desk.")');
+    }
+    console.log('   ✓ Trust Banner Contains All 3 Pillars and Updated Phase 038.1 Copy');
 
     // Capture Desktop Trust Banner Screenshot
     const bannerScreenshotPath = path.join(ARTIFACTS_DIR, 'phase_038_search_trust_banner_desktop.png');
@@ -238,10 +241,14 @@ async function runBrowserQA() {
     console.log(`   ✓ Found ${badgeCount} Verified Badge Pills in Results`);
     if (badgeCount === 0) throw new Error('Zero .verified-badge-pill elements found on rendered cards');
 
-    // Click on the first badge pill to test contextual explainer modal
+    // Verify first badge is PREMIUM with crown icon
     const firstBadge = badgePills.first();
     const badgeTierAttr = await firstBadge.getAttribute('data-badge-tier');
-    console.log(`   ✓ First Badge Tier Attribute: ${badgeTierAttr}`);
+    const firstBadgeText = await firstBadge.innerText();
+    console.log(`   ✓ First Badge Tier Attribute: ${badgeTierAttr}, Text: "${firstBadgeText}"`);
+    if (badgeTierAttr === 'PREMIUM' && !firstBadgeText.includes('👑')) {
+      throw new Error('Premium badge missing luxury crown icon (👑)');
+    }
     await firstBadge.click();
     await page.waitForTimeout(500);
 

@@ -213,9 +213,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                        'Self-reported listing details supplied by provider.'
         };
 
-    heroVerifiedBadge.className = verState.badgeClass;
+    const isPrem = (verState.badgeTier === 'PREMIUM' || String(provider.badge_tier || '').toUpperCase() === 'PREMIUM');
+    heroVerifiedBadge.className = isPrem ? 'profile-verified-pill premium' : verState.badgeClass;
     if (verState.badgeVisible && verState.publicBadgeText) {
-      if (verState.icon === '🛡️') {
+      if (isPrem) {
+        heroVerifiedBadge.innerHTML = `👑 Premium Verified`;
+      } else if (verState.icon === '🛡️') {
         heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
       } else if (verState.icon === '✓') {
         heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;

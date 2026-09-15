@@ -403,11 +403,30 @@ async function runPhase038Suite() {
   });
 
   // -------------------------------------------------------------
-  // SECTION 2: SEARCH RANKING & ORGANIC TRUST PREFERENCE
+  // SECTION 2: BALANCED SEARCH RANKING & WEIGHTED RELEVANCE (PHASE 038.1)
   // -------------------------------------------------------------
-  console.log('\n--- SECTION 2: Search Ranking & Organic Trust Preference ---');
+  console.log('\n--- SECTION 2: Balanced Search Ranking & Weighted Relevance (Phase 038.1) ---');
 
-  await runTest('2.1 Default search orders verified providers first (is_verified DESC)', async () => {
+  await runTest('2.1 Balanced relevance model: Category match and rating/review quality determine top results', async () => {
+    // Search with category=plumber
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=plumber',
+      query: { category: 'plumber' },
+      _mockRows: getSampleProviders()
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    const providers = res.body.data;
+    assert.ok(Array.isArray(providers) && providers.length > 0, 'Should return provider list');
+
+    // First provider must be the exact category match (PlumbRight Services id=2)
+    assert.strictEqual(providers[0].id, 2, 'Exact category match (plumber) must rank first');
+  });
+
+  await runTest('2.2 Default search ranks by review rating and review count quality over pure pay-to-win', async () => {
     const req = {
       method: 'GET',
       headers: {},
@@ -419,44 +438,11 @@ async function runPhase038Suite() {
     await providersHandler(req, res);
     assert.strictEqual(res.statusCode, 200);
     const providers = res.body.data;
-    assert.ok(Array.isArray(providers) && providers.length > 0, 'Should return provider list');
 
-    // Verify all verified providers appear before unverified providers in default order
-    let seenUnverified = false;
-    for (const p of providers) {
-      if (!p.is_verified) {
-        seenUnverified = true;
-      } else if (seenUnverified) {
-        throw new Error(`Verified provider id=${p.id} appeared after unverified provider in default ranking!`);
-      }
-    }
-  });
-
-  await runTest('2.2 Explicit user sorting preserves is_verified preference while respecting sort key', async () => {
-    const req = {
-      method: 'GET',
-      headers: {},
-      url: '/api/providers?sort=rating-desc',
-      query: { sort: 'rating-desc' },
-      _mockRows: getSampleProviders()
-    };
-    const res = createMockRes();
-    await providersHandler(req, res);
-    assert.strictEqual(res.statusCode, 200);
-    const providers = res.body.data;
-    assert.ok(Array.isArray(providers) && providers.length > 0, 'Should return providers');
-
-    // Verified providers should still appear first even with rating sort
-    const verifiedGroup = providers.filter(p => p.is_verified);
-    const unverifiedGroup = providers.filter(p => !p.is_verified);
-
-    // At least check that verified providers have contiguous positions at the top
-    if (verifiedGroup.length > 0 && unverifiedGroup.length > 0) {
-      const lastVerifiedIdx = providers.lastIndexOf(verifiedGroup[verifiedGroup.length - 1]);
-      const firstUnverifiedIdx = providers.indexOf(unverifiedGroup[0]);
-      assert.ok(lastVerifiedIdx < firstUnverifiedIdx || lastVerifiedIdx === providers.length - 1,
-        'Verified providers should appear before unverified in sorted results');
-    }
+    // Top provider should be highest rated with most reviews (Imperial HVAC id=3 with rating 5.0, 112 reviews)
+    assert.strictEqual(providers[0].id, 3, 'Top rated provider (5.0, 112 reviews) must appear at top');
+    assert.strictEqual(providers[1].id, 2, 'Second rated provider (4.9, 50 reviews) must appear second');
+    assert.strictEqual(providers[2].id, 1, 'Third rated provider (4.8, 24 reviews) must appear third');
   });
 
   // -------------------------------------------------------------
@@ -713,6 +699,19 @@ async function runPhase038Suite() {
     const content = fs.readFileSync(path.resolve(__dirname, '..', 'search.html'), 'utf8');
     assert.ok(content.includes('role="dialog"'), 'Modal must have role="dialog"');
     assert.ok(content.includes('aria-modal="true"'), 'Modal must have aria-modal="true"');
+  });
+
+  await runTest('7.6 search.html trust banner contains updated Phase 038.1 copy', () => {
+    const content = fs.readFileSync(path.resolve(__dirname, '..', 'search.html'), 'utf8');
+    assert.ok(content.includes('Government ID verification conducted by the PadiFix Compliance Desk.'),
+      'Must contain updated pillar copy');
+    assert.ok(content.includes('PadiFix Verification Assurance'), 'Must contain updated banner title');
+  });
+
+  await runTest('7.7 search.css contains luxury gold styling for .verified-badge-pill.premium', () => {
+    const content = fs.readFileSync(path.resolve(__dirname, '..', 'search.css'), 'utf8');
+    assert.ok(content.includes('.verified-badge-pill.premium'), 'Must contain premium badge styles');
+    assert.ok(content.includes('#F59E0B') || content.includes('#FDE68A'), 'Must use warm gold accents');
   });
 
   console.log('\n================================================================');

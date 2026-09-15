@@ -302,16 +302,19 @@
           <!-- Injected dynamically via search.js -->
         </div>
 
-        <!-- Phase 038: Marketplace Trust & Verification Assurance Banner -->
+        <!-- Phase 038.1: Marketplace Trust & Verification Assurance Banner -->
         <aside class="search-trust-banner" id="search-trust-banner" aria-label="PadiFix Verification & Direct Deal Assurance" style="display: none;">
           <div class="trust-banner-inner">
             <div class="trust-banner-header">
-              <div class="trust-banner-badge">
-                <span class="trust-badge-icon">🛡️</span>
-                <strong>PadiFix Trust Assurance</strong>
+              <div class="trust-banner-badge-wrap">
+                <div class="trust-banner-badge">
+                  <span class="trust-badge-icon">🛡️</span>
+                  <strong>PadiFix Verification Assurance</strong>
+                </div>
+                <p class="trust-banner-subcopy">Work with trusted, vetted and verified professionals.</p>
               </div>
               <div class="trust-banner-actions">
-                <button type="button" class="btn-trust-learn-more" id="btn-open-trust-modal">Learn How We Verify</button>
+                <button type="button" class="btn-trust-learn-more" id="btn-open-trust-modal">Learn How We Verify →</button>
                 <button type="button" class="btn-trust-banner-dismiss" id="btn-dismiss-trust-banner" aria-label="Dismiss trust assurance banner" title="Dismiss banner">
                   &times;
                 </button>
@@ -322,21 +325,21 @@
                 <div class="pillar-icon">✓</div>
                 <div class="pillar-body">
                   <h4 class="pillar-title">Vetted Identity</h4>
-                  <p class="pillar-desc">Compliance-reviewed government ID verification.</p>
+                  <p class="pillar-desc">Government ID verification conducted by the PadiFix Compliance Desk.</p>
                 </div>
               </div>
               <div class="trust-pillar">
                 <div class="pillar-icon">⚡</div>
                 <div class="pillar-body">
                   <h4 class="pillar-title">Direct Deals</h4>
-                  <p class="pillar-desc">0% commission with direct phone/WhatsApp contact.</p>
+                  <p class="pillar-desc">0% commission, direct phone/WhatsApp contact.</p>
                 </div>
               </div>
               <div class="trust-pillar">
                 <div class="pillar-icon">🤝</div>
                 <div class="pillar-body">
                   <h4 class="pillar-title">Zero Escrow Risk</h4>
-                  <p class="pillar-desc">Customers and artisans agree directly without PadiFix holding job payments.</p>
+                  <p class="pillar-desc">Direct artisan agreement without platform markups.</p>
                 </div>
               </div>
             </div>
@@ -611,13 +614,13 @@
     <span id="mobile-map-text">View Map</span>
   </button>
 
-  <!-- Phase 038: Interactive Accessible Trust Explainer Modal -->
+  <!-- Phase 038.1: Interactive Accessible Trust Explainer Modal -->
   <div class="trust-explainer-backdrop" id="modal-trust-explainer" role="dialog" aria-modal="true" aria-labelledby="trust-explainer-title" style="display: none;">
     <div class="trust-explainer-card">
       <div class="trust-explainer-header">
         <div class="trust-explainer-title-wrap">
           <span class="trust-explainer-shield" id="trust-explainer-icon">🛡️</span>
-          <h3 id="trust-explainer-title">Trust & Verification Details</h3>
+          <h3 id="trust-explainer-title">PadiFix Verification Assurance</h3>
         </div>
         <button type="button" class="trust-explainer-close-btn" id="btn-close-trust-explainer" aria-label="Close trust details">
           &times;
@@ -625,42 +628,46 @@
       </div>
       <div class="trust-explainer-body">
         <div class="trust-artisan-banner">
-          <div class="trust-artisan-name" id="trust-explainer-artisan-name">Artisan Professional</div>
+          <div class="trust-artisan-info-col">
+            <div class="trust-artisan-name" id="trust-explainer-artisan-name">Artisan Professional</div>
+            <div class="trust-artisan-rating-row" id="trust-explainer-rating-row">★ 4.9 (120 reviews)</div>
+          </div>
           <div class="trust-artisan-tier-badge" id="trust-explainer-tier-badge">Pro Verified</div>
         </div>
 
         <div class="trust-core-statement">
           <span class="trust-check-icon">✓</span>
-          <strong>Government ID Checked & Authenticated by PadiFix Compliance Desk</strong>
+          <strong>Government ID verification conducted by the PadiFix Compliance Desk.</strong>
         </div>
 
-        <div class="trust-checklist">
-          <div class="trust-check-item">
-            <span class="check-bullet">🛡️</span>
-            <div class="check-text">
-              <strong>Official Identity Vetting:</strong>
-              <span>Submitted government ID (NIN Slip, Voter's Card, Driver's License, or Passport) has been audited and validated by compliance officers.</span>
+        <div class="trust-checklist-section">
+          <h4 class="trust-why-title">Why This Artisan is Trusted</h4>
+          <div class="trust-checklist">
+            <div class="trust-check-item">
+              <span class="check-bullet">✓</span>
+              <div class="check-text">
+                <strong>Verified identity and credentials</strong>
+              </div>
             </div>
-          </div>
-          <div class="trust-check-item">
-            <span class="check-bullet">🔒</span>
-            <div class="check-text">
-              <strong>Strict Privacy & Zero PII Exposure:</strong>
-              <span>Raw identification documents and personal identity numbers (NIN/BVN) are stored in encrypted private storage and never exposed to the public.</span>
+            <div class="trust-check-item">
+              <span class="check-bullet">✓</span>
+              <div class="check-text">
+                <strong>Vetted by PadiFix Compliance Desk</strong>
+              </div>
             </div>
-          </div>
-          <div class="trust-check-item">
-            <span class="check-bullet">🤝</span>
-            <div class="check-text">
-              <strong>Direct Customer Agreement:</strong>
-              <span>PadiFix charges 0% commission and never holds escrow. You agree and pay your artisan directly upon job completion.</span>
+            <div class="trust-check-item">
+              <span class="check-bullet">✓</span>
+              <div class="check-text">
+                <strong>No raw PII stored (your data stays private)</strong>
+              </div>
             </div>
           </div>
         </div>
       </div>
       <div class="trust-explainer-footer">
-        <a href="#" class="btn btn-primary" id="trust-explainer-profile-cta" style="text-decoration: none;">View Full Profile</a>
-        <button type="button" class="btn btn-outline" id="trust-explainer-dismiss-cta">Close</button>
+        <button type="button" class="btn btn-primary" id="trust-explainer-contact-cta">Contact Verified Artisan</button>
+        <a href="#" class="btn btn-outline" id="trust-explainer-profile-cta" style="text-decoration: none;">View Full Profile</a>
+        <button type="button" class="btn btn-ghost" id="trust-explainer-dismiss-cta" style="display: none;">Close</button>
       </div>
     </div>
   </div>
