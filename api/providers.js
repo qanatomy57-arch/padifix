@@ -105,18 +105,12 @@ function toPublicProvider(row) {
   let badgeTier = null;
   let badgeTitle = 'PadiFix Artisan';
 
-  // Phase 035 / Phase 038 Canonical Tier Badging: Only active paid subscribers display verified badges
+  // Unified Verification Trust Signal (Phase 038.1 Product Correction):
+  // Customer sees ONE unified badge ("VERIFIED") regardless of whether the provider is Basic, Pro, or Premium.
+  // Subscription tier is an internal commercial entitlement and is never exposed to customers.
   if ((isVerified || isNinVerified) && isPaid && isSubActive) {
-    if (rawPlan === 'PREMIUM') {
-      badgeTier = 'PREMIUM';
-      badgeTitle = 'Premium Verified';
-    } else if (rawPlan === 'PRO') {
-      badgeTier = 'PRO';
-      badgeTitle = 'Pro Verified';
-    } else {
-      badgeTier = 'BASIC';
-      badgeTitle = 'Verified Artisan';
-    }
+    badgeTier = 'VERIFIED';
+    badgeTitle = 'Verified';
   } else if (row.badge_title && !row.badge_title.toLowerCase().includes('verified')) {
     badgeTitle = row.badge_title;
   }
@@ -586,15 +580,19 @@ async function handlePortfolioPost(req, res) {
 }
 
 /**
- * Phase 038.1: Balanced Marketplace Search Ranking Model
- * Prioritizes:
- * 1. Exact category match (highest)
- * 2. State/LGA proximity (high)
- * 3. Review rating (high) - average_rating DESC NULLS LAST
- * 4. Review count (medium)
- * 5. Verification status (medium)
- * 6. Subscription tier (low-medium)
- * 7. Recency / activity (low)
+ * Phase 038.1: 7-Factor Ordered Relevance Hierarchy (Lexicographic Ranking)
+ *
+ * Order of Evaluation (Multi-Factor Lexicographic Hierarchy):
+ * 1. Category relevance — highest
+ * 2. Location / State / LGA proximity — high
+ * 3. Average rating (average_rating DESC NULLS LAST) — high
+ * 4. Review count (reviews_count DESC) — medium
+ * 5. Verification status (is_verified DESC) — medium
+ * 6. Subscription tier rank (internal server tiebreaker; never exposed to customer) — low-medium
+ * 7. Recency / activity (last_active_at DESC / created_at DESC) — low
+ *
+ * When an explicit sort option is chosen (e.g. newest, rating-desc, reviews-desc, jobs-desc, experience-desc),
+ * that explicit sort criterion is respected and not overridden.
  */
 function getSubscriptionTierRank(p) {
   const isV = Boolean(p.is_verified || p.nin_verified);
@@ -610,7 +608,7 @@ function getSubscriptionTierRank(p) {
 
 function getCategoryRelevance(p, ctx) {
   const catQuery = String(ctx.category || ctx.queryTerm || '').toLowerCase().trim();
-  if (!catQuery) return 0;
+  if (!catQuery || catQuery === 'all') return 0;
   const pCat = String(p.primary_category_slug || p.category || '').toLowerCase();
   const pTrade = String(p.trade_title || p.trade || '').toLowerCase();
   if (pCat === catQuery || pTrade === catQuery) return 100;
@@ -626,16 +624,41 @@ function getLocationScore(p, ctx) {
   let score = 0;
   const pLga = String(p.lga || '').toLowerCase().trim();
   const pState = String(p.state || '').toLowerCase().trim();
-  if (lgaQuery && pLga && (pLga === lgaQuery || pLga.includes(lgaQuery))) {
+  if (lgaQuery && lgaQuery !== 'all' && pLga && (pLga === lgaQuery || pLga.includes(lgaQuery))) {
     score += 50;
   }
-  if (stateQuery && pState && (pState === stateQuery || pState.includes(stateQuery))) {
+  if (stateQuery && stateQuery !== 'all' && pState && (pState === stateQuery || pState.includes(stateQuery))) {
     score += 25;
   }
   return score;
 }
 
 function compareProvidersByRelevance(a, b, ctx) {
+  // Explicit user sorting options: If user specifically requested a sort, honor it first
+  if (ctx.sort === 'newest') {
+    const tDiff = (new Date(b.created_at || 0).getTime()) - (new Date(a.created_at || 0).getTime());
+    if (tDiff !== 0) return tDiff;
+  } else if (ctx.sort === 'rating-desc') {
+    const rA = a.rating != null ? Number(a.rating) : -1;
+    const rB = b.rating != null ? Number(b.rating) : -1;
+    if (rB !== rA) return rB - rA;
+    const revDiff = (Number(b.reviews_count) || 0) - (Number(a.reviews_count) || 0);
+    if (revDiff !== 0) return revDiff;
+  } else if (ctx.sort === 'reviews-desc') {
+    const revDiff = (Number(b.reviews_count) || 0) - (Number(a.reviews_count) || 0);
+    if (revDiff !== 0) return revDiff;
+    const rA = a.rating != null ? Number(a.rating) : -1;
+    const rB = b.rating != null ? Number(b.rating) : -1;
+    if (rB !== rA) return rB - rA;
+  } else if (ctx.sort === 'jobs-desc') {
+    const jDiff = (Number(b.completed_jobs) || 0) - (Number(a.completed_jobs) || 0);
+    if (jDiff !== 0) return jDiff;
+  } else if (ctx.sort === 'experience-desc') {
+    const expA = Number(a.experience_yrs || a.experienceYrs) || 0;
+    const expB = Number(b.experience_yrs || b.experienceYrs) || 0;
+    if (expB !== expA) return expB - expA;
+  }
+
   // 1. Exact category match (highest)
   const catA = getCategoryRelevance(a, ctx);
   const catB = getCategoryRelevance(b, ctx);
@@ -646,19 +669,10 @@ function compareProvidersByRelevance(a, b, ctx) {
   const locB = getLocationScore(b, ctx);
   if (locB !== locA) return locB - locA;
 
-  // Explicit user sorting options
-  if (ctx.sort === 'jobs-desc') {
-    const jDiff = (Number(b.completed_jobs) || 0) - (Number(a.completed_jobs) || 0);
-    if (jDiff !== 0) return jDiff;
-  } else if (ctx.sort === 'newest') {
-    const tDiff = (new Date(b.created_at || 0).getTime()) - (new Date(a.created_at || 0).getTime());
-    if (tDiff !== 0) return tDiff;
-  } else {
-    // 3. Review rating (high) - average_rating DESC NULLS LAST
-    const rA = a.rating != null ? Number(a.rating) : -1;
-    const rB = b.rating != null ? Number(b.rating) : -1;
-    if (rB !== rA) return rB - rA;
-  }
+  // 3. Review rating (high) - average_rating DESC NULLS LAST
+  const rA = a.rating != null ? Number(a.rating) : -1;
+  const rB = b.rating != null ? Number(b.rating) : -1;
+  if (rB !== rA) return rB - rA;
 
   // 4. Review count (medium)
   const revA = Number(a.reviews_count) || 0;
@@ -670,12 +684,12 @@ function compareProvidersByRelevance(a, b, ctx) {
   const verB = (b.is_verified || b.nin_verified) ? 1 : 0;
   if (verB !== verA) return verB - verA;
 
-  // 6. Subscription tier (low-medium)
+  // 6. Subscription tier (low-medium tiebreaker - internal only)
   const tierA = getSubscriptionTierRank(a);
   const tierB = getSubscriptionTierRank(b);
   if (tierB !== tierA) return tierB - tierA;
 
-  // 7. Recency / activity (low)
+  // 7. Recency / activity (low tiebreaker)
   const recA = new Date(a.last_active_at || a.updated_at || a.created_at || 0).getTime();
   const recB = new Date(b.last_active_at || b.updated_at || b.created_at || 0).getTime();
   return recB - recA;

@@ -98,12 +98,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  // Phase 038.1: Weighted Ranking Helpers
+  // Phase 038.1: 7-Factor Ordered Relevance Hierarchy (Lexicographic Ranking)
   function getTierRank(p) {
-    const tier = String(p.badge_tier || p.badgeTier || '').toUpperCase();
-    if (tier === 'PREMIUM') return 3;
-    if (tier === 'PRO') return 2;
-    if (tier === 'BASIC') return 1;
+    const plan = String(p.subscription_plan || p.plan_id || p.subscriptionPlan || '').toUpperCase();
+    if (plan === 'PREMIUM') return 3;
+    if (plan === 'PRO') return 2;
+    if (plan === 'BASIC') return 1;
     return 0;
   }
 
@@ -130,7 +130,28 @@ document.addEventListener("DOMContentLoaded", () => {
     return score;
   }
 
-  function compareProvidersByWeightedRelevance(a, b, ctx) {
+  function compareProvidersByRelevanceHierarchy(a, b, ctx) {
+    // Explicit user sorting options: Respect user's explicit sort criteria first
+    if (ctx.sort === 'newest') {
+      const tDiff = (new Date(b.created_at || 0).getTime()) - (new Date(a.created_at || 0).getTime());
+      if (tDiff !== 0) return tDiff;
+    } else if (ctx.sort === 'rating-desc') {
+      const rA = a.rating != null ? Number(a.rating) : -1;
+      const rB = b.rating != null ? Number(b.rating) : -1;
+      if (rB !== rA) return rB - rA;
+      const revDiff = (Number(b.reviews_count || b.reviewsCount) || 0) - (Number(a.reviews_count || a.reviewsCount) || 0);
+      if (revDiff !== 0) return revDiff;
+    } else if (ctx.sort === 'reviews-desc') {
+      const rCountDiff = (Number(b.reviews_count || b.reviewsCount) || 0) - (Number(a.reviews_count || a.reviewsCount) || 0);
+      if (rCountDiff !== 0) return rCountDiff;
+      const rA = a.rating != null ? Number(a.rating) : -1;
+      const rB = b.rating != null ? Number(b.rating) : -1;
+      if (rB !== rA) return rB - rA;
+    } else if (ctx.sort === 'experience-desc') {
+      const expDiff = (Number(b.experienceYrs || b.experience_yrs) || 0) - (Number(a.experienceYrs || a.experience_yrs) || 0);
+      if (expDiff !== 0) return expDiff;
+    }
+
     // 1. Category relevance (highest)
     const catA = getCatRelevance(a, ctx);
     const catB = getCatRelevance(b, ctx);
@@ -141,19 +162,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const locB = getLocScore(b, ctx);
     if (locB !== locA) return locB - locA;
 
-    // User explicit sorts
-    if (ctx.sort === 'reviews-desc') {
-      const rCountDiff = (Number(b.reviews_count || b.reviewsCount) || 0) - (Number(a.reviews_count || a.reviewsCount) || 0);
-      if (rCountDiff !== 0) return rCountDiff;
-    } else if (ctx.sort === 'experience-desc') {
-      const expDiff = (Number(b.experienceYrs || b.experience_yrs) || 0) - (Number(a.experienceYrs || a.experience_yrs) || 0);
-      if (expDiff !== 0) return expDiff;
-    } else {
-      // 3. Review rating (high) - average_rating DESC NULLS LAST
-      const rA = a.rating != null ? Number(a.rating) : -1;
-      const rB = b.rating != null ? Number(b.rating) : -1;
-      if (rB !== rA) return rB - rA;
-    }
+    // 3. Review rating (high) - average_rating DESC NULLS LAST
+    const rA = a.rating != null ? Number(a.rating) : -1;
+    const rB = b.rating != null ? Number(b.rating) : -1;
+    if (rB !== rA) return rB - rA;
 
     // 4. Review count (medium)
     const revA = Number(a.reviews_count || a.reviewsCount) || 0;
@@ -165,16 +177,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const verB = (b.is_verified || b.nin_verified || b.isVerified) ? 1 : 0;
     if (verB !== verA) return verB - verA;
 
-    // 6. Subscription tier (low-medium)
+    // 6. Subscription tier (low-medium tiebreaker - internal only)
     const tierA = getTierRank(a);
     const tierB = getTierRank(b);
     if (tierB !== tierA) return tierB - tierA;
 
-    // 7. Recency / activity (low)
+    // 7. Recency / activity (low tiebreaker)
     const actA = new Date(a.last_active_at || a.updated_at || a.created_at || 0).getTime();
     const actB = new Date(b.last_active_at || b.updated_at || b.created_at || 0).getTime();
     return actB - actA;
   }
+  // Backward-compatibility alias
+  const compareProvidersByWeightedRelevance = compareProvidersByRelevanceHierarchy;
 
   // Sync state to URL search parameters for back/forward navigation stability
   function syncUrlParams() {
@@ -1200,37 +1214,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const providerLoc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || '';
 
-        // Phase 038: Server-Authoritative Badge Tier
+        // Phase 038.1 Product Correction: Unified Customer-Facing Verified Badge
+        // Customers see ONE universal badge: 🛡️ VERIFIED
+        // Server-authoritative badge_tier ('VERIFIED') is the canonical signal.
+        // For cached/offline records, is_verified shows badge unless subscription is explicitly expired/cancelled.
         const serverTier = provider.badge_tier || provider.badgeTier || null;
-        let effectiveTier = serverTier ? String(serverTier).toUpperCase() : null;
+        let isBadgeShown = false;
 
-        if (!effectiveTier && typeof PadiFixMonetization !== 'undefined' && typeof PadiFixMonetization.resolveVerificationState === 'function') {
-          const vState = PadiFixMonetization.resolveVerificationState(provider);
-          if (vState && vState.badgeVisible && vState.badgeTier) {
-            effectiveTier = String(vState.badgeTier).toUpperCase();
-          }
-        }
-
-        // Fallback for local seed / offline providers where serverTier is not pre-computed
-        if (!effectiveTier && (provider.is_verified || provider.isVerified)) {
-          if (provider.isTop || provider.is_top) {
-            effectiveTier = 'PREMIUM';
-          } else if (provider.rating && Number(provider.rating) >= 4.8) {
-            effectiveTier = 'PRO';
+        if (serverTier === 'VERIFIED' || serverTier === 'BASIC' || serverTier === 'PRO' || serverTier === 'PREMIUM') {
+          isBadgeShown = true;
+        } else if (provider.is_verified || provider.isVerified || provider.nin_verified) {
+          const rawStatus = String(provider.subscription_status || provider.subscriptionStatus || '').toLowerCase();
+          if (rawStatus === 'expired' || rawStatus === 'cancelled' || rawStatus === 'canceled' || rawStatus === 'inactive') {
+            isBadgeShown = false;
           } else {
-            effectiveTier = 'BASIC';
+            isBadgeShown = true;
           }
         }
-
-        const isBadgeShown = Boolean(effectiveTier);
 
         let badgePillHtml = '';
-        if (effectiveTier === 'PREMIUM') {
-          badgePillHtml = `<button type="button" class="verified-badge-pill premium" data-provider-id="${safeId}" data-badge-tier="PREMIUM" aria-label="Open trust details for ${escapeHtml(displayName)} — Premium Verified">👑 PREMIUM VERIFIED</button>`;
-        } else if (effectiveTier === 'PRO') {
-          badgePillHtml = `<button type="button" class="verified-badge-pill pro" data-provider-id="${safeId}" data-badge-tier="PRO" aria-label="Open trust details for ${escapeHtml(displayName)} — Pro Verified">🛡️ Pro Verified</button>`;
-        } else if (effectiveTier === 'BASIC') {
-          badgePillHtml = `<button type="button" class="verified-badge-pill basic" data-provider-id="${safeId}" data-badge-tier="BASIC" aria-label="Open trust details for ${escapeHtml(displayName)} — Verified Artisan">🛡️ Verified Artisan</button>`;
+        if (isBadgeShown) {
+          badgePillHtml = `<button type="button" class="verified-badge-pill" data-provider-id="${safeId}" aria-label="Open trust details for ${escapeHtml(displayName)} — Verified Artisan">
+            <svg class="verified-shield-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+            </svg>
+            <span>VERIFIED</span>
+          </button>`;
         }
 
         return `
@@ -2961,16 +2970,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const displayName = p.business_name || (p.first_name ? `${p.first_name} ${p.last_initial || ''}`.trim() : (p.name || 'PadiFix Verified Professionals'));
     if (nameEl) nameEl.textContent = displayName;
 
-    const cleanTier = String(tier || 'PRO').toUpperCase();
     if (badgeEl) {
-      badgeEl.className = 'trust-artisan-tier-badge ' + cleanTier.toLowerCase();
-      if (cleanTier === 'PREMIUM') {
-        badgeEl.textContent = '👑 Premium Verified';
-      } else if (cleanTier === 'PRO') {
-        badgeEl.textContent = '🛡️ Pro Verified';
-      } else {
-        badgeEl.textContent = '🛡️ Verified Artisan';
-      }
+      badgeEl.className = 'trust-artisan-tier-badge verified';
+      badgeEl.innerHTML = `<svg class="verified-shield-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right: 4px; vertical-align: -2px;">
+        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+      </svg><span>VERIFIED</span>`;
     }
 
     const ratingEl = document.getElementById('trust-explainer-rating-row');
@@ -3014,7 +3018,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeof LokatorTelemetry !== 'undefined') {
       LokatorTelemetry.trackEvent('trust_badge_clicked', {
         provider_id: p.id || null,
-        badge_tier: cleanTier
+        badge_tier: 'VERIFIED'
       });
     }
 

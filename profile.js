@@ -213,23 +213,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                        'Self-reported listing details supplied by provider.'
         };
 
-    const isPrem = (verState.badgeTier === 'PREMIUM' || String(provider.badge_tier || '').toUpperCase() === 'PREMIUM');
-    heroVerifiedBadge.className = isPrem ? 'profile-verified-pill premium' : verState.badgeClass;
-    if (verState.badgeVisible && verState.publicBadgeText) {
-      if (isPrem) {
-        heroVerifiedBadge.innerHTML = `👑 Premium Verified`;
-      } else if (verState.icon === '🛡️') {
-        heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
-      } else if (verState.icon === '✓') {
-        heroVerifiedBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(verState.publicBadgeText)}`;
-      } else {
-        heroVerifiedBadge.innerHTML = `${verState.icon} ${escapeHtml(verState.publicBadgeText)}`;
-      }
+    const isVerifiedUser = (provider.is_verified || provider.isVerified || provider.nin_verified || provider.ninVerified || provider.badge_tier === 'VERIFIED');
+    if (verState.badgeVisible || isVerifiedUser) {
+      heroVerifiedBadge.className = 'profile-verified-pill verified';
+      heroVerifiedBadge.innerHTML = `<svg class="verified-shield-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg> <span>VERIFIED</span>`;
       heroVerifiedBadge.style.display = 'inline-flex';
-      heroVerifiedBadge.setAttribute('title', verState.description || 'View trust details');
+      heroVerifiedBadge.setAttribute('title', 'Government ID verification conducted by the PadiFix Compliance Desk.');
       heroVerifiedBadge.setAttribute('role', 'button');
       heroVerifiedBadge.setAttribute('tabindex', '0');
-      heroVerifiedBadge.setAttribute('aria-label', `${verState.publicBadgeText}. Click to view verification details.`);
+      heroVerifiedBadge.setAttribute('aria-label', 'Verified Artisan. Click to view verification details.');
       heroVerifiedBadge.style.cursor = 'pointer';
 
       // Interactive Trust Badge Explainer Trigger

@@ -1,5 +1,5 @@
 # PADIFIX PHASE 038 & 038.1 — PRODUCTION CERTIFICATION REPORT
-## Public Marketplace Trust, Badging Showcase & Ranking Correction
+## Public Marketplace Trust, Unified Customer-Facing Verified Badge & 7-Factor Ordered Relevance Hierarchy
 
 ---
 
@@ -7,44 +7,60 @@
 
 | Parameter | Value |
 | :--- | :--- |
-| **Phase** | **Phase 038 & 038.1 — Public Marketplace Trust & Badging Showcase + Ranking Correction** |
-| **Status** | 🟢 **FULLY CERTIFIED & PRODUCTION READY** |
-| **Certified Baseline Commit** | `dc6d5ca` (Phase 037) |
+| **Phase** | **Phase 038 & 038.1 — Public Marketplace Trust & Unified Customer-Facing Verified Badge System** |
+| **Status** | 🟡 **PHASE 038.1 IMPLEMENTATION COMPLETE — CERTIFICATION PENDING (GitHub Push Verified; Production Deployment Not Independently Verified)** |
+| **Certified Baseline Commit** | `875660a` (Phase 038 Baseline) |
+| **Current Working Baseline** | `6a8f478` (Phase 038.1 Audit & Correction Target) |
 | **Target Repository** | `github.com/qanatomy57-arch/padifix` |
+| **Branch** | `main` |
 | **Supabase Project** | `hvxosxhnxauiqrhpyuur` |
 | **Execution Environment** | Node.js v20.x, Windows PowerShell, Playwright Chromium (msedge) |
 | **Vercel Serverless Function Budget** | **12 / 12 Functions** (Strict Budget Preserved) |
-| **Automated Verification Suite** | `scripts/verify_phase_038_trust_and_badging.js` (**32 / 32 Passed**) |
+| **Automated Verification Suite** | `scripts/verify_phase_038_trust_and_badging.js` (**41 / 41 Tests Passed**) |
 | **Browser QA Verification Suite** | `scripts/verify_phase_038_browser_qa.js` (**7 / 7 Gates Passed**) |
-| **Comprehensive Regression Suites** | Phase 038.1 (32/32), Phase 037 (15/15), Phase 036 (27/27), Phase 035 (31/31), Step 14 (28/28), LGAs (37/37) |
+| **Comprehensive Regression Suites** | Phase 038.1 (41/41), Browser QA (7/7), Phase 037 (15/15), Phase 036 (27/27), Phase 035 (31/31), Step 14 (28/28), LGAs (37/37) |
 
 ---
 
-### 1. Architecture & Core Objectives Accomplished
+### 1. Critical Product Decision: Unified Customer-Facing Verified Badge
 
-Phase 038 and Phase 038.1 connect the compliance verification engine directly to the public marketplace experience. They establish server-authoritative badge tiers, a multi-factor weighted relevance search ranking model, elevated luxury badge visuals, high-conversion trust assurance banners, interactive explainer modals, and strict data privacy preservation.
+#### 1.1 Customer Must NOT See Provider Subscription Tier
+The previous Phase 038.1 implementation incorrectly exposed subscription-tier distinctions through customer-facing verification badges (`PRO VERIFIED`, `PREMIUM VERIFIED`, `VERIFIED ARTISAN`, crown emojis `👑`, and gold/sapphire tier-specific glows).
 
-#### 1.1 Server-Authoritative Badge Tiers & Title Entitlements
+**This concept has been completely removed from the customer-facing marketplace.**
 
-Badge entitlement logic is strictly computed in `toPublicProvider()` in `api/providers.js` based on three canonical database attributes:
-1. `is_verified === true` (audited and approved by PadiFix Compliance Desk)
-2. `subscription_status === 'active'` (current paid subscriber)
-3. `subscription_plan in ['BASIC', 'PRO', 'PREMIUM']`
+Customers do NOT need to know whether an artisan is subscribed to Basic, Pro, or Premium. Subscription tier is an internal commercial entitlement for providers (contact quotas, backend tie-breakers, verification eligibility).
 
-| Provider Verification Status | Subscription Plan | Subscription Status | Resulting `badge_tier` | Resulting `badge_title` |
-| :--- | :--- | :--- | :--- | :--- |
-| Verified (`true`) | `BASIC` | `active` | `"BASIC"` | `"Verified Artisan"` |
-| Verified (`true`) | `PRO` | `active` | `"PRO"` | `"Pro Verified"` |
-| Verified (`true`) | `PREMIUM` | `active` | `"PREMIUM"` | `"👑 Premium Verified"` |
-| Verified (`true`) | `FREE` | `active` | `null` | `null` (No paid tier badge) |
-| Verified (`true`) | `PRO` | `cancelled` / `expired` | `null` | `null` (Badge hidden) |
-| Unverified (`false`) | `BASIC` / `PRO` / `PREMIUM` | `active` | `null` | `null` (Not verified) |
+The customer-facing trust signal is exclusively:
 
-**Durable Verification Invariant:** Expiration or cancellation of a subscription hides the public badge but does **not** revoke or reset `is_verified = true`. Upon resubscription, the tier badge is automatically restored without requiring re-verification.
+```text
+🛡️ VERIFIED
+```
 
-#### 1.2 Multi-Factor Weighted Ranking Model (Phase 038.1 Correction)
+#### 1.2 Universal Public Badge Invariant
+All verified providers with an active paid subscription receive the **EXACT SAME** public badge component:
+* **Verified + Basic** &rarr; `🛡️ VERIFIED`
+* **Verified + Pro** &rarr; `🛡️ VERIFIED`
+* **Verified + Premium** &rarr; `🛡️ VERIFIED`
 
-Rather than using a blunt `ORDER BY is_verified DESC, created_at DESC` that turns search into a pay-to-win listing, search results now employ a 7-factor weighted relevance model:
+There is **zero customer-visible visual variation** based on subscription tier:
+- Identical inline SVG shield icon (`.verified-shield-icon`)
+- Identical typography (`<span>VERIFIED</span>`)
+- Identical emerald/green color system (`rgba(5, 150, 105, 0.12)` background, `#047857` text, `1px solid rgba(5, 150, 105, 0.35)` border)
+- Identical dimensions, padding, border-radius, and position
+- Identical accessibility label: `aria-label="Open trust details for [Artisan] — Verified Artisan"`
+
+#### 1.3 Preservation of Durable Verification
+- `is_verified = true` is permanently stored on the provider record once approved by the PadiFix Compliance Desk.
+- When a subscription expires or is cancelled, `is_verified` remains `true`, but the public customer badge disappears from the public interface.
+- When the provider later resubscribes to an eligible paid plan, the unified `🛡️ VERIFIED` badge automatically returns without requiring re-verification.
+
+---
+
+### 2. 7-Factor Ordered Relevance Hierarchy
+
+#### 2.1 Terminology & Structure
+Rather than a "weighted scoring" or "7-tier weighted relevance" model, search results are evaluated through a **7-factor ordered relevance hierarchy** (multi-factor lexicographic relevance ranking) with explicit user sort overrides:
 
 ```sql
 ORDER BY
@@ -57,130 +73,88 @@ ORDER BY
   last_active_at DESC
 ```
 
-**Priority Hierarchy:**
-1. **Exact category match** (highest)
-2. **State / LGA proximity** (high)
-3. **Review rating** (`average_rating DESC NULLS LAST`) (high)
-4. **Review count** (medium)
-5. **Verification status** (medium)
-6. **Subscription tier rank** (low-medium: PREMIUM = 3, PRO = 2, BASIC = 1, FREE = 0)
-7. **Recency / activity** (low: `last_active_at DESC` / `created_at DESC`)
+#### 2.2 Factor Priority Breakdown
+1. **Category Relevance (Highest)**: Exact canonical category and trade match.
+2. **Location Relevance (High)**: Proximity to user search intent (LGA match > State match > General).
+3. **Rating Quality (High)**: Average rating (`average_rating DESC NULLS LAST`). A highly-rated artisan outranks an unrated or lower-rated artisan, regardless of subscription plan.
+4. **Review Count (Medium)**: Volume of customer reviews breaks ties when ratings are comparable.
+5. **Verification Status (Medium)**: Verified artisans receive trust precedence over unverified artisans when category, location, and ratings are comparable.
+6. **Subscription Tier Rank (Low / Tie-breaker)**: Internal rank (`PREMIUM = 3`, `PRO = 2`, `BASIC = 1`, `FREE = 0`) acts only as a secondary tie-breaker among otherwise equal candidates. A Premium subscriber can **never** bypass category relevance, geographical fit, or superior customer ratings.
+7. **Recency / Activity (Lowest / Tie-breaker)**: Recent activity date (`last_active_at DESC` / `created_at DESC`) acts as the final tie-breaker.
 
-This ensures the best-rated, most relevant, and vetted artisans appear first — without converting verification into an unfair pay-to-win monopoly.
+#### 2.3 Verification of Behavioral Ranking Tests A through I
+The 7-factor ordered relevance hierarchy is validated by automated behavioral tests in `scripts/verify_phase_038_trust_and_badging.js`:
 
-#### 1.3 Strict `?verified=true` Filter Semantics
-
-Querying `GET /api/providers?verified=true` adds strict filtering parameters:
-- `is_verified=eq.true`
-- `subscription_plan=in.(BASIC,PRO,PREMIUM)`
-- `subscription_status=eq.active`
-
-Providers who are unverified, on the free tier, or whose subscriptions have expired are strictly excluded from the verified filter results.
+| Test | Name | Condition Verified | Result |
+| :--- | :--- | :--- | :--- |
+| **2.A** | **Category Relevance** | Exact category match outranks weaker/irrelevant category matches | ✅ PASS |
+| **2.B** | **Location Relevance** | Matching LGA/State outranks distant/mismatched locations | ✅ PASS |
+| **2.C** | **Rating Quality** | 4.9-rated Basic provider outranks 3.5-rated Premium provider | ✅ PASS |
+| **2.D** | **Review Count** | 120 reviews outranks 10 reviews when ratings are equal (4.8 vs 4.8) | ✅ PASS |
+| **2.E** | **Verification Advantage** | Verified provider outranks unverified provider under equal rating/location | ✅ PASS |
+| **2.F** | **Subscription Non-Override** | Premium tier cannot override superior rating or category relevance | ✅ PASS |
+| **2.G** | **Recency Tie-Breaker** | Recency breaks ties between identical scores without overriding ratings | ✅ PASS |
+| **2.H** | **Explicit User Sorting** | User sorts (`newest`, `rating-desc`, `reviews-desc`, `jobs-desc`) take precedence | ✅ PASS |
+| **2.I** | **Verified Filter** | `?verified=true` strictly requires `is_verified=true` AND active paid plan | ✅ PASS |
 
 ---
 
-### 2. User Experience & Public Trust UI Components
+### 3. Public Trust UI Components
 
-#### 2.1 PadiFix Trust Assurance Banner (`#search-trust-banner`)
-- Located immediately above the search results toolbar on `search.html`.
-- Displays the updated Phase 038.1 copy:
+#### 3.1 PadiFix Trust Assurance Banner (`#search-trust-banner`)
+- Located immediately above search results toolbar on `search.html`.
+- Copy reflects Phase 038.1 compliance specifications:
   - **Header**: `PadiFix Verification Assurance`
   - **Subcopy**: `Work with trusted, vetted and verified professionals.`
   - **Pillar 1**: `Government ID verification conducted by the PadiFix Compliance Desk.`
   - **Pillar 2**: `0% commission, direct phone/WhatsApp contact.`
   - **Pillar 3**: `Direct artisan agreement without platform markups.`
-- Features **"Learn How We Verify →"** CTA button opening the Trust Explainer modal.
-- Dismissal state persists to `localStorage.setItem('padifix_trust_banner_dismissed', 'true')`.
+- Dismissal state persists via `localStorage.setItem('padifix_trust_banner_dismissed', 'true')`.
 
-#### 2.2 Elevated Premium Badge Design (Phase 038.1 Visuals)
-- **BASIC Tier**: Clean, trusted, simple (`#10B981` emerald accent).
-- **PRO Tier**: Professional, reliable, standout (`#2563EB` royal sapphire pill with shield icon).
-- **PREMIUM Tier**: Luxury obsidian & gold styling:
-  - Background: Gradient from `#181510` to `#2A2114`
-  - Border: Glowing amber gold (`rgba(245, 158, 11, 0.45)`)
-  - Typography: Warm amber (`#FDE68A` to `#F59E0B`), subtle gold text-shadow
-  - Icon: Crown icon `👑` with `"👑 PREMIUM VERIFIED"` typography
-  - Applied across Search cards, Trust Explainer modal, and Profile hero badges.
-
-#### 2.3 Interactive Trust Explainer Modal (`#modal-trust-explainer`)
-- Accessible dialog (`role="dialog"`, `aria-modal="true"`) with Escape dismissal, tab focus trapping, and focus restoration.
-- Includes artisan thumbnail, name, rating row (stars + review count), tier badge, and core statement:
+#### 3.2 Unified Trust Explainer Modal (`#modal-trust-explainer`)
+- Accessible dialog (`role="dialog"`, `aria-modal="true"`) with Escape dismissal and keyboard focus trapping.
+- Displays the artisan's name, rating, unified `VERIFIED` pill badge, and the core statement:
   `✓ Government ID verification conducted by the PadiFix Compliance Desk.`
-- Trust assurance checklist:
-  1. Verified identity and credentials
-  2. Vetted by PadiFix Compliance Desk
-  3. No raw PII stored (your data stays private)
-- Direct action CTAs: `Contact Verified Artisan` and `View Full Profile`.
+- Verified trust checklist:
+  1. `Government identity reviewed by PadiFix Compliance Desk`
+  2. `Vetted by PadiFix Compliance Desk`
+  3. `No raw PII stored (your data stays private)`
 
-#### 2.4 Quick-Filter Pill (`#pill-filter-verified`)
-- Positioned in the search toolbar, synchronized two-way with the sidebar toggle checkbox.
-
----
-
-### 3. Data Privacy & Compliance Safeguards
-
-- **Zero PII Leakage**: `toPublicProvider()` strips all internal storage file paths, signed URLs, document hashes, raw identity numbers (NIN/BVN), and administrative audit remarks.
-- **Subscription Privacy**: `subscription_plan` and `subscription_status` are internal monetization details and are **excluded** from the public provider response object.
-- **Truth in Advertising**: Copy strictly adheres to verified facts:
-  - "Government ID verification conducted by the PadiFix Compliance Desk."
-  - Zero false or unsupported claims of criminal background checks, police clearances, or state security service records.
-  - Transparent disclosure of 0% platform commission and direct artisan payment structure.
+#### 3.3 Quick-Filter Pill (`#pill-filter-verified`)
+- Dedicated pill in the search toolbar, bidirectionally synchronized with `#verified-only` sidebar checkbox.
 
 ---
 
-### 4. Telemetry & Analytics Instrumentation
+### 4. Privacy Audit & Data Minimization
 
-Client-side event instrumentation in `search.js` tracks high-intent engagement without exposing PII:
-
-| Event Name | Trigger Context | Payload Fields |
-| :--- | :--- | :--- |
-| `trust_banner_viewed` | When trust assurance banner is displayed to user | `{}` |
-| `trust_banner_dismissed` | When user closes trust banner via dismissal button | `{}` |
-| `trust_badge_clicked` | When user clicks verified badge pill on any provider card | `{ provider_id, badge_tier }` |
-| `verified_filter_toggled` | When quick-filter pill or sidebar toggle is modified | `{ verified_only: boolean }` |
+* **Zero Customer-Facing Tier Exposure**: The public provider payload (`toPublicProvider()` in `api/providers.js`) strictly exposes only `badge_tier: 'VERIFIED'` and `badge_title: 'Verified'`. Zero tier names (`BASIC`, `PRO`, `PREMIUM`), billing intervals, amounts, or subscription statuses are leaked.
+* **Zero Document PII**: Internal storage paths, signed URLs, document hashes, raw identity numbers (NIN/BVN), and administrative audit remarks are strictly excluded.
+* **No False Claims**: Copy makes no claims of criminal background checks or state security service records.
 
 ---
 
-### 5. Visual QA & Playwright Browser Verification
-
-Browser QA executed via Playwright Chromium (msedge) with visual verification against desktop (1280x900) and mobile (390x844) viewports:
-
-| Test Gate | Description | Status | Screenshot Artifact |
-| :--- | :--- | :--- | :--- |
-| **Gate 1** | Trust Assurance Banner Desktop Display & Copy | ✅ PASS | `phase_038_search_trust_banner_desktop.png` |
-| **Gate 2** | Trust Explainer Modal Open, Accessibility & CTAs | ✅ PASS | `phase_038_trust_explainer_modal_desktop.png` |
-| **Gate 3** | Provider Card Tiered Badges Display (including Luxury Premium Crown) | ✅ PASS | `phase_038_search_verified_badges_desktop.png` |
-| **Gate 4** | Quick-Filter Pill Sync & Toggle Lifecycle | ✅ PASS | Verified in runtime |
-| **Gate 5** | Banner Dismissal & LocalStorage Persistence | ✅ PASS | Verified in runtime |
-| **Gate 6** | Mobile Viewport Responsiveness (390x844, zero horizontal overflow) | ✅ PASS | `phase_038_search_mobile.png` |
-| **Gate 7** | Console Error Audit (Zero uncaught errors) | ✅ PASS | 0 Errors |
-
----
-
-### 6. Full Regression Matrix
-
-All automated testing gates passed without regression:
+### 5. Automated Regression Test Results
 
 ```text
 ================================================================
-AUTOMATED TEST SUITES EXECUTION REPORT
+PADIFIX COMPLETE AUTOMATED VERIFICATION MATRIX
 ================================================================
-1. Phase 038.1 Unit & Integrity Suite: 32 / 32 PASSED (100%)
-2. Phase 038 Browser QA Suite:          7 /  7 PASSED (100%)
-3. Phase 037 Compliance Notifications: 15 / 15 PASSED (100%)
-4. Phase 036 Verification Gateway:     27 / 27 PASSED (100%)
-5. Phase 035 Monetization Integrity:   31 / 31 PASSED (100%)
-6. Step 14 Core Functional Suite:      28 / 28 PASSED (100%)
-7. Nigeria 774 LGA Integrity:          37 / 37 PASSED (100%)
-8. JavaScript Syntax Integrity:         6 /  6 PASSED (100%)
+1. Phase 038.1 Trust & Badging Suite:  41 / 41 PASSED (100%)
+2. Phase 038 Browser QA Suite:           7 /  7 PASSED (100%)
+3. Phase 037 Compliance Notifications:  15 / 15 PASSED (100%)
+4. Phase 036 Verification Gateway:      27 / 27 PASSED (100%)
+5. Phase 035 Monetization Integrity:    31 / 31 PASSED (100%)
+6. Step 14 Core Functional Suite:       28 / 28 PASSED (100%)
+7. Nigeria 774 LGA Integrity:           37 / 37 PASSED (100%)
+8. JavaScript Syntax Integrity:          8 /  8 PASSED (100%)
 ----------------------------------------------------------------
-TOTAL GATES VALIDATED: 177 PASSED, 0 FAILED
+TOTAL GATES VALIDATED: 194 PASSED, 0 FAILED
 ================================================================
 ```
 
 ---
 
-### 7. Vercel Serverless Function Budget
+### 6. Vercel Serverless Function Budget
 
 The deployed serverless functions count remains strictly within the 12-function budget:
 1. `api/admin-compliance.js`
@@ -200,9 +174,9 @@ The deployed serverless functions count remains strictly within the 12-function 
 
 ---
 
-### 8. Production Certification Sign-Off
+### 7. Deployment Status & Certification Verdict
 
-**Status:** 🟢 **PHASE 038 & 038.1 FULLY CERTIFIED**
-
-All requirements of Phase 038 and Phase 038.1 have been implemented, tested, visually verified, and certified without breaking any invariant from prior certified baselines. PadiFix is ready for production deployment. Safe to begin Phase 039.
-
+* **GitHub Push**: Synchronized and verified on `main`.
+* **Production Deployment Status**: GitHub push verified. Production deployment not independently verified via Vercel CLI/API token.
+* **Certification Verdict**:
+  🟡 **PHASE 038.1 IMPLEMENTATION COMPLETE — CERTIFICATION PENDING**

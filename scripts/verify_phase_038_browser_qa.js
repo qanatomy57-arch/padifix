@@ -69,8 +69,8 @@ function startStaticServer() {
               reviewsCount: 214,
               verifiedReviewsCount: 180,
               is_verified: true,
-              badge_tier: 'PREMIUM',
-              badge_title: 'Premium Verified',
+              badge_tier: 'VERIFIED',
+              badge_title: 'Verified',
               isAvailable: true
             },
             {
@@ -87,8 +87,8 @@ function startStaticServer() {
               reviewsCount: 96,
               verifiedReviewsCount: 72,
               is_verified: true,
-              badge_tier: 'PRO',
-              badge_title: 'Pro Verified',
+              badge_tier: 'VERIFIED',
+              badge_title: 'Verified',
               isAvailable: true
             },
             {
@@ -105,8 +105,8 @@ function startStaticServer() {
               reviewsCount: 45,
               verifiedReviewsCount: 30,
               is_verified: true,
-              badge_tier: 'BASIC',
-              badge_title: 'Verified Artisan',
+              badge_tier: 'VERIFIED',
+              badge_title: 'Verified',
               isAvailable: true
             }
           ]
@@ -167,6 +167,79 @@ async function runBrowserQA() {
     console.log('\n================================================================');
     console.log('PADIFIX PHASE 038 — BROWSER QA AUTOMATED SUITE');
     console.log('================================================================\n');
+
+    // Route /api/providers to return canonical verified providers with unified badge
+    await page.route('**/api/providers*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'success',
+          total: 3,
+          page: 1,
+          page_size: 20,
+          data: [
+            {
+              id: 1,
+              name: 'Adebayo Okafor',
+              first_name: 'Adebayo',
+              last_initial: 'O.',
+              trade: 'Master Electrician & Solar Installer',
+              category: 'Electrician',
+              city: 'Lagos',
+              state: 'Lagos',
+              lga: 'Surulere',
+              area: 'Surulere, Lagos',
+              rating: 4.9,
+              reviewsCount: 214,
+              verifiedReviewsCount: 180,
+              is_verified: true,
+              badge_tier: 'VERIFIED',
+              badge_title: 'Verified',
+              isAvailable: true
+            },
+            {
+              id: 2,
+              name: 'Chidi Amadi',
+              first_name: 'Chidi',
+              last_initial: 'A.',
+              trade: 'Licensed Plumber',
+              category: 'Plumber',
+              city: 'Lagos',
+              state: 'Lagos',
+              lga: 'Ikeja',
+              area: 'Ikeja, Lagos',
+              rating: 4.8,
+              reviewsCount: 96,
+              verifiedReviewsCount: 72,
+              is_verified: true,
+              badge_tier: 'VERIFIED',
+              badge_title: 'Verified',
+              isAvailable: true
+            },
+            {
+              id: 3,
+              name: 'Folake Adeleke',
+              first_name: 'Folake',
+              last_initial: 'A.',
+              trade: 'Professional Electrician',
+              category: 'Electrician',
+              city: 'Lagos',
+              state: 'Lagos',
+              lga: 'Lekki',
+              area: 'Lekki, Lagos',
+              rating: 4.7,
+              reviewsCount: 45,
+              verifiedReviewsCount: 30,
+              is_verified: true,
+              badge_tier: 'VERIFIED',
+              badge_title: 'Verified',
+              isAvailable: true
+            }
+          ]
+        })
+      });
+    });
 
     // --- STEP 1: Desktop Navigation & Trust Banner Verification ---
     console.log('--- Step 1: Desktop Search Page & Trust Assurance Banner ---');
@@ -236,18 +309,26 @@ async function runBrowserQA() {
     console.log('\n--- Step 3: Verified Badges on Provider Cards ---');
     // Wait for provider cards to render
     await page.waitForSelector('.provider-item-card', { timeout: 5000 });
+    const cardHtml = await page.evaluate(() => {
+      const card = document.querySelector('.provider-item-card');
+      return card ? card.outerHTML.substring(0, 500) : 'NO_CARD';
+    });
+    console.log('   [DEBUG First Card HTML]:', cardHtml);
     const badgePills = page.locator('.verified-badge-pill');
     const badgeCount = await badgePills.count();
     console.log(`   ✓ Found ${badgeCount} Verified Badge Pills in Results`);
     if (badgeCount === 0) throw new Error('Zero .verified-badge-pill elements found on rendered cards');
 
-    // Verify first badge is PREMIUM with crown icon
+    // Verify badge renders unified VERIFIED text and SVG shield icon
     const firstBadge = badgePills.first();
-    const badgeTierAttr = await firstBadge.getAttribute('data-badge-tier');
     const firstBadgeText = await firstBadge.innerText();
-    console.log(`   ✓ First Badge Tier Attribute: ${badgeTierAttr}, Text: "${firstBadgeText}"`);
-    if (badgeTierAttr === 'PREMIUM' && !firstBadgeText.includes('👑')) {
-      throw new Error('Premium badge missing luxury crown icon (👑)');
+    const hasSvgShield = await firstBadge.locator('.verified-shield-icon').count();
+    console.log(`   ✓ First Badge Text: "${firstBadgeText}", Has SVG Shield: ${hasSvgShield > 0}`);
+    if (!firstBadgeText.includes('VERIFIED')) {
+      throw new Error('Badge missing unified VERIFIED text');
+    }
+    if (hasSvgShield === 0) {
+      throw new Error('Badge missing SVG shield icon (.verified-shield-icon)');
     }
     await firstBadge.click();
     await page.waitForTimeout(500);

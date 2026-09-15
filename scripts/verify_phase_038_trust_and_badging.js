@@ -238,11 +238,11 @@ async function runPhase038Suite() {
   console.log('================================================================\n');
 
   // -------------------------------------------------------------
-  // SECTION 1: SERVER-AUTHORITATIVE BADGE COMPUTATION & TITLES
+  // SECTION 1: SERVER-AUTHORITATIVE UNIFIED BADGE COMPUTATION & TITLES
   // -------------------------------------------------------------
-  console.log('--- SECTION 1: Badge Computation & Title Entitlement ---');
+  console.log('--- SECTION 1: Unified Badge Computation & Title Entitlement ---');
 
-  await runTest('1.1 Verified BASIC provider -> badge_tier === "BASIC", badge_title === "Verified Artisan"', async () => {
+  await runTest('1.1 Verified BASIC provider -> badge_tier === "VERIFIED", badge_title === "Verified"', async () => {
     const req = {
       method: 'GET',
       headers: {},
@@ -255,11 +255,11 @@ async function runPhase038Suite() {
     assert.strictEqual(res.statusCode, 200, `Expected 200, got ${res.statusCode}: ${JSON.stringify(res.body)}`);
     const p = res.body.provider || (res.body.data && res.body.data[0]);
     assert.ok(p, 'Provider must be returned');
-    assert.strictEqual(p.badge_tier, 'BASIC');
-    assert.strictEqual(p.badge_title, 'Verified Artisan');
+    assert.strictEqual(p.badge_tier, 'VERIFIED', 'Customer sees unified VERIFIED badge');
+    assert.strictEqual(p.badge_title, 'Verified');
   });
 
-  await runTest('1.2 Verified PRO provider -> badge_tier === "PRO", badge_title === "Pro Verified"', async () => {
+  await runTest('1.2 Verified PRO provider -> badge_tier === "VERIFIED", badge_title === "Verified"', async () => {
     const req = {
       method: 'GET',
       headers: {},
@@ -272,11 +272,11 @@ async function runPhase038Suite() {
     assert.strictEqual(res.statusCode, 200);
     const p = res.body.provider || (res.body.data && res.body.data[0]);
     assert.ok(p, 'Provider must be returned');
-    assert.strictEqual(p.badge_tier, 'PRO');
-    assert.strictEqual(p.badge_title, 'Pro Verified');
+    assert.strictEqual(p.badge_tier, 'VERIFIED', 'Customer sees unified VERIFIED badge');
+    assert.strictEqual(p.badge_title, 'Verified');
   });
 
-  await runTest('1.3 Verified PREMIUM provider -> badge_tier === "PREMIUM", badge_title === "Premium Verified"', async () => {
+  await runTest('1.3 Verified PREMIUM provider -> badge_tier === "VERIFIED", badge_title === "Verified"', async () => {
     const req = {
       method: 'GET',
       headers: {},
@@ -289,8 +289,8 @@ async function runPhase038Suite() {
     assert.strictEqual(res.statusCode, 200);
     const p = res.body.provider || (res.body.data && res.body.data[0]);
     assert.ok(p, 'Provider must be returned');
-    assert.strictEqual(p.badge_tier, 'PREMIUM');
-    assert.strictEqual(p.badge_title, 'Premium Verified');
+    assert.strictEqual(p.badge_tier, 'VERIFIED', 'Customer sees unified VERIFIED badge');
+    assert.strictEqual(p.badge_title, 'Verified');
   });
 
   await runTest('1.4 Unverified BASIC provider -> badge_tier === null', async () => {
@@ -358,7 +358,7 @@ async function runPhase038Suite() {
     assert.strictEqual(res.statusCode, 200);
     const p = res.body.provider || (res.body.data && res.body.data[0]);
     assert.ok(p, 'Provider must be returned');
-    assert.strictEqual(p.badge_tier, null, 'Free verified provider must not receive a paid badge');
+    assert.strictEqual(p.badge_tier, null, 'Free verified provider must not receive a public badge');
   });
 
   await runTest('1.8 Verified expired/cancelled provider -> badge_tier === null', async () => {
@@ -378,7 +378,7 @@ async function runPhase038Suite() {
   });
 
   await runTest('1.9 Resubscribed verified provider -> badge restored without re-verification', async () => {
-    // Simulate provider 6 resubscribing to PRO
+    // Simulate provider 6 resubscribing to active paid plan
     const resubscribedPro = { ...getSampleProviders()[5], subscription_status: 'active' };
     const req = {
       method: 'GET',
@@ -392,8 +392,8 @@ async function runPhase038Suite() {
     assert.strictEqual(res.statusCode, 200);
     const p = res.body.provider || (res.body.data && res.body.data[0]);
     assert.ok(p, 'Provider must be returned');
-    assert.strictEqual(p.badge_tier, 'PRO');
-    assert.strictEqual(p.badge_title, 'Pro Verified');
+    assert.strictEqual(p.badge_tier, 'VERIFIED', 'Restores unified VERIFIED badge upon resubscription');
+    assert.strictEqual(p.badge_title, 'Verified');
     assert.strictEqual(p.is_verified, true);
   });
 
@@ -402,13 +402,34 @@ async function runPhase038Suite() {
     assert.strictEqual(expiredProvider.is_verified, true, 'Verification status must not be erased on subscription expiry');
   });
 
-  // -------------------------------------------------------------
-  // SECTION 2: BALANCED SEARCH RANKING & WEIGHTED RELEVANCE (PHASE 038.1)
-  // -------------------------------------------------------------
-  console.log('\n--- SECTION 2: Balanced Search Ranking & Weighted Relevance (Phase 038.1) ---');
+  await runTest('1.11 Unified customer badge invariant: Basic, Pro, and Premium all receive identical badge_tier="VERIFIED"', async () => {
+    const basicP = getSampleProviders()[0];
+    const proP = getSampleProviders()[1];
+    const premP = getSampleProviders()[2];
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers',
+      query: {},
+      _mockRows: [basicP, proP, premP]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    const list = res.body.data;
+    assert.strictEqual(list.length, 3);
+    for (const p of list) {
+      assert.strictEqual(p.badge_tier, 'VERIFIED', 'All verified providers receive identical badge_tier');
+      assert.strictEqual(p.subscription_plan, undefined, 'Subscription plan must NOT be exposed');
+    }
+  });
 
-  await runTest('2.1 Balanced relevance model: Category match and rating/review quality determine top results', async () => {
-    // Search with category=plumber
+  // -------------------------------------------------------------
+  // SECTION 2: 7-FACTOR ORDERED RELEVANCE HIERARCHY (BEHAVIORAL TESTS A - I)
+  // -------------------------------------------------------------
+  console.log('\n--- SECTION 2: 7-Factor Ordered Relevance Hierarchy (Behavioral Tests A-I) ---');
+
+  // Test A — Category relevance
+  await runTest('2.A Category relevance: Exact matching category outranks weaker/irrelevant category match', async () => {
     const req = {
       method: 'GET',
       headers: {},
@@ -420,29 +441,147 @@ async function runPhase038Suite() {
     await providersHandler(req, res);
     assert.strictEqual(res.statusCode, 200);
     const providers = res.body.data;
-    assert.ok(Array.isArray(providers) && providers.length > 0, 'Should return provider list');
-
-    // First provider must be the exact category match (PlumbRight Services id=2)
-    assert.strictEqual(providers[0].id, 2, 'Exact category match (plumber) must rank first');
+    assert.strictEqual(providers[0].id, 2, 'Plumber id=2 must rank #1 when category=plumber');
   });
 
-  await runTest('2.2 Default search ranks by review rating and review count quality over pure pay-to-win', async () => {
+  // Test B — Location relevance
+  await runTest('2.B Location relevance: Matching LGA/State outranks less geographically relevant provider', async () => {
+    const pSameLga = { id: 101, primary_category_slug: 'electrician', state: 'Lagos', lga: 'Ikeja', rating: 4.5, reviews_count: 10, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
+    const pDiffLga = { id: 102, primary_category_slug: 'electrician', state: 'Lagos', lga: 'Epe', rating: 4.5, reviews_count: 10, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
     const req = {
       method: 'GET',
       headers: {},
-      url: '/api/providers',
-      query: {},
+      url: '/api/providers?category=electrician&lga=Ikeja&state=Lagos',
+      query: { category: 'electrician', lga: 'Ikeja', state: 'Lagos' },
+      _mockRows: [pDiffLga, pSameLga]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 101, 'Provider in target LGA Ikeja must outrank Epe provider');
+  });
+
+  // Test C — Rating quality
+  await runTest('2.C Rating quality: Highly rated provider outranks Premium provider with poor/no review history', async () => {
+    const pHighRatingBasic = { id: 201, primary_category_slug: 'carpenter', state: 'Lagos', lga: 'Ikeja', rating: 4.9, reviews_count: 45, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
+    const pLowRatingPremium = { id: 202, primary_category_slug: 'carpenter', state: 'Lagos', lga: 'Ikeja', rating: 3.2, reviews_count: 3, is_verified: true, subscription_plan: 'PREMIUM', subscription_status: 'active' };
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=carpenter',
+      query: { category: 'carpenter' },
+      _mockRows: [pLowRatingPremium, pHighRatingBasic]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 201, 'High-rated 4.9 Basic provider must outrank 3.2 Premium provider');
+  });
+
+  // Test D — Review count
+  await runTest('2.D Review count: Stronger review history breaks ties when ratings are comparable', async () => {
+    const pMoreReviews = { id: 301, primary_category_slug: 'painter', state: 'Lagos', lga: 'Ikeja', rating: 4.8, reviews_count: 120, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
+    const pLessReviews = { id: 302, primary_category_slug: 'painter', state: 'Lagos', lga: 'Ikeja', rating: 4.8, reviews_count: 4, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=painter',
+      query: { category: 'painter' },
+      _mockRows: [pLessReviews, pMoreReviews]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 301, 'Provider with 120 reviews must outrank provider with 4 reviews');
+  });
+
+  // Test E — Verification status
+  await runTest('2.E Verification: Verification provides trust advantage without overriding category/location', async () => {
+    // Verified provider in wrong category vs unverified in exact category
+    const pExactUnverified = { id: 401, primary_category_slug: 'welder', state: 'Lagos', lga: 'Ikeja', rating: 4.5, reviews_count: 10, is_verified: false, subscription_plan: 'FREE', subscription_status: 'active' };
+    const pWrongVerified = { id: 402, primary_category_slug: 'tailor', state: 'Lagos', lga: 'Ikeja', rating: 4.5, reviews_count: 10, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=welder',
+      query: { category: 'welder' },
+      _mockRows: [pWrongVerified, pExactUnverified]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 401, 'Exact category match welder must outrank non-welder even if non-welder is verified');
+  });
+
+  // Test F — Subscription tier
+  await runTest('2.F Subscription tier: Premium does NOT automatically outrank a better-performing provider', async () => {
+    const pTopBasic = { id: 501, primary_category_slug: 'cleaning', state: 'Lagos', lga: 'Ikeja', rating: 4.95, reviews_count: 85, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active' };
+    const pNewPremium = { id: 502, primary_category_slug: 'cleaning', state: 'Lagos', lga: 'Ikeja', rating: 0, reviews_count: 0, is_verified: true, subscription_plan: 'PREMIUM', subscription_status: 'active' };
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=cleaning',
+      query: { category: 'cleaning' },
+      _mockRows: [pNewPremium, pTopBasic]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 501, 'Top-performing Basic provider must outrank unrated Premium provider');
+  });
+
+  // Test G — Recency
+  await runTest('2.G Recency: Recency/activity is a late tie-breaker, does not override rating quality', async () => {
+    const pOlderHighRating = { id: 601, primary_category_slug: 'plumber', state: 'Lagos', lga: 'Ikeja', rating: 4.9, reviews_count: 30, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active', created_at: '2025-01-01T00:00:00Z' };
+    const pNewerLowRating = { id: 602, primary_category_slug: 'plumber', state: 'Lagos', lga: 'Ikeja', rating: 3.5, reviews_count: 2, is_verified: true, subscription_plan: 'BASIC', subscription_status: 'active', created_at: '2026-09-01T00:00:00Z' };
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=plumber',
+      query: { category: 'plumber' },
+      _mockRows: [pNewerLowRating, pOlderHighRating]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 601, 'Higher rated older provider outranks newer low-rated provider');
+  });
+
+  // Test H — Explicit user sorting
+  await runTest('2.H Explicit user sorting: Explicit user sort (e.g. newest, rating-desc) is honored', async () => {
+    const pOld = { id: 701, primary_category_slug: 'plumber', rating: 5.0, reviews_count: 50, is_verified: true, subscription_plan: 'PREMIUM', subscription_status: 'active', created_at: '2024-01-01T00:00:00Z' };
+    const pNew = { id: 702, primary_category_slug: 'plumber', rating: 4.0, reviews_count: 5, is_verified: false, subscription_plan: 'FREE', subscription_status: 'active', created_at: '2026-09-14T00:00:00Z' };
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?category=plumber&sort=newest',
+      query: { category: 'plumber', sort: 'newest' },
+      _mockRows: [pOld, pNew]
+    };
+    const res = createMockRes();
+    await providersHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.data[0].id, 702, 'When user explicitly sorts by newest, newest provider must rank first');
+  });
+
+  // Test I — Verified filter & durable verification
+  await runTest('2.I Verified filter (?verified=true) requires is_verified=true AND active paid plan', async () => {
+    const req = {
+      method: 'GET',
+      headers: {},
+      url: '/api/providers?verified=true',
+      query: { verified: 'true' },
       _mockRows: getSampleProviders()
     };
     const res = createMockRes();
     await providersHandler(req, res);
     assert.strictEqual(res.statusCode, 200);
     const providers = res.body.data;
-
-    // Top provider should be highest rated with most reviews (Imperial HVAC id=3 with rating 5.0, 112 reviews)
-    assert.strictEqual(providers[0].id, 3, 'Top rated provider (5.0, 112 reviews) must appear at top');
-    assert.strictEqual(providers[1].id, 2, 'Second rated provider (4.9, 50 reviews) must appear second');
-    assert.strictEqual(providers[2].id, 1, 'Third rated provider (4.8, 24 reviews) must appear third');
+    assert.strictEqual(providers.length, 3, 'Only providers 1, 2, 3 meet verified + active paid criteria');
+    providers.forEach(p => {
+      assert.strictEqual(p.badge_tier, 'VERIFIED');
+      assert.strictEqual(p.is_verified, true);
+    });
   });
 
   // -------------------------------------------------------------
@@ -467,8 +606,7 @@ async function runPhase038Suite() {
     // Must return providers 1, 2, 3 (BASIC, PRO, PREMIUM active verified)
     assert.strictEqual(providers.length, 3, `Expected exactly 3 verified pro providers, got ${providers.length}`);
     for (const p of providers) {
-      assert.strictEqual(p.is_verified, true, `Provider ${p.id} is not verified!`);
-      assert.ok(['BASIC', 'PRO', 'PREMIUM'].includes(p.badge_tier), `Provider ${p.id} has invalid badge_tier: ${p.badge_tier}`);
+      assert.strictEqual(p.badge_tier, 'VERIFIED', `Provider ${p.id} has invalid badge_tier: ${p.badge_tier}`);
     }
   });
 
@@ -688,11 +826,10 @@ async function runPhase038Suite() {
     assert.ok(content.includes('id="modal-trust-explainer"'), 'Must contain #modal-trust-explainer');
   });
 
-  await runTest('7.4 search.css contains verified-badge-pill styles', () => {
+  await runTest('7.4 search.css contains unified .verified-badge-pill styles with shield icon', () => {
     const content = fs.readFileSync(path.resolve(__dirname, '..', 'search.css'), 'utf8');
     assert.ok(content.includes('.verified-badge-pill'), 'Must contain .verified-badge-pill styles');
-    assert.ok(content.includes('.verified-badge-pill.basic') || content.includes('.verified-badge-pill.pro') || content.includes('.verified-badge-pill.premium'),
-      'Must contain tier-specific badge styles');
+    assert.ok(content.includes('.verified-shield-icon'), 'Must contain .verified-shield-icon for SVG icon');
   });
 
   await runTest('7.5 Modal has correct accessible dialog attributes', () => {
@@ -708,10 +845,16 @@ async function runPhase038Suite() {
     assert.ok(content.includes('PadiFix Verification Assurance'), 'Must contain updated banner title');
   });
 
-  await runTest('7.7 search.css contains luxury gold styling for .verified-badge-pill.premium', () => {
+  await runTest('7.7 search.css contains unified clean green verification styling without tier distinctions', () => {
     const content = fs.readFileSync(path.resolve(__dirname, '..', 'search.css'), 'utf8');
-    assert.ok(content.includes('.verified-badge-pill.premium'), 'Must contain premium badge styles');
-    assert.ok(content.includes('#F59E0B') || content.includes('#FDE68A'), 'Must use warm gold accents');
+    assert.ok(content.includes('rgba(5, 150, 105'), 'Must contain brand green verification styling');
+    assert.ok(content.includes('.verified-badge-pill'), 'Must style unified verified badge');
+  });
+
+  await runTest('7.8 search.html modal contains precise compliance copy: Government identity reviewed by PadiFix Compliance Desk', () => {
+    const content = fs.readFileSync(path.resolve(__dirname, '..', 'search.html'), 'utf8');
+    assert.ok(content.includes('Government identity reviewed by PadiFix Compliance Desk'),
+      'Must contain precise government identity verification copy in modal checklist');
   });
 
   console.log('\n================================================================');

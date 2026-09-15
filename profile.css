@@ -136,18 +136,17 @@
 }
 
 .profile-verified-pill.verified {
-  background: rgba(0, 107, 63, 0.15);
-  color: #10B981;
-  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+  border-color: rgba(5, 150, 105, 0.35);
+  font-weight: 800;
+  letter-spacing: 0.4px;
 }
 
-.profile-verified-pill.premium {
-  background: linear-gradient(135deg, #181510 0%, #2A2114 50%, #120F0A 100%);
-  color: #FDE68A;
-  border: 1.5px solid #F59E0B;
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35), inset 0 1px 1px rgba(254, 243, 199, 0.25);
-  font-weight: 800;
-  letter-spacing: 0.3px;
+.profile-verified-pill.verified .verified-shield-icon {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
 }
 
 .profile-verified-pill.pending {

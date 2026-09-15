@@ -3110,58 +3110,49 @@ body.modal-open .mobile-map-toggle-pill {
   outline-offset: 2px;
 }
 
-/* 3. Tiered Verification Badges on Search Cards */
+/* 3. Unified Customer-Facing Verification Badge on Search Cards (Phase 038.1 Correction) */
 .verified-badge-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: 12px;
-  font-size: 11.5px;
-  font-weight: 700;
-  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+  border: 1px solid rgba(5, 150, 105, 0.35);
   cursor: pointer;
   text-decoration: none;
   font-family: inherit;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.verified-badge-pill .verified-shield-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  fill: currentColor;
 }
 
 .verified-badge-pill:hover,
 .verified-badge-pill:focus-visible {
+  background: rgba(5, 150, 105, 0.2);
+  border-color: #059669;
+  color: #065F46;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  outline: 2px solid currentColor;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.2);
+  outline: 2px solid #059669;
   outline-offset: 1px;
 }
 
-.verified-badge-pill.basic {
-  background: rgba(16, 185, 129, 0.12);
-  color: #047857;
-  border-color: rgba(16, 185, 129, 0.35);
-}
-
-.verified-badge-pill.pro {
-  background: rgba(2, 132, 199, 0.12);
-  color: #0284C7;
-  border-color: rgba(2, 132, 199, 0.35);
-}
-
-.verified-badge-pill.premium {
-  background: linear-gradient(135deg, #181510 0%, #2A2114 50%, #120F0A 100%);
-  color: #FDE68A;
-  border: 1.5px solid #F59E0B;
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35), inset 0 1px 1px rgba(254, 243, 199, 0.25);
-  font-weight: 800;
-  letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-}
-
-.verified-badge-pill.premium:hover,
-.verified-badge-pill.premium:focus-visible {
-  transform: translateY(-1px);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.6), inset 0 1px 2px rgba(254, 243, 199, 0.4);
-  border-color: #FBBF24;
-  color: #FFFBEB;
+@media (prefers-reduced-motion: reduce) {
+  .verified-badge-pill {
+    transition: none !important;
+    transform: none !important;
+  }
 }
 
 /* 4. Accessible Interactive Trust Explainer Modal */
@@ -3276,38 +3267,26 @@ body.modal-open .mobile-map-toggle-pill {
   color: #D97706;
 }
 
-.trust-artisan-tier-badge {
+.trust-artisan-tier-badge,
+.trust-artisan-tier-badge.verified {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
+  gap: 5px;
+  font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.4px;
   padding: 4px 10px;
   border-radius: 12px;
-  background: rgba(2, 132, 199, 0.12);
-  color: #0284C7;
-  border: 1px solid rgba(2, 132, 199, 0.3);
-}
-
-.trust-artisan-tier-badge.basic {
-  background: rgba(16, 185, 129, 0.12);
+  background: rgba(5, 150, 105, 0.12);
   color: #047857;
-  border-color: rgba(16, 185, 129, 0.35);
+  border: 1px solid rgba(5, 150, 105, 0.35);
 }
 
-.trust-artisan-tier-badge.pro {
-  background: rgba(2, 132, 199, 0.12);
-  color: #0284C7;
-  border-color: rgba(2, 132, 199, 0.35);
-}
-
-.trust-artisan-tier-badge.premium {
-  background: linear-gradient(135deg, #181510 0%, #2A2114 50%, #120F0A 100%);
-  color: #FDE68A;
-  border: 1.5px solid #F59E0B;
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
-  font-weight: 800;
-  letter-spacing: 0.3px;
+.trust-artisan-tier-badge .verified-shield-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  fill: currentColor;
 }
 
 .trust-why-title {
