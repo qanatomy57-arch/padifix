@@ -12,6 +12,8 @@ const { withSentry } = require('../lib/sentry-server');
 
 // In-memory processed webhook event ID cache with payload hash for replay/tamper detection
 const processedEvents = new Map();
+// In-memory processed reference cache for transaction replay prevention
+const processedReferences = new Set();
 // In-memory email receipt delivery deduplication cache (Email Idempotency Guard)
 const sentReceipts = new Set();
 
@@ -125,7 +127,7 @@ const paystackWebhookHandler = async (req, res) => {
       if (priorHash !== payloadHash) {
         return res.status(409).json({ error: 'Tampered payload replay with recycled event ID' });
       }
-      return res.status(200).json({ status: 'success', message: 'Event already processed (idempotent)', idempotent: true });
+      return res.status(200).json({ status: 'success', success: true, message: 'Event already processed (idempotent)', idempotent: true });
     }
 
     if (eventId) {
@@ -144,6 +146,17 @@ const paystackWebhookHandler = async (req, res) => {
     const currency = data.currency;
     const metadata = data.metadata || {};
 
+    // Check transaction reference idempotency
+    if (reference && processedReferences.has(reference)) {
+      return res.status(200).json({
+        status: 'success',
+        success: true,
+        message: 'Transaction reference already processed (idempotent)',
+        idempotent: true,
+        reference
+      });
+    }
+
     // 1. Handle Successful Payment (charge.success)
     if (eventType === 'charge.success') {
       if (currency !== 'NGN') {
@@ -155,17 +168,71 @@ const paystackWebhookHandler = async (req, res) => {
                     metadata.action === 'subscription_upgrade' || 
                     Boolean(metadata.plan_id) ||
                     Boolean(data.plan) ||
-                    Boolean(data.subscription_code) ||
-                    Boolean(WEBHOOK_PLANS[amount]);
+                    Boolean(data.subscription_code);
 
       if (isSub) {
         let plan = WEBHOOK_PLANS[amount];
         if (!plan && data.plan && data.plan.plan_code) {
           plan = WEBHOOK_PLAN_CODES[data.plan.plan_code];
         }
+
+        // Amount Integrity: Subscription charge amount must strictly correspond to canonical plan catalog
         if (!plan) {
-          const planKey = String(metadata.plan_id || 'PRO').toUpperCase();
-          plan = Object.values(WEBHOOK_PLANS).find(p => p.id === planKey) || WEBHOOK_PLANS[1100000];
+          return res.status(400).json({
+            error: 'INVALID_SUBSCRIPTION_AMOUNT',
+            message: `Amount ${amount} kobo does not correspond to any canonical subscription plan.`
+          });
+        }
+
+        // Plan Matching Integrity: Prevent paying Basic price to activate Pro/Premium
+        if (metadata.plan_id) {
+          const requestedPlan = String(metadata.plan_id).toUpperCase();
+          if (requestedPlan !== plan.id) {
+            return res.status(400).json({
+              error: 'PLAN_AMOUNT_MISMATCH',
+              message: `Paid amount ${amount} kobo (${plan.name}) does not match requested plan '${requestedPlan}'.`
+            });
+          }
+        }
+
+        // Billing Interval Integrity: Prevent paying monthly price for annual plan or vice versa
+        if (metadata.billing_interval) {
+          const rawInt = String(metadata.billing_interval).toLowerCase().trim();
+          const canonicalReqInt = (rawInt === 'annual' || rawInt === 'annually' || rawInt === 'yearly') ? 'annual' : 'monthly';
+          if (canonicalReqInt !== plan.interval) {
+            return res.status(400).json({
+              error: 'INTERVAL_AMOUNT_MISMATCH',
+              message: `Billing interval '${metadata.billing_interval}' does not match plan amount interval '${plan.interval}'.`
+            });
+          }
+        }
+
+        // Provider Integrity: Provider ID must be a valid positive integer
+        const providerId = Number(metadata.provider_id);
+        if (!providerId || isNaN(providerId) || providerId <= 0) {
+          return res.status(400).json({
+            error: 'MISSING_OR_INVALID_PROVIDER_ID',
+            message: 'Webhook metadata must contain a valid positive integer provider_id.'
+          });
+        }
+
+        // Order ID Binding: If order_id is present, enforce cryptographic binding to provider_id
+        if (metadata.order_id && typeof metadata.order_id === 'string') {
+          if (!metadata.order_id.endsWith(`_${providerId}`)) {
+            return res.status(400).json({
+              error: 'PROVIDER_ORDER_BINDING_MISMATCH',
+              message: 'Provided order_id is not bound to provider_id.'
+            });
+          }
+        }
+
+        // Record reference in processedReferences cache for transaction idempotency
+        if (reference) {
+          processedReferences.add(reference);
+          if (processedReferences.size > 1000) {
+            const oldestRef = processedReferences.keys().next().value;
+            processedReferences.delete(oldestRef);
+          }
         }
 
         const isRenewal = Boolean(data.subscription_code || data.subscription || metadata.is_renewal);
@@ -195,9 +262,10 @@ const paystackWebhookHandler = async (req, res) => {
 
         return res.status(200).json({
           status: 'success',
+          success: true,
           event: 'charge.success',
           reference: reference,
-          provider_id: metadata.provider_id,
+          provider_id: providerId,
           fulfilled: true,
           entitlement: 'SUBSCRIPTION',
           plan_id: plan.id,
