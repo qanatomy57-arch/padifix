@@ -11,7 +11,7 @@
   // Primary Project Reference ID: hvxosxhnxauiqrhpyuur
   const TARGET_PROJECT_REF = 'hvxosxhnxauiqrhpyuur';
   const TARGET_DEFAULT_URL = `https://${TARGET_PROJECT_REF}.supabase.co`;
-  const TARGET_DEFAULT_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eG9zeGhueGF1aXFyaHB5dXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTI1NTQsImV4cCI6MjEwMjY2ODU1NH0.dshJ5VNRWTVXHUMBWX_8Xq1foohT1L7S3rTwUrNWqNo';
+  const TARGET_DEFAULT_ANON_KEY = 'sb_publishable_oFXfU49-GeCxsIonEQ1vQQ__znehnjq';
 
   // Dynamic configuration resolution (supports window config, global envs, or target project default)
   const userConfig = (typeof window !== 'undefined' && window.LOKATOR_SUPABASE_CONFIG) || {};
