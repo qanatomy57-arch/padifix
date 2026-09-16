@@ -404,8 +404,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (kpiPlan) kpiPlan.textContent = (data.plan_id || 'FREE').toUpperCase();
     const kpiRem = document.getElementById('kpi-sub-remaining');
     if (kpiRem) {
-      kpiRem.textContent = isSoftCap ? 'Soft-cap active' : (allowance >= 500 ? 'Unlimited' : `${remaining} contacts left`);
-      kpiRem.style.color = isSoftCap ? '#F59E0B' : (remaining > 0 ? '#34D399' : '#EF4444');
+      const remainingCount = (data.contacts_remaining !== undefined)
+        ? data.contacts_remaining
+        : (data.remaining !== undefined ? data.remaining : Math.max(0, allowance - used));
+      kpiRem.textContent = isSoftCap ? 'Soft-cap active' : (allowance >= 500 ? 'Unlimited' : `${remainingCount} contacts left`);
+      kpiRem.style.color = isSoftCap ? '#F59E0B' : (remainingCount > 0 ? '#34D399' : '#EF4444');
     }
   }
 
@@ -1913,18 +1916,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const leadsEl = document.getElementById('kpi-leads');
     const jobsEl = document.getElementById('kpi-jobs');
     const ratingEl = document.getElementById('kpi-rating');
+    const ratingReviewsEl = document.getElementById('kpi-reviews-count');
     const ratingBadge = document.getElementById('ov-rating-badge');
 
-    const profileViews = currentMetrics.profileViewsThisMonth != null ? currentMetrics.profileViewsThisMonth : 0;
+    const profileViews = currentMetrics.profileViewsThisMonth != null ? currentMetrics.profileViewsThisMonth : (currentProvider.views_count || 0);
     const directLeads = currentMetrics.leadsThisMonth != null ? currentMetrics.leadsThisMonth : 0;
-    const completedJobs = currentMetrics.completedJobs != null ? currentMetrics.completedJobs : 0;
-    const hasReviews = currentMetrics.reviewsCount > 0;
+    const completedJobs = currentMetrics.completedJobs != null ? currentMetrics.completedJobs : (currentProvider.completed_jobs || 0);
+    const reviewsCount = currentMetrics.reviewsCount != null ? currentMetrics.reviewsCount : (currentProvider.reviews_count || 0);
+    const hasReviews = reviewsCount > 0 && Boolean(currentMetrics.rating || currentProvider.rating);
 
     if (viewsEl) viewsEl.textContent = `${profileViews}`;
     if (leadsEl) leadsEl.textContent = `${directLeads}`;
     if (jobsEl) jobsEl.textContent = `${completedJobs}+`;
-    if (ratingEl) ratingEl.textContent = hasReviews && currentMetrics.rating ? Number(currentMetrics.rating).toFixed(1) : 'New';
-    if (ratingBadge) ratingBadge.textContent = hasReviews && currentMetrics.rating ? `★ ${Number(currentMetrics.rating).toFixed(1)}` : '★ New Listing';
+    if (ratingEl) ratingEl.textContent = hasReviews ? Number(currentMetrics.rating || currentProvider.rating).toFixed(1) : 'New';
+    if (ratingReviewsEl) ratingReviewsEl.textContent = reviewsCount > 0 ? `(${reviewsCount} review${reviewsCount === 1 ? '' : 's'})` : '(0 reviews)';
+    if (ratingBadge) ratingBadge.textContent = hasReviews ? `★ ${Number(currentMetrics.rating || currentProvider.rating).toFixed(1)}` : '★ New Listing';
 
     // Render Progressive Profile Completeness Widget
     const compData = currentMetrics.completenessData || ((typeof PadiFixMonetization !== 'undefined' && PadiFixMonetization.calculateProfileCompleteness)
@@ -3343,9 +3349,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (kpiPlan) kpiPlan.textContent = planInfo.name.toUpperCase();
     const kpiRem = document.getElementById('kpi-sub-remaining');
     if (kpiRem) {
-      kpiRem.textContent = (planInfo.contact_allowance === Infinity)
+      const rawRem = usage && (usage.contacts_remaining !== undefined ? usage.contacts_remaining : usage.remaining_contacts);
+      const contactsRemaining = rawRem !== undefined ? rawRem : Math.max(0, (planInfo.contact_allowance || 0) - contactsUsed);
+      kpiRem.textContent = (planInfo.contact_allowance === Infinity || planInfo.contact_allowance >= 500)
         ? 'Unlimited'
-        : `${usage.remaining_contacts} contacts left`;
+        : `${contactsRemaining} contacts left`;
+      kpiRem.style.color = contactsRemaining > 0 ? '#34D399' : '#EF4444';
     }
 
     // Monthly / Annual Billing Interval State & Handler (Phase 035)
