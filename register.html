@@ -443,23 +443,23 @@
             <!-- Live Profile Card Preview -->
             <div class="preview-profile-card" id="preview-profile-card">
               <div class="preview-card-header">
-                <div class="preview-avatar-circle" id="prev-avatar">AO</div>
+                <div class="preview-avatar-circle" id="prev-avatar">PA</div>
                 <div class="preview-meta-wrap">
                   <div class="preview-provider-name">
-                    <span id="prev-name">Adebayo Okafor</span>
+                    <span id="prev-name">Your Profile Name</span>
                     <span class="profile-verified-pill unverified" id="prev-badge" style="font-size: 10px; padding: 2px 6px;">ℹ️ Self-Reported Profile</span>
                   </div>
-                  <div class="preview-trade-title" id="prev-trade">Electrician & Solar Installer</div>
+                  <div class="preview-trade-title" id="prev-trade">Skilled Artisan</div>
                   <div class="preview-loc-pill">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                    <span id="prev-location">Surulere, Lagos</span>
+                    <span id="prev-location">Your Service Area</span>
                     <span>•</span>
                     <span id="prev-rating" style="color: #475569; font-weight: 600;">★ New Listing (0 reviews)</span>
                   </div>
                 </div>
               </div>
               <div class="preview-bio-snippet" id="prev-bio">
-                Certified Electrician serving Surulere, Lagos. Contact directly for instant quotes and prompt service.
+                Verified artisan offering professional services. Contact directly for quotes and prompt service.
               </div>
               <div class="preview-cta-row">
                 <div class="preview-cta-btn preview-cta-wa" id="prev-wa-btn">
@@ -861,7 +861,7 @@
         if (uploadedAvatarData) {
           prevAvatar.innerHTML = `<img src="${uploadedAvatarData}" alt="${escapeHtml(displayName)}" />`;
         } else {
-          const initials = ((fname ? fname[0] : 'A') + (lname ? lname[0] : 'O')).toUpperCase();
+          const initials = (fname || lname) ? (((fname ? fname[0] : '') + (lname ? lname[0] : '')).toUpperCase().substring(0, 2)) : 'PA';
           prevAvatar.textContent = initials;
         }
       }

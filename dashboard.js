@@ -4486,7 +4486,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
     const totalCount = reviews.length;
-    const avgRating = totalCount > 0 ? Number((sumRating / totalCount).toFixed(1)) : 5.0;
+    const avgRating = totalCount > 0 ? Number((sumRating / totalCount).toFixed(1)) : 0;
 
     // Update Summary Ribbon in #tab-reviews
     const scoreEl = document.getElementById('dash-rev-avg-score');
@@ -4496,7 +4496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const profLink = document.getElementById('dash-reviews-profile-link');
 
     if (scoreEl) scoreEl.textContent = totalCount > 0 ? avgRating.toFixed(1) : 'New';
-    if (starsEl) starsEl.textContent = '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating));
+    if (starsEl) starsEl.textContent = totalCount > 0 ? ('★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating))) : '☆☆☆☆☆';
     if (totalEl) totalEl.textContent = String(totalCount);
     if (verEl) verEl.textContent = String(verifiedCount);
     if (profLink) profLink.href = `profile.html?id=${currentProvider.id}&preview=artisan`;

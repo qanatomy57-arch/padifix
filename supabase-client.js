@@ -4109,18 +4109,9 @@
           { item: "Standard Service Task", price: "₦15,000 – ₦35,000" },
           { item: "Emergency Priority Repair", price: "₦10,000 – ₦25,000" }
         ],
-        portfolio: p.portfolio_items || p.portfolio || [
-          {
-            id: "port-1",
-            title: `Completed ${trade} Project`,
-            category: trade,
-            description: `Quality ${trade} craftsmanship delivered for client in ${p.area}.`,
-            isBeforeAfter: false,
-            tag: "Sample Work",
-            accentColor: "#006B3F",
-            icon: "🛠️"
-          }
-        ],
+        portfolio: (p.portfolio_items && Array.isArray(p.portfolio_items) && p.portfolio_items.length > 0)
+          ? p.portfolio_items
+          : ((p.portfolio && Array.isArray(p.portfolio) && p.portfolio.length > 0) ? p.portfolio : []),
         reviews: (p.reviews || []).map(r => ({
           id: r.id,
           author: r.author_name || r.author || 'Customer',
@@ -9934,7 +9925,7 @@
 
       const fName = String(provider.first_name || provider.name || 'ART').replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 6);
       const lga = String(provider.lga || 'NIG').replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 5);
-      return `LOK-${fName}-${lga}-${numId}`;
+      return `PADIFIX-${fName}-${lga}-${numId}`;
     },
 
     processReferralRegistration(referralCode, newProviderId) {
