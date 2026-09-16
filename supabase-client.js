@@ -101,6 +101,23 @@
   const DB_VERIFICATION_ATTEMPTS_KEY = 'lokator_supabase_verification_attempts_db';
   const DB_KYC_WEBHOOK_EVENTS_KEY = 'lokator_supabase_kyc_webhook_events_db';
 
+  // Automatically purge legacy mock caches if remote Supabase backend is configured and active
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && isRemoteActive()) {
+    try {
+      localStorage.removeItem(DB_USERS_KEY);
+      localStorage.removeItem(DB_STORE_KEY);
+      localStorage.removeItem(DB_SERVICES_KEY);
+      localStorage.removeItem(DB_REVIEWS_KEY);
+      localStorage.removeItem(DB_PORTFOLIO_KEY);
+      localStorage.removeItem(DB_WORKING_HOURS_KEY);
+      localStorage.removeItem('lokator_current_provider');
+      const rawSess = localStorage.getItem(DB_AUTH_SESSION_KEY);
+      if (rawSess && (rawSess.includes('lokator_mock_token_') || rawSess.includes('lokator_test_token_'))) {
+        localStorage.removeItem(DB_AUTH_SESSION_KEY);
+      }
+    } catch (e) {}
+  }
+
   // 3.0 CENTRAL WRITE RESULT MODEL (Phase 4.5 Standard)
   function createWriteResult({
     status = 'REMOTE_SUCCESS',
@@ -985,17 +1002,19 @@
                 }
               }
             });
+            if (remoteResult && remoteResult.error) {
+              return { data: { user: null, session: null }, error: remoteResult.error };
+            }
             if (remoteResult.data && remoteResult.data.user) {
               authUser = remoteResult.data.user;
               authSession = remoteResult.data.session;
             }
           } catch (e) {
-            console.warn('Supabase remote signUp warning:', e);
+            console.warn('Supabase remote signUp error:', e);
+            return { data: { user: null, session: null }, error: e };
           }
-        }
-
-        // Fallback / local mock user creation
-        if (!authUser) {
+        } else {
+          // Fallback / local mock user creation ONLY when remote Supabase is inactive
           const users = getLocalStore(DB_USERS_KEY, []);
           const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
           if (existing) {
@@ -1019,34 +1038,15 @@
             refresh_token: 'lokator_mock_refresh_' + Date.now(),
             user: authUser
           };
-        }
 
-        if (authUser) {
-          const users = getLocalStore(DB_USERS_KEY, []);
-          const existingIdx = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-          const userRec = {
+          users.push({
             id: authUser.id,
             email: email,
             password: password,
             metadata: meta,
-            created_at: authUser.created_at || new Date().toISOString()
-          };
-          if (existingIdx >= 0) {
-            users[existingIdx] = userRec;
-          } else {
-            users.push(userRec);
-          }
+            created_at: authUser.created_at
+          });
           setLocalStore(DB_USERS_KEY, users);
-        }
-
-        if (!authSession && authUser) {
-          authSession = {
-            access_token: 'lokator_mock_token_' + Date.now(),
-            token_type: 'bearer',
-            expires_in: 3600,
-            refresh_token: 'lokator_mock_refresh_' + Date.now(),
-            user: authUser
-          };
         }
 
         if (authSession) {
@@ -1055,7 +1055,7 @@
         }
 
         let linkedProvider = null;
-        if (profileData) {
+        if (profileData && authUser) {
           profileData.email = email;
           profileData.user_id = authUser.id;
           linkedProvider = await LokatorDB.registerProvider(profileData);
@@ -1074,7 +1074,7 @@
             session: authSession,
             provider: linkedProvider
           },
-          error: remoteResult && remoteResult.error ? remoteResult.error : null
+          error: null
         };
       },
 
@@ -1085,63 +1085,57 @@
         const email = credentials.email ? credentials.email.trim() : '';
         const password = credentials.password || '';
 
-        let remoteResult = null;
+        if (!email || !password) {
+          const err = new Error('Please enter both your email and password.');
+          err.status = 400;
+          return { data: { user: null, session: null }, error: err };
+        }
+
         let authUser = null;
         let authSession = null;
 
         if (isRemoteActive()) {
           try {
-            remoteResult = await supabaseInstance.auth.signInWithPassword({ email, password });
-            if (remoteResult.data && remoteResult.data.user) {
+            const remoteResult = await supabaseInstance.auth.signInWithPassword({ email, password });
+            if (remoteResult && remoteResult.error) {
+              return { data: { user: null, session: null }, error: remoteResult.error };
+            }
+            if (remoteResult && remoteResult.data && remoteResult.data.user) {
               authUser = remoteResult.data.user;
               authSession = remoteResult.data.session;
+              setLocalStore(DB_AUTH_SESSION_KEY, authSession);
+              notifyAuthListeners('SIGNED_IN', authSession);
+              const provider = await this.getCurrentProvider();
+              return {
+                data: {
+                  user: authUser,
+                  session: authSession,
+                  provider: provider
+                },
+                error: null
+              };
             }
+            const err = new Error('Invalid email or password. Please check your credentials.');
+            err.status = 400;
+            return { data: { user: null, session: null }, error: err };
           } catch (e) {
             console.warn('Supabase remote signIn notice:', e);
+            return { data: { user: null, session: null }, error: e };
           }
         }
 
-        // Fallback / local auth verification
-        if (!authUser) {
-          const users = getLocalStore(DB_USERS_KEY, []);
-          const matchedUser = users.find(u => u.email.toLowerCase() === email.toLowerCase() && (!u.password || u.password === password));
+        // Fallback / local auth verification ONLY when remote Supabase is inactive
+        const users = getLocalStore(DB_USERS_KEY, []);
+        const matchedUser = users.find(u => u.email.toLowerCase() === email.toLowerCase() && (!u.password || u.password === password));
 
-          if (matchedUser) {
-            authUser = {
-              id: matchedUser.id,
-              email: matchedUser.email,
-              app_metadata: { provider: 'email', role: 'provider' },
-              user_metadata: matchedUser.metadata || { email: matchedUser.email },
-              created_at: matchedUser.created_at
-            };
-          } else {
-            // Check if matches a seed provider email (e.g. adebayo@lokator.ng or test accounts)
-            const providers = getLocalStore(DB_STORE_KEY, []);
-            const matchedProvider = providers.find(p => p.email && p.email.toLowerCase() === email.toLowerCase());
-            if (matchedProvider) {
-              authUser = {
-                id: matchedProvider.user_id || ('usr_' + matchedProvider.id),
-                email: matchedProvider.email,
-                app_metadata: { provider: 'email', role: 'provider' },
-                user_metadata: {
-                  first_name: matchedProvider.first_name || (matchedProvider.name ? matchedProvider.name.split(' ')[0] : 'Provider'),
-                  last_name: matchedProvider.last_name || '',
-                  provider_id: matchedProvider.id
-                },
-                created_at: matchedProvider.created_at || new Date().toISOString()
-              };
-            }
-          }
-
-          if (authUser) {
-            authSession = {
-              access_token: 'lokator_mock_token_' + Date.now(),
-              token_type: 'bearer',
-              expires_in: 3600,
-              refresh_token: 'lokator_mock_refresh_' + Date.now(),
-              user: authUser
-            };
-          }
+        if (matchedUser) {
+          authUser = {
+            id: matchedUser.id,
+            email: matchedUser.email,
+            app_metadata: { provider: 'email', role: 'provider' },
+            user_metadata: matchedUser.metadata || { email: matchedUser.email },
+            created_at: matchedUser.created_at
+          };
         }
 
         if (!authUser) {
@@ -1149,6 +1143,14 @@
           err.status = 400;
           return { data: { user: null, session: null }, error: err };
         }
+
+        authSession = {
+          access_token: 'lokator_mock_token_' + Date.now(),
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: 'lokator_mock_refresh_' + Date.now(),
+          user: authUser
+        };
 
         setLocalStore(DB_AUTH_SESSION_KEY, authSession);
         notifyAuthListeners('SIGNED_IN', authSession);
@@ -1273,7 +1275,10 @@
             if (res && res.data && res.data.user) {
               return res;
             }
-          } catch (e) {}
+            return { data: { user: null }, error: null };
+          } catch (e) {
+            return { data: { user: null }, error: e };
+          }
         }
         const user = this.getUserSync();
         return { data: { user: user }, error: null };
@@ -1289,7 +1294,10 @@
             if (res && res.data && res.data.session) {
               return res;
             }
-          } catch (e) {}
+            return { data: { session: null }, error: null };
+          } catch (e) {
+            return { data: { session: null }, error: e };
+          }
         }
         const session = this.getSessionSync();
         return { data: { session: session }, error: null };
@@ -1322,19 +1330,14 @@
        * Resolve the full provider record linked to the current logged-in user
        */
       async getCurrentProvider() {
-        if (typeof localStorage !== 'undefined') {
-          try {
-            const cachedProvider = localStorage.getItem('lokator_current_provider');
-            if (cachedProvider) {
-              const p = JSON.parse(cachedProvider);
-              if (p && p.id) return p;
-            }
-          } catch (e) {}
-        }
-
         const userRes = await this.getUser();
         const user = userRes && userRes.data ? userRes.data.user : null;
-        if (!user) return null;
+        if (!user) {
+          if (typeof localStorage !== 'undefined') {
+            try { localStorage.removeItem('lokator_current_provider'); } catch (e) {}
+          }
+          return null;
+        }
 
         const targetProviderId = user.user_metadata && user.user_metadata.provider_id;
 
@@ -1363,9 +1366,10 @@
               return await LokatorDB.getProviderById(data.id);
             }
           } catch (e) {}
+          return null;
         }
 
-        // 3. Match in local store by user_id or email
+        // 3. Match in local store by user_id or email ONLY when remote is inactive
         const providers = getLocalStore(DB_STORE_KEY, []);
         let match = providers.find(p => p.user_id === user.id);
         if (!match && user.email) {
@@ -1374,11 +1378,6 @@
 
         if (match) {
           return await LokatorDB.getProviderById(match.id);
-        }
-
-        // Fallback: If in demo mode
-        if (user.id && String(user.id).includes('demo')) {
-          return await LokatorDB.getProviderById(1);
         }
 
         return null;

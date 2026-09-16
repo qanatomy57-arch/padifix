@@ -740,7 +740,7 @@ async function loadDynamicTopProviders() {
 
   try {
     const featured = await LokatorDB.getTopFeaturedProviders(3);
-    if (featured && featured.length > 0) {
+    if (featured && Array.isArray(featured) && featured.length > 0) {
       tpGrid.innerHTML = featured.map((p, idx) => {
         const safeId = parseInt(p.id, 10) || 0;
         const initials = String(p.name || 'Pro').split(' ').filter(Boolean).map(n => n && n[0] ? n[0] : '').join('').substring(0, 2).toUpperCase() || 'PR';
@@ -783,6 +783,21 @@ async function loadDynamicTopProviders() {
           </div>
         `;
       }).join('');
+    } else {
+      // 0 registered providers in baseline database: render clean recruitment state
+      tpGrid.innerHTML = `
+        <div class="tp-empty-hero" style="grid-column: 1 / -1; text-align: center; padding: 48px 24px; background: rgba(18, 30, 24, 0.75); border: 1px solid rgba(0, 168, 90, 0.25); border-radius: 16px; backdrop-filter: blur(12px);">
+          <div style="font-size: 2.75rem; margin-bottom: 14px;">⚡ 🔧 💅 🧵 🪚</div>
+          <h3 style="font-size: 1.45rem; font-weight: 700; color: #fff; margin-bottom: 10px;">Verified Artisan Community Launching Across Nigeria</h3>
+          <p style="color: #94a3b8; max-width: 600px; margin: 0 auto 24px; font-size: 1rem; line-height: 1.6;">
+            We are actively onboarding and vetting top plumbers, electricians, tailors, mechanics, and beauty professionals across Lagos, Abuja, Port Harcourt, and Kano.
+          </p>
+          <div style="display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;">
+            <a href="register.html" class="btn btn-primary btn-lg" style="font-weight: 600;">🛠️ Register as an Artisan (Free)</a>
+            <a href="search.html" class="btn btn-outline btn-lg">🔍 Explore Directory</a>
+          </div>
+        </div>
+      `;
     }
   } catch (e) {
     console.warn('Could not load dynamic top providers from Supabase:', e);
