@@ -174,20 +174,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     heroLocationText.textContent = displayLoc;
   }
 
-  const revCount = parseInt(provider.reviewsCount != null ? provider.reviewsCount : (provider.reviews ? provider.reviews.length : 0), 10);
+  const revCount = parseInt(provider.reviewsCount != null ? provider.reviewsCount : (provider.reviews_count != null ? provider.reviews_count : (provider.reviews ? provider.reviews.length : 0)), 10);
   const heroRatingStars = document.getElementById('hero-rating-stars');
   if (heroRatingStars) {
-    if (revCount > 0) {
-      heroRatingStars.innerHTML = `★ <strong id="hero-rating-val">${Number(provider.rating != null ? provider.rating : 5).toFixed(1)}</strong> (<span id="hero-reviews-count">${revCount}</span> reviews)`;
+    if (revCount > 0 && provider.rating != null && Number(provider.rating) > 0) {
+      heroRatingStars.innerHTML = `★ <strong id="hero-rating-val">${Number(provider.rating).toFixed(1)}</strong> (<span id="hero-reviews-count">${revCount}</span> review${revCount === 1 ? '' : 's'})`;
     } else {
-      heroRatingStars.innerHTML = `⭐ <strong id="hero-rating-val">New</strong> (<span id="hero-reviews-count">0</span> reviews)`;
+      heroRatingStars.innerHTML = `⭐ <strong id="hero-rating-val">New Artisan</strong> (<span id="hero-reviews-count">No reviews yet</span>)`;
     }
   } else {
     const heroRatingVal = document.getElementById('hero-rating-val');
-    if (heroRatingVal) heroRatingVal.textContent = revCount > 0 ? Number(provider.rating != null ? provider.rating : 5).toFixed(1) : 'New';
+    if (heroRatingVal) heroRatingVal.textContent = (revCount > 0 && provider.rating != null && Number(provider.rating) > 0) ? Number(provider.rating).toFixed(1) : 'New Artisan';
 
     const heroReviewsCount = document.getElementById('hero-reviews-count');
-    if (heroReviewsCount) heroReviewsCount.textContent = String(revCount);
+    if (heroReviewsCount) heroReviewsCount.textContent = revCount > 0 ? String(revCount) : 'No reviews yet';
   }
 
   // 3.1 Dynamic Verification & Trust Badge (Phase 006 Canonical Engine)
@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 4. Populate Metric Badges
   const metricRating = document.getElementById('metric-rating');
-  if (metricRating) metricRating.textContent = revCount > 0 ? `★ ${Number(provider.rating != null ? provider.rating : 5).toFixed(1)}` : '★ New';
+  if (metricRating) metricRating.textContent = (revCount > 0 && provider.rating != null && Number(provider.rating) > 0) ? `★ ${Number(provider.rating).toFixed(1)}` : '★ New';
 
   const metricJobs = document.getElementById('metric-jobs');
   if (metricJobs) metricJobs.textContent = `${parseInt(provider.completedJobs, 10) || 50}+`;
@@ -2344,8 +2344,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       nearbyContainer.innerHTML = nearbyList.map(n => {
         const safeNId = parseInt(n.id, 10) || 0;
         const nInitials = String(n.name || 'PadiFix').split(' ').filter(Boolean).map(part => part && part[0] ? part[0] : '').join('').substring(0, 2).toUpperCase() || 'PF';
-        const safeRating = Number(n.rating || 5).toFixed(1);
-        const safeReviews = parseInt(n.reviewsCount || 0, 10);
+        const safeReviews = parseInt(n.reviewsCount != null ? n.reviewsCount : (n.reviews_count || 0), 10);
+        const hasNReviews = safeReviews > 0 && n.rating != null && Number(n.rating) > 0;
+        const ratingDisplay = hasNReviews ? `★ ${Number(n.rating).toFixed(1)} (${safeReviews})` : `<span style="color: #059669; font-weight: 600;">New Artisan</span>`;
         const safeAvatarBg = (n.avatarBg && typeof n.avatarBg === 'string' && n.avatarBg.startsWith('linear-gradient')) ? n.avatarBg : 'var(--green)';
 
         return `
@@ -2358,7 +2359,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
             </div>
             <span class="tp-trade">${escapeHtml(n.trade)}</span>
-            <div class="tp-rating">★★★★★ <span>${safeRating} (${safeReviews})</span></div>
+            <div class="tp-rating">${ratingDisplay}</div>
             <span class="tp-loc">📍 ${escapeHtml(n.area)}</span>
             <div class="tp-actions" style="margin-top: 12px;">
               <a href="profile.html?id=${safeNId}" class="btn btn-outline btn-sm btn-block">View Profile & Reviews →</a>

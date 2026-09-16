@@ -847,7 +847,7 @@ const providerLeadsHandler = async (req, res) => {
           } catch (e) {}
         }
 
-        let origin = 'https://padifix.ng';
+        let origin = process.env.APP_URL || 'https://padifix.vercel.app';
         if (req.headers && (req.headers['origin'] || req.headers['referer'])) {
           try {
             const parsed = new URL(req.headers['origin'] || req.headers['referer']);

@@ -226,7 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const serviceParam = params.get("service") || params.get("skill") || params.get("category");
     const industryParam = params.get("industry");
     const specParam = params.get("spec") || params.get("specialization");
-    const qParam = params.get("q");
+    const qParam = params.get("q") || params.get("keyword");
     const locParam = params.get("location");
     const stateParam = params.get("state");
     const lgaParam = params.get("lga");
@@ -1165,8 +1165,8 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `<span class="meta-rating-num">${safeRating}</span>
              <span class="meta-rating-star">★</span>
              <span class="meta-reviews-count">(${reviewsSubText})</span>`
-          : `<span class="meta-rating-num" style="color: #059669; font-weight: 700;">★ New</span>
-             <span class="meta-reviews-count">(0 reviews)</span>`;
+          : `<span class="meta-rating-num" style="color: #059669; font-weight: 700;">New Artisan</span>
+             <span class="meta-reviews-count">(No reviews yet)</span>`;
 
         const safeExpYrs = parseInt(provider.experienceYrs || 3, 10);
         const safeAvatarBg = (provider.avatarBg && typeof provider.avatarBg === 'string' && provider.avatarBg.startsWith('linear-gradient')) ? provider.avatarBg : 'linear-gradient(135deg, #006B3F, #059669)';
@@ -1779,7 +1779,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const trade = provider.trade || provider.trade_title || 'Verified Artisan';
       const name = provider.name || provider.business_name || 'Artisan';
       const loc = provider.area || (provider.lga && provider.state ? `${provider.lga}, ${provider.state}` : provider.city) || 'Nigeria';
-      const rating = provider.rating ? `★ ${Number(provider.rating).toFixed(1)} (${provider.reviews_count || 0})` : '★ 5.0 (New)';
+      const sheetRevs = parseInt(provider.reviews_count || provider.reviewsCount || 0, 10);
+      const rating = (sheetRevs > 0 && provider.rating != null && Number(provider.rating) > 0)
+        ? `★ ${Number(provider.rating).toFixed(1)} (${sheetRevs})`
+        : 'New Artisan';
       const dist = provider.distance != null ? `~${Number(provider.distance).toFixed(1)} km away` : 'Nearby';
 
       sheetContent.innerHTML = `
@@ -2999,9 +3002,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const ratingEl = document.getElementById('trust-explainer-rating-row');
     if (ratingEl) {
-      const rat = p.rating ? Number(p.rating).toFixed(1) : '4.9';
-      const revs = p.reviews_count != null ? p.reviews_count : (p.reviewsCount != null ? p.reviewsCount : 120);
-      ratingEl.textContent = `★ ${rat} (${revs} reviews)`;
+      const revs = p.reviews_count != null ? p.reviews_count : (p.reviewsCount != null ? p.reviewsCount : 0);
+      if (revs > 0 && p.rating != null && Number(p.rating) > 0) {
+        ratingEl.textContent = `★ ${Number(p.rating).toFixed(1)} (${revs} review${revs === 1 ? '' : 's'})`;
+      } else {
+        ratingEl.textContent = 'New Artisan • No reviews yet';
+      }
     }
 
     const contactCta = document.getElementById('trust-explainer-contact-cta');

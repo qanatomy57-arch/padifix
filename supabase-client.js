@@ -1176,6 +1176,34 @@
       },
 
       /**
+       * Send password recovery email via Supabase Auth
+       */
+      async resetPasswordForEmail(email, options = {}) {
+        if (isRemoteActive()) {
+          try {
+            return await supabaseInstance.auth.resetPasswordForEmail(email, options);
+          } catch (e) {
+            return { data: null, error: e };
+          }
+        }
+        return { data: { message: 'Password recovery email sent (demo mode)' }, error: null };
+      },
+
+      /**
+       * Update authenticated user credentials (e.g. password reset)
+       */
+      async updateUser(attributes) {
+        if (isRemoteActive()) {
+          try {
+            return await supabaseInstance.auth.updateUser(attributes);
+          } catch (e) {
+            return { data: null, error: e };
+          }
+        }
+        return { data: { user: this.getUserSync() }, error: null };
+      },
+
+      /**
        * Instant Demo Provider Login for frictionless testing & evaluation
        */
       async demoLogin(providerId = 1) {
@@ -2142,8 +2170,8 @@
         avatar_bg: 'linear-gradient(135deg, #006B3F, #059669)',
         badge_title: 'NIN Verified Artisan',
         response_time: '~15 mins',
-        completed_jobs: 1,
-        rating: 5.0,
+        completed_jobs: 0,
+        rating: 0.0,
         reviews_count: 0,
         subscription_plan: formData.plan || 'basic',
         is_verified: false,

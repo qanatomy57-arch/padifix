@@ -192,41 +192,74 @@
   <!-- ===== AUTH WRAPPER ===== -->
   <main class="auth-page-wrapper">
     <div class="auth-card" id="auth-card">
-      <div class="auth-header">
-        <span class="badge-pill">Provider Portal</span>
-        <h1>Welcome Back</h1>
-        <p>Access your artisan dashboard & customer leads</p>
-      </div>
 
-      <div id="auth-alert" class="auth-alert"></div>
-
-      <form id="login-form" class="reg-form">
-        <div class="form-group">
-          <label for="login-email">Email Address or Phone</label>
-          <input type="email" id="login-email" name="email" required placeholder="e.g. adebayo@padifix.ng" autocomplete="email" />
+      <!-- SIGN IN VIEW -->
+      <div id="signin-view">
+        <div class="auth-header">
+          <span class="badge-pill">Provider Portal</span>
+          <h1>Welcome Back</h1>
+          <p>Access your artisan dashboard & customer leads</p>
         </div>
 
-        <div class="form-group">
-          <div class="login-password-label-row">
-            <label for="login-password">Password</label>
-            <a href="#forgot-password" id="forgot-link" class="forgot-link-btn" role="button">Forgot password?</a>
+        <div id="auth-alert" class="auth-alert"></div>
+
+        <form id="login-form" class="reg-form">
+          <div class="form-group">
+            <label for="login-email">Email Address or Phone</label>
+            <input type="email" id="login-email" name="email" required placeholder="e.g. adebayo@example.com" autocomplete="email" />
           </div>
-          <div class="password-wrap">
-            <input type="password" id="login-password" name="password" required placeholder="Enter your password" autocomplete="current-password" />
-            <button type="button" class="toggle-pwd" id="toggle-pwd" aria-label="Toggle password visibility">👁️</button>
+
+          <div class="form-group">
+            <div class="login-password-label-row">
+              <label for="login-password">Password</label>
+              <a href="#forgot-password" id="forgot-link" class="forgot-link-btn" role="button">Forgot password?</a>
+            </div>
+            <div class="password-wrap">
+              <input type="password" id="login-password" name="password" required placeholder="Enter your password" autocomplete="current-password" />
+              <button type="button" class="toggle-pwd" id="toggle-pwd" aria-label="Toggle password visibility">👁️</button>
+            </div>
           </div>
+
+          <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-login-submit">
+            Sign In to Dashboard
+          </button>
+        </form>
+
+        <div class="auth-footer">
+          Don't have a provider account yet?
+          <br />
+          <a href="register.html">Register Your Skill & Profile Free →</a>
+        </div>
+      </div>
+
+      <!-- FORGOT PASSWORD VIEW -->
+      <div id="forgot-view" style="display: none;">
+        <div class="auth-header">
+          <span class="badge-pill" style="background: rgba(255, 193, 7, 0.15); color: #D97706; border-color: rgba(255, 193, 7, 0.3);">Password Recovery</span>
+          <h1>Reset Password</h1>
+          <p>Enter your registered email address to receive recovery instructions</p>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-login-submit">
-          Sign In to Dashboard
-        </button>
-      </form>
+        <div id="forgot-alert" class="auth-alert"></div>
 
-      <div class="auth-footer">
-        Don't have a provider account yet?
-        <br />
-        <a href="register.html">Register Your Skill & Profile Free →</a>
+        <form id="forgot-form" class="reg-form">
+          <div class="form-group">
+            <label for="forgot-email">Registered Email Address</label>
+            <input type="email" id="forgot-email" name="email" required placeholder="e.g. adebayo@example.com" autocomplete="email" />
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-forgot-submit">
+            Send Recovery Link
+          </button>
+        </form>
+
+        <div class="auth-footer" style="margin-top: 20px;">
+          <a href="#back-to-login" id="back-to-login-link" style="color: var(--green); font-weight: 600; text-decoration: none;">
+            ← Back to Sign In
+          </a>
+        </div>
       </div>
+
     </div>
   </main>
 
@@ -295,6 +328,22 @@
         }
       } catch (e) {}
 
+      // View elements
+      const signinView = document.getElementById('signin-view');
+      const forgotView = document.getElementById('forgot-view');
+      const forgotForm = document.getElementById('forgot-form');
+      const forgotEmailInput = document.getElementById('forgot-email');
+      const forgotSubmitBtn = document.getElementById('btn-forgot-submit');
+      const forgotAlert = document.getElementById('forgot-alert');
+      const backToLoginLink = document.getElementById('back-to-login-link');
+
+      function showForgotAlert(msg, isError = true) {
+        if (!forgotAlert) return;
+        forgotAlert.textContent = msg;
+        forgotAlert.className = `auth-alert ${isError ? 'error' : 'success'}`;
+        forgotAlert.style.display = 'block';
+      }
+
       // Password toggle
       if (togglePwd && passwordInput) {
         togglePwd.addEventListener('click', () => {
@@ -304,17 +353,65 @@
         });
       }
 
-      // Forgot password prompt
+      // Switch to Forgot Password View
       if (forgotLink) {
         forgotLink.addEventListener('click', (e) => {
           e.preventDefault();
-          const email = emailInput ? emailInput.value.trim() : '';
+          if (alertBox) alertBox.style.display = 'none';
+          if (forgotAlert) forgotAlert.style.display = 'none';
+          if (emailInput && forgotEmailInput && emailInput.value.trim()) {
+            forgotEmailInput.value = emailInput.value.trim();
+          }
+          if (signinView) signinView.style.display = 'none';
+          if (forgotView) forgotView.style.display = 'block';
+          if (forgotEmailInput) forgotEmailInput.focus();
+        });
+      }
+
+      // Switch back to Sign In View
+      if (backToLoginLink) {
+        backToLoginLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (forgotAlert) forgotAlert.style.display = 'none';
+          if (alertBox) alertBox.style.display = 'none';
+          if (forgotView) forgotView.style.display = 'none';
+          if (signinView) signinView.style.display = 'block';
+          if (emailInput) emailInput.focus();
+        });
+      }
+
+      // Real Supabase Password Recovery Submission
+      if (forgotForm) {
+        forgotForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const email = forgotEmailInput ? forgotEmailInput.value.trim() : '';
           if (!email) {
-            showAlert('Please enter your registered email address above first, then click Forgot password.');
-            if (emailInput) emailInput.focus();
+            showForgotAlert('Please enter your registered email address.');
             return;
           }
-          showAlert(`Password recovery instructions have been sent to ${email}. Check your inbox or spam folder.`, false);
+
+          forgotSubmitBtn.disabled = true;
+          forgotSubmitBtn.textContent = 'Sending recovery link...';
+
+          const targetOrigin = (typeof window !== 'undefined' && window.location && window.location.origin)
+            ? window.location.origin
+            : 'https://padifix.vercel.app';
+          const redirectTo = `${targetOrigin}/reset-password.html`;
+
+          try {
+            if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.resetPasswordForEmail === 'function') {
+              await LokatorDB.auth.resetPasswordForEmail(email, { redirectTo });
+            } else if (typeof supabase !== 'undefined' && supabase.auth) {
+              await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+            }
+          } catch (err) {
+            console.warn('Password recovery notice:', err);
+          }
+
+          // Anti-enumeration guarantee: Neutral message regardless of account existence
+          showForgotAlert("If an account exists for this email, we've sent password recovery instructions. Please check your inbox and spam folder.", false);
+          forgotSubmitBtn.disabled = false;
+          forgotSubmitBtn.textContent = 'Send Recovery Link';
         });
       }
 

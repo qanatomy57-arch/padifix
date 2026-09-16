@@ -458,7 +458,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const providerName = currentProvider ? (currentProvider.business_name || currentProvider.full_name || 'Your Artisan') : 'PadiFix Verified Artisan';
     const intent = lead.intent_tag || 'Artisan Service';
     const locality = lead.locality || 'your area';
-    const profileUrl = typeof window !== 'undefined' ? `${window.location.origin}/profile.html?id=${lead.provider_id || (currentProvider ? currentProvider.id : '')}` : 'https://padifix.ng';
+    const profileUrl = typeof window !== 'undefined' ? `${window.location.origin}/profile.html?id=${lead.provider_id || (currentProvider ? currentProvider.id : '')}` : 'https://padifix.vercel.app';
 
     const quoteNgn = lead.quote_amount_kobo ? `₦${Math.round(lead.quote_amount_kobo / 100).toLocaleString()}` : 'To be determined';
     const workNgn = lead.workmanship_amount_kobo ? `₦${Math.round(lead.workmanship_amount_kobo / 100).toLocaleString()}` : null;
@@ -484,7 +484,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       case 'schedule':
         return `Confirmed: Scheduled appointment for ${intent} with ${providerName}.\n• Location: ${locality}\n• Date & Time: ${schedDate}\n\nI will arrive equipped with all necessary diagnostic tools. Please confirm if address is ready.`;
       case 'review': {
-        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : 'https://padifix.ng';
+        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : 'https://padifix.vercel.app';
         const reviewUrl = lead.review_token
           ? `${origin}/review.html?token=${encodeURIComponent(lead.review_token)}`
           : `${origin}/review.html`;

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page Not Found (404) — PadiFix</title>
+  <meta name="description" content="The page you are looking for could not be found. Find verified Nigerian artisans and service providers on PadiFix." />
+  <meta name="theme-color" content="#00A859" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PadiFix" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Zero-Flash Theme Init Script -->
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('padifix_theme') || 'system';
+        var d = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme-mode', t);
+      } catch (e) {}
+    })();
+  </script>
+  <script src="theme.js" defer></script>
+  <link rel="stylesheet" href="style.css?v=11.00" />
+  <link rel="stylesheet" href="pwa.css?v=11.00" />
+  <style>
+    .notfound-wrapper {
+      min-height: calc(100vh - 80px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px 80px;
+      background: radial-gradient(circle at 10% 20%, rgba(0, 168, 89, 0.08) 0%, transparent 40%),
+                  radial-gradient(circle at 90% 80%, rgba(255, 193, 7, 0.06) 0%, transparent 40%),
+                  var(--bg);
+      text-align: center;
+    }
+    .notfound-card {
+      max-width: 620px;
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 48px 32px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .notfound-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 5px;
+      background: linear-gradient(90deg, #00A859, #FFC107);
+    }
+    .notfound-glitch {
+      font-size: 84px;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--green), #52E58C, #FFC107);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -2px;
+    }
+    .notfound-card h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--fg);
+      margin-bottom: 12px;
+    }
+    .notfound-card p {
+      color: var(--fg-muted);
+      font-size: 15px;
+      line-height: 1.6;
+      max-width: 480px;
+      margin: 0 auto 28px;
+    }
+    .notfound-search-form {
+      display: flex;
+      gap: 8px;
+      max-width: 480px;
+      margin: 0 auto 28px;
+    }
+    .notfound-search-input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 14.5px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.2s ease;
+    }
+    .notfound-search-input:focus {
+      border-color: var(--green);
+    }
+    .notfound-search-btn {
+      padding: 12px 20px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 700;
+      border: none;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.2s ease;
+      white-space: nowrap;
+    }
+    .notfound-search-btn:hover {
+      background: #008f4c;
+    }
+    .notfound-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+    .notfound-quicklinks {
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+    }
+    .notfound-quicklinks span {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--fg-muted);
+      display: block;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .quick-chips {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .quick-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      color: var(--fg);
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .quick-chip:hover {
+      border-color: var(--green);
+      color: var(--green);
+      transform: translateY(-1px);
+    }
+    @media (max-width: 600px) {
+      .notfound-card {
+        padding: 36px 20px;
+      }
+      .notfound-glitch {
+        font-size: 64px;
+      }
+      .notfound-card h1 {
+        font-size: 22px;
+      }
+      .notfound-search-form {
+        flex-direction: column;
+      }
+      .notfound-actions {
+        flex-direction: column;
+      }
+      .notfound-actions .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== NAVBAR ===== -->
+  <header class="navbar" id="navbar">
+    <div class="container nav-inner">
+      <a href="index.html" class="logo" id="logo-link" aria-label="PadiFix home">
+        <img src="icons/padifix-logo-dark.png" alt="PadiFix — Find Skills. Get Things Done." class="brand-logo-img" width="137" height="38" />
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="search.html" class="nav-link">Find Providers</a>
+        <a href="register.html" class="nav-link">Register Profile</a>
+        <a href="login.html" class="nav-link">Provider Login</a>
+        <button type="button" class="theme-toggle-btn" id="theme-toggle" aria-label="Toggle theme">
+          <span class="theme-icon">☀️</span>
+          <span class="theme-label">Light</span>
+        </button>
+      </nav>
+      <button class="hamburger" id="hamburger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ERROR HERO ===== -->
+  <main class="notfound-wrapper">
+    <div class="notfound-card">
+      <div class="badge-pill" style="margin-bottom: 12px;">404 Error</div>
+      <div class="notfound-glitch">404</div>
+      <h1>Looks like this page took a wrong turn</h1>
+      <p>
+        The page you are looking for doesn't exist, was moved, or is temporarily unavailable. Let's get you back on track to find skilled Nigerian artisans.
+      </p>
+
+      <!-- SEARCH FORM -->
+      <form class="notfound-search-form" id="notfound-search-form" action="search.html" method="GET">
+        <input
+          type="text"
+          name="q"
+          id="notfound-search-input"
+          class="notfound-search-input"
+          placeholder="Search electricians, plumbers, AC techs..."
+          required
+          autocomplete="off"
+        />
+        <button type="submit" class="notfound-search-btn" id="notfound-search-btn">
+          Find Artisan 🔍
+        </button>
+      </form>
+
+      <!-- NAVIGATION CTAS -->
+      <div class="notfound-actions">
+        <a href="index.html" class="btn btn-primary" id="btn-back-home">
+          Back to Home →
+        </a>
+        <a href="search.html" class="btn btn-outline" id="btn-browse-artisans">
+          Browse Directory
+        </a>
+      </div>
+
+      <!-- POPULAR CATEGORIES -->
+      <div class="notfound-quicklinks">
+        <span>Popular Services Near You</span>
+        <div class="quick-chips">
+          <a href="search.html?service=electrician" class="quick-chip">⚡ Electrician</a>
+          <a href="search.html?service=plumber" class="quick-chip">🔧 Plumber</a>
+          <a href="search.html?service=ac-refrigeration" class="quick-chip">❄️ AC Tech</a>
+          <a href="search.html?service=carpenter" class="quick-chip">🪚 Carpenter</a>
+          <a href="search.html?service=painter" class="quick-chip">🎨 Painter</a>
+          <a href="search.html?service=solar-inverter" class="quick-chip">☀️ Solar Installer</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Hamburger menu handler
+      const hamburger = document.getElementById('hamburger');
+      const navLinks = document.getElementById('nav-links');
+      if (hamburger && navLinks) {
+        hamburger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = navLinks.classList.toggle('open');
+          hamburger.setAttribute('aria-expanded', isOpen);
+        });
+        document.addEventListener('click', (e) => {
+          if (navLinks.classList.contains('open') && !navLinks.contains(e.target) && !hamburger.contains(e.target)) {
+            navLinks.classList.remove('open');
+            hamburger.setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
+
+      // Search Form handler
+      const form = document.getElementById('notfound-search-form');
+      const input = document.getElementById('notfound-search-input');
+      if (form && input) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const q = input.value.trim();
+          if (q) {
+            window.location.href = `search.html?q=${encodeURIComponent(q)}`;
+          } else {
+            window.location.href = 'search.html';
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>
