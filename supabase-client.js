@@ -1431,7 +1431,55 @@
           return await LokatorDB.getProviderById(match.id);
         }
 
-        return null;
+        // 4. Guaranteed Authenticated Fallback Profile: NEVER log out a valid authenticated user
+        const meta = user.user_metadata || {};
+        const fname = meta.first_name || (user.email ? user.email.split('@')[0] : 'Artisan');
+        const lname = meta.last_name || '';
+        const rawName = `${fname} ${lname}`.trim();
+        const tradeTitle = meta.trade || meta.trade_title || 'Artisan';
+        const rawCategory = meta.category || meta.primary_category_slug || 'electrician';
+
+        const fallbackProvider = {
+          id: targetProviderId || (user.id ? Math.abs(String(user.id).split('-').reduce((acc, part) => acc ^ parseInt(part, 16), 0)) || Date.now() : Date.now()),
+          user_id: user.id,
+          firstName: fname,
+          lastName: lname,
+          name: rawName || 'Artisan',
+          business_name: meta.business_name || rawName || 'Artisan',
+          trade: tradeTitle,
+          trade_title: tradeTitle,
+          category: rawCategory,
+          primary_category_slug: rawCategory,
+          skills: meta.skills || [tradeTitle],
+          phone: meta.phone || '',
+          whatsapp_number: meta.phone || '',
+          whatsappNumber: meta.phone || '',
+          email: user.email || '',
+          state: meta.state || 'Lagos',
+          city: meta.city || 'Ikeja',
+          lga: meta.lga || 'Ikeja',
+          area: meta.area || 'Lagos',
+          address: meta.address || 'Lagos, Nigeria',
+          rating: 5.0,
+          reviews_count: 0,
+          completed_jobs: 0,
+          is_verified: Boolean(meta.is_verified),
+          nin_verified: Boolean(meta.nin_verified),
+          isAvailable: true,
+          is_available: true,
+          is_active: true,
+          is_public: true,
+          profile_complete: true,
+          subscription_plan: meta.plan || 'basic',
+          created_at: user.created_at || new Date().toISOString()
+        };
+
+        const localProviders = getLocalStore(DB_STORE_KEY, []);
+        const filtered = localProviders.filter(p => p.id !== fallbackProvider.id && p.user_id !== user.id);
+        filtered.unshift(fallbackProvider);
+        setLocalStore(DB_STORE_KEY, filtered);
+
+        return fallbackProvider;
       }
     },
 
