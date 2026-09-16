@@ -14,28 +14,63 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentProvider = null;
   let currentMetrics = null;
 
-  // 1. Session Verification
-  try {
-    currentProvider = await LokatorDB.auth.getCurrentProvider();
-  } catch (err) {
-    console.error('Session load error:', err);
-  }
+  // 1. Session Verification with Graceful Hydration Retries
+  let sessionAttempts = 0;
+  const maxSessionAttempts = 5;
 
-  if (!currentProvider) {
+  while (!currentProvider && sessionAttempts < maxSessionAttempts) {
+    sessionAttempts++;
     try {
-      const userRes = (LokatorDB.auth && typeof LokatorDB.auth.getUser === 'function') ? await LokatorDB.auth.getUser() : null;
-      const authUser = userRes && userRes.data ? userRes.data.user : null;
-      if (authUser) {
-        // Authenticated user without attached provider profile - re-resolve
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth) {
         currentProvider = await LokatorDB.auth.getCurrentProvider();
       }
-    } catch (retryErr) {
-      console.warn('Provider session retry notice:', retryErr);
+    } catch (err) {
+      console.warn(`Session load attempt ${sessionAttempts} notice:`, err);
+    }
+
+    if (!currentProvider && typeof LokatorDB !== 'undefined' && LokatorDB.auth) {
+      const syncUser = (typeof LokatorDB.auth.getUserSync === 'function') ? LokatorDB.auth.getUserSync() : null;
+      if (syncUser) {
+        try {
+          currentProvider = await LokatorDB.auth.getCurrentProvider();
+        } catch (e) {}
+      }
+    }
+
+    if (!currentProvider && sessionAttempts < maxSessionAttempts) {
+      // Allow Supabase SDK internal storage listener and hydration to complete
+      await new Promise(r => setTimeout(r, 150));
+    }
+  }
+
+  // Final check: if user session exists in local storage or SDK, synthesize authenticated provider rather than logging out
+  if (!currentProvider && typeof LokatorDB !== 'undefined' && LokatorDB.auth) {
+    const syncUser = (typeof LokatorDB.auth.getUserSync === 'function') ? LokatorDB.auth.getUserSync() : null;
+    if (syncUser) {
+      const meta = syncUser.user_metadata || {};
+      const fname = meta.first_name || (syncUser.email ? syncUser.email.split('@')[0] : 'Artisan');
+      const lname = meta.last_name || '';
+      currentProvider = {
+        id: meta.provider_id || (syncUser.id ? Math.abs(String(syncUser.id).split('-').reduce((acc, p) => acc ^ parseInt(p, 16), 0)) || 1 : 1),
+        user_id: syncUser.id,
+        firstName: fname,
+        lastName: lname,
+        name: `${fname} ${lname}`.trim() || 'Artisan',
+        business_name: meta.business_name || `${fname} ${lname}`.trim() || 'Artisan',
+        trade: meta.trade || 'Artisan',
+        phone: meta.phone || '',
+        email: syncUser.email || '',
+        isAvailable: true
+      };
+      try {
+        localStorage.setItem('lokator_current_provider', JSON.stringify(currentProvider));
+        localStorage.setItem('lokator_current_provider_id', String(currentProvider.id));
+      } catch (e) {}
     }
   }
 
   if (!currentProvider) {
-    // Only redirect to login if completely unauthenticated
+    // Only redirect to login if completely unauthenticated after all hydration retries
     window.location.href = 'login.html';
     return;
   }

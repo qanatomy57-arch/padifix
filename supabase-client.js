@@ -105,12 +105,10 @@
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && isRemoteActive()) {
     try {
       localStorage.removeItem(DB_USERS_KEY);
-      localStorage.removeItem(DB_STORE_KEY);
       localStorage.removeItem(DB_SERVICES_KEY);
       localStorage.removeItem(DB_REVIEWS_KEY);
       localStorage.removeItem(DB_PORTFOLIO_KEY);
       localStorage.removeItem(DB_WORKING_HOURS_KEY);
-      localStorage.removeItem('lokator_current_provider');
       const rawSess = localStorage.getItem(DB_AUTH_SESSION_KEY);
       if (rawSess && (rawSess.includes('lokator_mock_token_') || rawSess.includes('lokator_test_token_'))) {
         localStorage.removeItem(DB_AUTH_SESSION_KEY);
@@ -950,7 +948,32 @@
        * Get current session synchronously from local storage cache
        */
       getSessionSync() {
-        return getLocalStore(DB_AUTH_SESSION_KEY, null);
+        const session = getLocalStore(DB_AUTH_SESSION_KEY, null);
+        if (session && session.user) {
+          return session;
+        }
+
+        // Fallback: Check official Supabase SDK token storage (e.g. sb-hvxosxhnxauiqrhpyuur-auth-token or any sb-*-auth-token)
+        if (typeof localStorage !== 'undefined') {
+          try {
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed && (parsed.user || parsed.access_token)) {
+                    // Sync into LokatorDB session key for zero-latency subsequent lookups
+                    setLocalStore(DB_AUTH_SESSION_KEY, parsed);
+                    return parsed;
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        return session;
       },
 
       /**
@@ -958,7 +981,34 @@
        */
       getUserSync() {
         const session = this.getSessionSync();
-        return session && session.user ? session.user : null;
+        if (session && session.user) {
+          return session.user;
+        }
+
+        // Fallback: Check cached provider if user object/meta is present
+        if (typeof localStorage !== 'undefined') {
+          try {
+            const rawProv = localStorage.getItem('lokator_current_provider');
+            if (rawProv) {
+              const prov = JSON.parse(rawProv);
+              if (prov && (prov.user_id || prov.id)) {
+                return {
+                  id: prov.user_id || String(prov.id),
+                  email: prov.email || '',
+                  user_metadata: {
+                    first_name: prov.firstName || prov.first_name || prov.name,
+                    last_name: prov.lastName || prov.last_name || '',
+                    phone: prov.phone || '',
+                    trade: prov.trade || prov.trade_title || '',
+                    provider_id: prov.id
+                  }
+                };
+              }
+            }
+          } catch (e) {}
+        }
+
+        return null;
       },
 
       /**
@@ -1065,6 +1115,12 @@
             if (authSession) {
               setLocalStore(DB_AUTH_SESSION_KEY, authSession);
             }
+            if (typeof localStorage !== 'undefined') {
+              try {
+                localStorage.setItem('lokator_current_provider', JSON.stringify(linkedProvider));
+                localStorage.setItem('lokator_current_provider_id', String(linkedProvider.id));
+              } catch (e) {}
+            }
           }
         }
 
@@ -1106,6 +1162,12 @@
               setLocalStore(DB_AUTH_SESSION_KEY, authSession);
               notifyAuthListeners('SIGNED_IN', authSession);
               const provider = await this.getCurrentProvider();
+              if (provider && typeof localStorage !== 'undefined') {
+                try {
+                  localStorage.setItem('lokator_current_provider', JSON.stringify(provider));
+                  localStorage.setItem('lokator_current_provider_id', String(provider.id));
+                } catch (e) {}
+              }
               return {
                 data: {
                   user: authUser,
@@ -1156,6 +1218,12 @@
         notifyAuthListeners('SIGNED_IN', authSession);
 
         const provider = await this.getCurrentProvider();
+        if (provider && typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem('lokator_current_provider', JSON.stringify(provider));
+            localStorage.setItem('lokator_current_provider_id', String(provider.id));
+          } catch (e) {}
+        }
 
         return {
           data: {
@@ -1260,6 +1328,16 @@
         }
         try {
           localStorage.removeItem(DB_AUTH_SESSION_KEY);
+          localStorage.removeItem('lokator_current_provider');
+          localStorage.removeItem('lokator_current_provider_id');
+          if (typeof localStorage !== 'undefined') {
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+              const k = localStorage.key(i);
+              if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) {
+                localStorage.removeItem(k);
+              }
+            }
+          }
         } catch (e) {}
         notifyAuthListeners('SIGNED_OUT', null);
         return { error: null };
@@ -1269,38 +1347,58 @@
        * Get currently authenticated user
        */
       async getUser() {
+        const cachedUser = this.getUserSync();
+
         if (isRemoteActive()) {
           try {
+            // 1. First check active SDK session (reads local token synchronously/quickly)
+            const sessRes = await supabaseInstance.auth.getSession();
+            if (sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user) {
+              setLocalStore(DB_AUTH_SESSION_KEY, sessRes.data.session);
+              return { data: { user: sessRes.data.session.user }, error: null };
+            }
+
+            // 2. Next check remote user endpoint
             const res = await supabaseInstance.auth.getUser();
             if (res && res.data && res.data.user) {
               return res;
             }
-            return { data: { user: null }, error: null };
           } catch (e) {
-            return { data: { user: null }, error: e };
+            console.warn('Supabase remote getUser notice:', e);
           }
         }
-        const user = this.getUserSync();
-        return { data: { user: user }, error: null };
+
+        // 3. Fallback to cached session user
+        if (cachedUser) {
+          return { data: { user: cachedUser }, error: null };
+        }
+
+        return { data: { user: null }, error: null };
       },
 
       /**
        * Get current authentication session
        */
       async getSession() {
+        const cachedSession = this.getSessionSync();
+
         if (isRemoteActive()) {
           try {
             const res = await supabaseInstance.auth.getSession();
             if (res && res.data && res.data.session) {
+              setLocalStore(DB_AUTH_SESSION_KEY, res.data.session);
               return res;
             }
-            return { data: { session: null }, error: null };
           } catch (e) {
-            return { data: { session: null }, error: e };
+            console.warn('Supabase remote getSession notice:', e);
           }
         }
-        const session = this.getSessionSync();
-        return { data: { session: session }, error: null };
+
+        if (cachedSession) {
+          return { data: { session: cachedSession }, error: null };
+        }
+
+        return { data: { session: null }, error: null };
       },
 
       /**
@@ -1330,12 +1428,34 @@
        * Resolve the full provider record linked to the current logged-in user
        */
       async getCurrentProvider() {
-        const userRes = await this.getUser();
-        const user = userRes && userRes.data ? userRes.data.user : null;
-        if (!user) {
-          if (typeof localStorage !== 'undefined') {
-            try { localStorage.removeItem('lokator_current_provider'); } catch (e) {}
+        const saveAndReturn = (prov) => {
+          if (prov && typeof localStorage !== 'undefined') {
+            try {
+              localStorage.setItem('lokator_current_provider', JSON.stringify(prov));
+              if (prov.id) {
+                localStorage.setItem('lokator_current_provider_id', String(prov.id));
+              }
+            } catch (e) {}
           }
+          return prov;
+        };
+
+        // Fast local provider cache check
+        if (typeof localStorage !== 'undefined') {
+          try {
+            const rawCachedProv = localStorage.getItem('lokator_current_provider');
+            if (rawCachedProv) {
+              const parsed = JSON.parse(rawCachedProv);
+              if (parsed && (parsed.id || parsed.user_id)) {
+                return parsed;
+              }
+            }
+          } catch (e) {}
+        }
+
+        const userRes = await this.getUser();
+        const user = userRes && userRes.data ? userRes.data.user : this.getUserSync();
+        if (!user) {
           return null;
         }
 
@@ -1344,13 +1464,13 @@
         // 1. If explicit provider_id attached to user
         if (targetProviderId) {
           const p = await LokatorDB.getProviderById(targetProviderId);
-          if (p) return p;
+          if (p) return saveAndReturn(p);
         }
 
         // 1.1 Direct numeric user ID match to provider ID
         if (user.id && (typeof user.id === 'number' || (!isNaN(Number(user.id)) && Number(user.id) > 0))) {
           const p = await LokatorDB.getProviderById(Number(user.id));
-          if (p) return p;
+          if (p) return saveAndReturn(p);
         }
 
         // 2. Query by user_id in Remote Supabase
@@ -1363,7 +1483,8 @@
               .maybeSingle();
 
             if (!error && data && data.id) {
-              return await LokatorDB.getProviderById(data.id);
+              const p = await LokatorDB.getProviderById(data.id);
+              if (p) return saveAndReturn(p);
             }
 
             // 2.1 Query by email if available in Remote Supabase
@@ -1375,7 +1496,8 @@
                 .maybeSingle();
 
               if (!emailErr && emailData && emailData.id) {
-                return await LokatorDB.getProviderById(emailData.id);
+                const p = await LokatorDB.getProviderById(emailData.id);
+                if (p) return saveAndReturn(p);
               }
             }
 
@@ -1411,7 +1533,8 @@
               if (ensureRes.ok) {
                 const ensureJson = await ensureRes.json();
                 if (ensureJson && ensureJson.data && ensureJson.data.id) {
-                  return await LokatorDB.getProviderById(ensureJson.data.id);
+                  const p = await LokatorDB.getProviderById(ensureJson.data.id);
+                  if (p) return saveAndReturn(p);
                 }
               }
             }
@@ -1428,7 +1551,8 @@
         }
 
         if (match) {
-          return await LokatorDB.getProviderById(match.id);
+          const p = await LokatorDB.getProviderById(match.id);
+          if (p) return saveAndReturn(p);
         }
 
         // 4. Guaranteed Authenticated Fallback Profile: NEVER log out a valid authenticated user
@@ -1479,7 +1603,7 @@
         filtered.unshift(fallbackProvider);
         setLocalStore(DB_STORE_KEY, filtered);
 
-        return fallbackProvider;
+        return saveAndReturn(fallbackProvider);
       }
     },
 
