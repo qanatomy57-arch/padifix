@@ -89,6 +89,22 @@
     </div>
   </header>
 
+  <!-- ===== ARTISAN VIEW-ONLY PUBLIC PREVIEW BANNER ===== -->
+  <aside class="artisan-preview-banner" id="artisan-preview-banner" style="display: none;" aria-label="Artisan Public Profile Preview Mode">
+    <div class="container preview-banner-inner">
+      <div class="preview-banner-content">
+        <span class="preview-banner-badge">🔒 View-Only Preview</span>
+        <div class="preview-banner-text">
+          <strong>Public Profile Preview:</strong> This is how customers see your profile on PadiFix. Self-reviews and profile editing are disabled in preview mode.
+        </div>
+      </div>
+      <div class="preview-banner-actions">
+        <a href="dashboard.html" class="btn btn-outline-white btn-sm" id="btn-preview-back-dash">← Return to Dashboard</a>
+        <a href="dashboard.html#profile" class="btn btn-gold btn-sm" id="btn-preview-edit-dash">Edit Profile ✏️</a>
+      </div>
+    </div>
+  </aside>
+
   <!-- ===== MAIN PROFILE CONTENT ===== -->
   <main class="profile-page-main">
     <div class="container">
@@ -249,6 +265,9 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 Write a Review
               </button>
+              <div class="artisan-viewonly-pill" id="artisan-review-disabled-pill" style="display: none;" title="Artisans cannot review their own profile">
+                <span>🔒 Customer Reviews Only</span>
+              </div>
             </div>
 
             <!-- Score Summary & Histogram -->

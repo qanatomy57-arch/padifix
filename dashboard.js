@@ -78,10 +78,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (publicLink) {
-      publicLink.href = `profile.html?id=${currentProvider.id}`;
+      publicLink.href = `profile.html?id=${currentProvider.id}&preview=artisan`;
     }
     if (kebabPublicLink) {
-      kebabPublicLink.href = `profile.html?id=${currentProvider.id}`;
+      kebabPublicLink.href = `profile.html?id=${currentProvider.id}&preview=artisan`;
     }
     if (availCheck && availText) {
       availCheck.checked = currentProvider.isAvailable;
@@ -4419,7 +4419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (starsEl) starsEl.textContent = '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating));
     if (totalEl) totalEl.textContent = String(totalCount);
     if (verEl) verEl.textContent = String(verifiedCount);
-    if (profLink) profLink.href = `profile.html?id=${currentProvider.id}`;
+    if (profLink) profLink.href = `profile.html?id=${currentProvider.id}&preview=artisan`;
 
     // Filter Buttons Wiring
     document.querySelectorAll('.btn-rev-filter').forEach(btn => {

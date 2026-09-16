@@ -55,8 +55,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (searchContextBanner) searchContextBanner.style.display = 'none';
   }
 
+  // Toast Notification Utility
+  function showProfileToast(message, type = 'info') {
+    let container = document.getElementById('profile-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'profile-toast-container';
+      container.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:90vw;';
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    const isErr = type === 'error';
+    const isSuccess = type === 'success';
+    toast.style.cssText = `background:${isErr ? '#EF4444' : (isSuccess ? '#10B981' : '#1E293B')};color:#FFFFFF;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.2);display:flex;align-items:center;gap:8px;animation:slideDownPreview 0.25s ease-out;pointer-events:auto;text-align:center;`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.3s';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Phase 049 Fix: Check if current viewer is the artisan viewing their own public profile (View-Only Preview Mode)
+  let isOwnProfile = params.get('preview') === 'artisan' || params.get('preview') === 'true';
+  let authProvider = null;
+  if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getCurrentProvider === 'function') {
+    try {
+      authProvider = await LokatorDB.auth.getCurrentProvider();
+      if (authProvider) {
+        const authId = Number(authProvider.id || authProvider.provider_id || (authProvider.raw && authProvider.raw.id));
+        if (authId && authId === Number(provider.id)) {
+          isOwnProfile = true;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Display Artisan View-Only Public Preview Banner if viewing own profile
+  const artisanPreviewBanner = document.getElementById('artisan-preview-banner');
+  if (artisanPreviewBanner) {
+    artisanPreviewBanner.style.display = isOwnProfile ? 'block' : 'none';
+  }
+
   // Update Page Title & Meta
-  document.title = `${provider.name || 'Artisan'} — ${provider.trade || 'Service'} | PadiFix`;
+  document.title = isOwnProfile
+    ? `[Preview] ${provider.name || 'Artisan'} — Public Profile | PadiFix`
+    : `${provider.name || 'Artisan'} — ${provider.trade || 'Service'} | PadiFix`;
 
   // 3. Populate Breadcrumbs & Hero Header with Phase 10.9 & Phase 10.21 Discovery Context
   const queryParam = params.get('q') || '';
@@ -706,6 +751,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isSaved) btnBookmarkHero.classList.add('is-saved');
 
     btnBookmarkHero.addEventListener('click', () => {
+      if (isOwnProfile) {
+        showProfileToast('This is your own public profile listing.', 'info');
+        return;
+      }
       const nowSaved = LokatorDB.offline.isProviderSaved(provider.id);
       if (nowSaved) {
         LokatorDB.offline.removeProviderBookmark(provider.id);
@@ -1322,9 +1371,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 10. Multi-Dimensional Interactive Write a Review Modal & Drawer Form
   const reviewModal = document.getElementById('review-modal');
   const btnOpenReviewModal = document.getElementById('btn-open-review-modal');
+  const reviewDisabledPill = document.getElementById('artisan-review-disabled-pill');
   const btnCloseReviewModal = document.getElementById('review-modal-close');
   const btnCancelReview = document.getElementById('btn-cancel-review');
   const reviewForm = document.getElementById('review-form');
+
+  if (isOwnProfile) {
+    if (btnOpenReviewModal) btnOpenReviewModal.style.display = 'none';
+    if (reviewDisabledPill) reviewDisabledPill.style.display = 'inline-flex';
+  } else {
+    if (btnOpenReviewModal) btnOpenReviewModal.style.display = 'inline-flex';
+    if (reviewDisabledPill) reviewDisabledPill.style.display = 'none';
+  }
   const starPicker = document.getElementById('star-picker');
   const ratingMoodBadge = document.getElementById('rating-mood-badge');
   const revCommentInput = document.getElementById('rev-comment');
@@ -1571,6 +1629,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Modal Open & Close Triggers
   const openModalHandler = () => {
+    if (isOwnProfile) {
+      showProfileToast('Artisans cannot write reviews on their own profile. Reviews can only be submitted by customers who hired you.', 'info');
+      return;
+    }
     if (reviewModal) {
       reviewModal.classList.add('active');
       reviewModal.setAttribute('aria-hidden', 'false');
@@ -1607,16 +1669,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dateOption = document.getElementById('rev-date') ? document.getElementById('rev-date').value : 'This Week';
       const isVerifiedChecked = document.getElementById('rev-verified-check') ? document.getElementById('rev-verified-check').checked : true;
 
-      if (selectedHiredStatus !== 'completed') {
-        showProfileToast('Thank you for letting us know! Reviews can only be published for completed jobs to protect authentic marketplace trust.', 'info');
+      // Anti-Abuse: Prevent provider self-review
+      if (isOwnProfile) {
+        showProfileToast('Artisans are not permitted to review their own profile.', 'error');
         closeModalHandler();
         return;
       }
 
-      // Phase 010 Anti-Abuse: Prevent provider self-review
-      const currentProvider = (typeof LokatorDB !== 'undefined' && LokatorDB.getCurrentProvider) ? LokatorDB.getCurrentProvider() : null;
-      if (currentProvider && currentProvider.id === provider.id) {
-        showProfileToast('Artisans are not permitted to review their own profile.', 'error');
+      let currentAuthProv = null;
+      if (typeof LokatorDB !== 'undefined' && LokatorDB.auth && typeof LokatorDB.auth.getCurrentProvider === 'function') {
+        try {
+          currentAuthProv = await LokatorDB.auth.getCurrentProvider();
+        } catch (e) {}
+      }
+      if (currentAuthProv) {
+        const curId = Number(currentAuthProv.id || currentAuthProv.provider_id || (currentAuthProv.raw && currentAuthProv.raw.id));
+        if (curId && curId === Number(provider.id)) {
+          showProfileToast('Artisans are not permitted to review their own profile.', 'error');
+          closeModalHandler();
+          return;
+        }
+      }
+
+      if (selectedHiredStatus !== 'completed') {
+        showProfileToast('Thank you for letting us know! Reviews can only be published for completed jobs to protect authentic marketplace trust.', 'info');
+        closeModalHandler();
         return;
       }
 
@@ -1857,6 +1934,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (btnOpenReportModal && reportModal) {
     btnOpenReportModal.addEventListener('click', () => {
+      if (isOwnProfile) {
+        showProfileToast('This is your own profile listing. You can update your details in your Dashboard.', 'info');
+        return;
+      }
       reportModal.classList.add('active');
       reportModal.setAttribute('aria-hidden', 'false');
     });

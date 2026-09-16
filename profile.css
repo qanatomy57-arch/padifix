@@ -1874,3 +1874,120 @@
     width: 100%;
   }
 }
+
+/* ===== ARTISAN VIEW-ONLY PUBLIC PREVIEW STYLES ===== */
+.artisan-preview-banner {
+  background: linear-gradient(135deg, #0b1528 0%, #162238 100%);
+  border-bottom: 2px solid var(--green, #00A859);
+  padding: 12px 0;
+  color: #F8FAFC;
+  position: sticky;
+  top: 68px;
+  z-index: 99;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  animation: slideDownPreview 0.25s ease-out;
+}
+
+@keyframes slideDownPreview {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.preview-banner-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.preview-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preview-banner-badge {
+  background: rgba(0, 168, 89, 0.18);
+  border: 1px solid #00A859;
+  color: #34D399;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview-banner-text {
+  font-size: 13.5px;
+  color: #E2E8F0;
+  line-height: 1.4;
+}
+
+.preview-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-outline-white {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #FFFFFF !important;
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  transition: background 0.2s, border-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-outline-white:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #FFFFFF !important;
+}
+
+.artisan-viewonly-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #94A3B8;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .artisan-preview-banner {
+    top: 60px;
+    padding: 10px 0;
+  }
+  .preview-banner-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .preview-banner-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
