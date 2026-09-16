@@ -349,7 +349,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (metricRating) metricRating.textContent = (revCount > 0 && provider.rating != null && Number(provider.rating) > 0) ? `★ ${Number(provider.rating).toFixed(1)}` : '★ New';
 
   const metricJobs = document.getElementById('metric-jobs');
-  if (metricJobs) metricJobs.textContent = `${parseInt(provider.completedJobs, 10) || 50}+`;
+  const compJobs = provider.completedJobs != null ? parseInt(provider.completedJobs, 10) : (provider.completed_jobs != null ? parseInt(provider.completed_jobs, 10) : 0);
+  if (metricJobs) metricJobs.textContent = compJobs > 0 ? `${compJobs}+` : 'New';
 
   const metricExp = document.getElementById('metric-exp');
   if (metricExp) metricExp.textContent = `${parseInt(provider.experienceYrs, 10) || 3} Years`;

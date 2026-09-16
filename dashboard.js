@@ -1913,11 +1913,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentMetrics) return;
 
     const viewsEl = document.getElementById('kpi-views');
+    const viewsTrendEl = document.getElementById('kpi-views-trend');
     const leadsEl = document.getElementById('kpi-leads');
+    const leadsTrendEl = document.getElementById('kpi-leads-trend');
     const jobsEl = document.getElementById('kpi-jobs');
     const ratingEl = document.getElementById('kpi-rating');
     const ratingReviewsEl = document.getElementById('kpi-reviews-count');
     const ratingBadge = document.getElementById('ov-rating-badge');
+    const responseEl = document.getElementById('kpi-response');
+    const responseSubEl = document.getElementById('kpi-response-sub');
 
     const profileViews = currentMetrics.profileViewsThisMonth != null ? currentMetrics.profileViewsThisMonth : (currentProvider.views_count || 0);
     const directLeads = currentMetrics.leadsThisMonth != null ? currentMetrics.leadsThisMonth : 0;
@@ -1926,11 +1930,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hasReviews = reviewsCount > 0 && Boolean(currentMetrics.rating || currentProvider.rating);
 
     if (viewsEl) viewsEl.textContent = `${profileViews}`;
+    if (viewsTrendEl) {
+      viewsTrendEl.textContent = profileViews > 0 ? `+${profileViews} this month` : 'Just launched';
+      viewsTrendEl.className = profileViews > 0 ? 'dash-kpi-trend-pos' : 'dash-kpi-reviews-sub';
+    }
+
     if (leadsEl) leadsEl.textContent = `${directLeads}`;
-    if (jobsEl) jobsEl.textContent = `${completedJobs}+`;
-    if (ratingEl) ratingEl.textContent = hasReviews ? Number(currentMetrics.rating || currentProvider.rating).toFixed(1) : 'New';
+    if (leadsTrendEl) {
+      leadsTrendEl.textContent = directLeads > 0 ? `+${directLeads} new` : 'Ready for leads';
+      leadsTrendEl.className = directLeads > 0 ? 'dash-kpi-trend-pos' : 'dash-kpi-reviews-sub';
+    }
+
+    if (jobsEl) jobsEl.textContent = completedJobs > 0 ? `${completedJobs}+` : '0';
+    if (ratingEl) ratingEl.textContent = (hasReviews && currentMetrics.rating) ? Number(currentMetrics.rating).toFixed(1) : 'New';
     if (ratingReviewsEl) ratingReviewsEl.textContent = reviewsCount > 0 ? `(${reviewsCount} review${reviewsCount === 1 ? '' : 's'})` : '(0 reviews)';
     if (ratingBadge) ratingBadge.textContent = hasReviews ? `★ ${Number(currentMetrics.rating || currentProvider.rating).toFixed(1)}` : '★ New Listing';
+
+    // Honest Response Rate binding
+    if (responseEl) {
+      responseEl.textContent = currentMetrics.responseRate || (directLeads > 0 ? '100%' : 'New');
+    }
+    if (responseSubEl) {
+      responseSubEl.textContent = currentMetrics.responseRateLabel || (directLeads > 0 ? '⚡ Fast Responder' : 'Awaiting inquiries');
+      responseSubEl.className = directLeads > 0 ? 'dash-kpi-trend-pos' : 'dash-kpi-reviews-sub';
+    }
 
     // Render Progressive Profile Completeness Widget
     const compData = currentMetrics.completenessData || ((typeof PadiFixMonetization !== 'undefined' && PadiFixMonetization.calculateProfileCompleteness)

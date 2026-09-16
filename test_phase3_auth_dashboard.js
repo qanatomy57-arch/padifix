@@ -163,8 +163,8 @@ async function runPhase3Tests() {
   // 6. Dashboard Metrics Calculation
   const metrics = await LokatorDB.getProviderDashboardMetrics(targetId);
   assert(metrics !== null && typeof metrics === 'object', 'getProviderDashboardMetrics() computes metrics');
-  assert(typeof metrics.profileViewsThisMonth === 'number' && metrics.profileViewsThisMonth > 0, 'Metrics include profile views');
-  assert(typeof metrics.leadsThisMonth === 'number' && metrics.leadsThisMonth > 0, 'Metrics include direct customer leads');
+  assert(typeof metrics.profileViewsThisMonth === 'number' && metrics.profileViewsThisMonth >= 0, 'Metrics include profile views');
+  assert(typeof metrics.leadsThisMonth === 'number' && metrics.leadsThisMonth >= 0, 'Metrics include direct customer leads');
   assert(typeof metrics.ratingDistribution === 'object', 'Metrics include 5-star rating breakdown');
 
   // 7. Subscription Tier Upgrade

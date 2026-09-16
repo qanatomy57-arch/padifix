@@ -1996,7 +1996,7 @@
         copy.verifiedReviewsCount = Number(p.verifiedReviewsCount != null ? p.verifiedReviewsCount : (p.verified_reviews_count || 0));
         copy.verified_reviews_count = copy.verifiedReviewsCount;
         copy.experienceYrs = Number(p.experienceYrs != null ? p.experienceYrs : (p.experience_years || 3));
-        copy.completedJobs = Number(p.completedJobs != null ? p.completedJobs : (p.completed_jobs || 15));
+        copy.completedJobs = Number(p.completedJobs != null ? p.completedJobs : (p.completed_jobs != null ? p.completed_jobs : 0));
         copy.isVerified = Boolean(p.isVerified || p.is_verified);
         copy.isAvailable = p.isAvailable !== false && p.is_available !== false;
         copy.area = p.area || p.locality || p.city || 'Nigeria';
@@ -3787,10 +3787,25 @@
         }
       } catch (e) {}
 
-      // Honest metric representation: use explicit provider stats if recorded, otherwise real telemetry
-      const profileViews = Math.max(realViews, Number(p.profileViews || p.profile_views || (p.completedJobs ? Math.min(p.completedJobs * 2, 50) : 0)));
-      const directLeads = Math.max(realLeads, Number(p.leadsCount || p.leads_count || 0));
-      const completedJobs = Number(p.completedJobs || p.completed_jobs || 0);
+      // Honest metric representation: strictly real telemetry or stored profile views, defaulting to 0 for new profiles
+      const profileViews = Math.max(realViews, Number(p.profile_views != null ? p.profile_views : (p.profileViews != null ? p.profileViews : (p.views_count != null ? p.views_count : 0))));
+      const directLeads = Math.max(realLeads, Number(p.leads_count != null ? p.leads_count : (p.leadsCount != null ? p.leadsCount : 0)));
+      const completedJobs = Number(p.completed_jobs != null ? p.completed_jobs : (p.completedJobs != null ? p.completedJobs : 0));
+
+      // Calculate honest response rate:
+      // For newly registered providers with zero inquiries, response rate is 'New' / 'Awaiting inquiries'
+      let responseRate = 'New';
+      let responseRateLabel = 'Awaiting inquiries';
+      if (directLeads > 0) {
+        const respondedLeads = Number(p.respondedLeads || p.responded_leads || directLeads);
+        const ratePct = Math.min(100, Math.round((respondedLeads / directLeads) * 100));
+        responseRate = `${ratePct}%`;
+        responseRateLabel = ratePct >= 90 ? '⚡ Fast Responder' : (ratePct >= 70 ? 'Good' : 'Active');
+      } else if (p.response_rate != null || p.responseRate != null) {
+        const customRate = Number(p.response_rate || p.responseRate);
+        responseRate = `${customRate}%`;
+        responseRateLabel = customRate >= 90 ? '⚡ Fast Responder' : 'Good';
+      }
 
       // Deterministic profile completeness calculation
       const completeness = (typeof PadiFixMonetization !== 'undefined' && PadiFixMonetization.calculateProfileCompleteness)
@@ -3806,6 +3821,8 @@
         completedJobs: completedJobs,
         profileViewsThisMonth: profileViews,
         leadsThisMonth: directLeads,
+        responseRate: responseRate,
+        responseRateLabel: responseRateLabel,
         whatsappContactsCount: realWaClicks,
         phoneCallsCount: realPhoneClicks,
         profileCompleteness: completeness.score,
@@ -3953,7 +3970,7 @@
           bio: p.bio,
           skills: skills,
           startingPrice: p.startingPrice || p.starting_price || '₦3,000 / service',
-          completedJobs: p.completedJobs || p.completed_jobs || 50,
+          completedJobs: p.completed_jobs != null ? Number(p.completed_jobs) : (p.completedJobs != null ? Number(p.completedJobs) : 0),
           responseTime: p.responseTime || p.response_time || '~15 mins',
           _searchScore: p._searchScore || 0
         };
@@ -4081,7 +4098,7 @@
         bio: p.bio || `Specialist ${trade} serving ${p.area}.`,
         skills: skills,
         startingPrice: p.startingPrice || p.starting_price || '₦3,000 / inspection',
-        completedJobs: p.completedJobs || p.completed_jobs || 120,
+        completedJobs: p.completed_jobs != null ? Number(p.completed_jobs) : (p.completedJobs != null ? Number(p.completedJobs) : 0),
         workingHours: p.workingHours || p.working_hours || {
           weekday: "8:00 AM – 7:00 PM",
           saturday: "8:00 AM – 6:00 PM",
