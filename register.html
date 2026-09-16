@@ -1966,7 +1966,11 @@
           }, formData);
 
           if (authRes.error) {
-            console.warn('Auth notice:', authRes.error);
+            console.error('Auth error during registration:', authRes.error);
+            alert(authRes.error.message || 'Registration failed. Please check your credentials and try again.');
+            btn.textContent = 'Complete Registration & Publish Profile';
+            btn.disabled = false;
+            return;
           }
 
           const registered = (authRes.data && authRes.data.provider) || await LokatorDB.registerProvider(formData);

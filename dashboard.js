@@ -22,7 +22,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (!currentProvider) {
-    // Check if there is any seed fallback or redirect to login
+    try {
+      const userRes = (LokatorDB.auth && typeof LokatorDB.auth.getUser === 'function') ? await LokatorDB.auth.getUser() : null;
+      const authUser = userRes && userRes.data ? userRes.data.user : null;
+      if (authUser) {
+        // Authenticated user without attached provider profile - re-resolve
+        currentProvider = await LokatorDB.auth.getCurrentProvider();
+      }
+    } catch (retryErr) {
+      console.warn('Provider session retry notice:', retryErr);
+    }
+  }
+
+  if (!currentProvider) {
+    // Only redirect to login if completely unauthenticated
     window.location.href = 'login.html';
     return;
   }

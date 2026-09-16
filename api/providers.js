@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const TARGET_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'hvxosxhnxauiqrhpyuur';
 const SUPABASE_URL = process.env.SUPABASE_URL || `https://${TARGET_PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_oFXfU49-GeCxsIonEQ1vQQ__znehnjq';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
 
 // In-memory rate limiting store for public directory reads (60 req / min / IP)
 const ipReadLimits = new Map();
@@ -210,7 +211,204 @@ async function handlePortfolioPost(req, res) {
 
   const action = body.action || req.query?.action;
   if (!action) {
-    return res.status(400).json({ error: 'Missing action parameter. Expected add_portfolio_item, delete_portfolio_item, or submit_verification.' });
+    return res.status(400).json({ error: 'Missing action parameter. Expected register_provider, add_portfolio_item, delete_portfolio_item, or submit_verification.' });
+  }
+
+  // 0. Provider Self-Registration Action
+  if (action === 'register_provider') {
+    let userId = null;
+    let authEmail = body.email || null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const ures = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
+        });
+        if (ures.ok) {
+          const udata = await ures.json();
+          if (udata && udata.id) {
+            userId = udata.id;
+            if (udata.email) authEmail = udata.email;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!userId && body.user_id) {
+      userId = body.user_id;
+    }
+
+    const firstName = (body.first_name || body.fname || 'Artisan').trim();
+    const lastName = (body.last_name || body.lname || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim();
+    const tradeTitle = body.trade_title || body.trade || 'Professional Artisan';
+    const primaryCategory = body.primary_category_slug || body.category || 'other';
+    const skills = Array.isArray(body.skills) ? body.skills : (body.skills ? String(body.skills).split(',').map(s => s.trim()) : [tradeTitle]);
+
+    const adminKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+
+    // Check if provider row already exists for this user_id or email
+    if (userId || authEmail) {
+      try {
+        let checkUrl = `${SUPABASE_URL}/rest/v1/providers?select=*`;
+        if (userId && authEmail) {
+          checkUrl += `&or=(user_id.eq.${userId},email.eq.${encodeURIComponent(authEmail)})`;
+        } else if (userId) {
+          checkUrl += `&user_id=eq.${userId}`;
+        } else {
+          checkUrl += `&email=eq.${encodeURIComponent(authEmail)}`;
+        }
+        const checkRes = await fetch(checkUrl, {
+          headers: {
+            apikey: adminKey,
+            Authorization: `Bearer ${adminKey}`
+          }
+        });
+        if (checkRes.ok) {
+          const existingList = await checkRes.json();
+          if (Array.isArray(existingList) && existingList.length > 0) {
+            const existingProv = existingList[0];
+            if (userId && !existingProv.user_id) {
+              await fetch(`${SUPABASE_URL}/rest/v1/providers?id=eq.${existingProv.id}`, {
+                method: 'PATCH',
+                headers: {
+                  apikey: adminKey,
+                  Authorization: `Bearer ${adminKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ user_id: userId })
+              }).catch(() => {});
+              existingProv.user_id = userId;
+            }
+            return res.status(200).json({
+              status: 'success',
+              data: existingProv,
+              message: 'Provider profile resolved successfully.'
+            });
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Error checking existing provider:', checkErr);
+      }
+    }
+
+    const VALID_CATEGORY_IDS = [
+      'electrician', 'plumber', 'nail-technician', 'tailor',
+      'mechanic', 'carpenter', 'cleaner', 'barber',
+      'painter', 'welder', 'phone-repair', 'caterer',
+      'photographer', 'laundry', 'dispatch'
+    ];
+
+    function normalizeCategorySlug(rawSlug) {
+      if (!rawSlug) return 'electrician';
+      const clean = String(rawSlug).toLowerCase().trim().replace(/[\s_]+/g, '-');
+      if (VALID_CATEGORY_IDS.includes(clean)) return clean;
+      
+      if (clean.includes('plumb') || clean.includes('pipe')) return 'plumber';
+      if (clean.includes('elect') || clean.includes('wir') || clean.includes('solar')) return 'electrician';
+      if (clean.includes('nail') || clean.includes('lash') || clean.includes('beauty') || clean.includes('makeup') || clean.includes('hair')) return 'nail-technician';
+      if (clean.includes('tailor') || clean.includes('fashion') || clean.includes('sew') || clean.includes('cloth')) return 'tailor';
+      if (clean.includes('mech') || clean.includes('auto') || clean.includes('car') || clean.includes('engine')) return 'mechanic';
+      if (clean.includes('carpent') || clean.includes('wood') || clean.includes('furnitur')) return 'carpenter';
+      if (clean.includes('clean') || clean.includes('janitor') || clean.includes('fumigat')) return 'cleaner';
+      if (clean.includes('barb') || clean.includes('haircut')) return 'barber';
+      if (clean.includes('paint') || clean.includes('wall') || clean.includes('screed')) return 'painter';
+      if (clean.includes('weld') || clean.includes('iron') || clean.includes('metal') || clean.includes('fabricat')) return 'welder';
+      if (clean.includes('phone') || clean.includes('laptop') || clean.includes('device') || clean.includes('screen')) return 'phone-repair';
+      if (clean.includes('cater') || clean.includes('cook') || clean.includes('food') || clean.includes('baker')) return 'caterer';
+      if (clean.includes('photo') || clean.includes('video') || clean.includes('camera')) return 'photographer';
+      if (clean.includes('laund') || clean.includes('dry-clean') || clean.includes('wash')) return 'laundry';
+      if (clean.includes('dispatch') || clean.includes('rider') || clean.includes('courier') || clean.includes('deliver')) return 'dispatch';
+
+      return 'electrician';
+    }
+
+    const normalizedCat = normalizeCategorySlug(primaryCategory);
+
+    const providerRow = {
+      user_id: userId,
+      first_name: firstName,
+      last_name: lastName,
+      business_name: body.business_name || fullName,
+      trade_title: tradeTitle,
+      primary_category_slug: normalizedCat,
+      skills: skills,
+      bio: body.bio || `Certified ${tradeTitle} serving ${body.area || 'Nigeria'}. Contact directly for prompt service.`,
+      phone: body.phone || '',
+      whatsapp_number: body.whatsapp_number || body.phone || '',
+      email: authEmail,
+      state: body.state || 'Lagos',
+      city: body.city || 'Ikeja',
+      lga: body.lga || body.city || 'Ikeja',
+      area: body.area || (body.lga ? `${body.lga}, ${body.state}` : 'Lagos'),
+      address: body.address || (body.area || 'Nigeria'),
+      latitude: body.latitude || body.lat || null,
+      longitude: body.longitude || body.lng || null,
+      experience_years: parseInt(body.experience_years || body.experience, 10) || 1,
+      starting_price: body.starting_price || '₦3,500 / job',
+      avatar_bg: body.avatar_bg || 'linear-gradient(135deg, #006B3F, #059669)',
+      badge_title: 'NIN Verified Artisan',
+      response_time: '~15 mins',
+      completed_jobs: 0,
+      rating: 0.0,
+      reviews_count: 0,
+      subscription_plan: 'basic',
+      is_verified: false,
+      nin_verified: false,
+      is_available: true,
+      is_active: true,
+      is_public: true,
+      profile_complete: true
+    };
+
+    try {
+      const insertUrl = `${SUPABASE_URL}/rest/v1/providers`;
+      const insertRes = await fetch(insertUrl, {
+        method: 'POST',
+        headers: {
+          apikey: adminKey,
+          Authorization: `Bearer ${adminKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify(providerRow)
+      });
+
+      if (!insertRes.ok) {
+        const errText = await insertRes.text();
+        return res.status(500).json({ error: 'Failed to create provider record in database', details: errText });
+      }
+
+      const insertedData = await insertRes.json();
+      const createdProvider = Array.isArray(insertedData) ? insertedData[0] : insertedData;
+
+      if (createdProvider && createdProvider.id && skills.length > 0) {
+        const serviceRows = skills.map((sk, idx) => ({
+          provider_id: createdProvider.id,
+          service_name: sk,
+          category_slug: primaryCategory,
+          is_primary: idx === 0
+        }));
+        await fetch(`${SUPABASE_URL}/rest/v1/provider_services`, {
+          method: 'POST',
+          headers: {
+            apikey: adminKey,
+            Authorization: `Bearer ${adminKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(serviceRows)
+        }).catch(() => {});
+      }
+
+      return res.status(201).json({
+        status: 'success',
+        data: createdProvider,
+        message: 'Provider profile registered successfully.'
+      });
+    } catch (insertErr) {
+      return res.status(500).json({ error: 'Database error registering provider', message: insertErr.message });
+    }
   }
 
   const targetProviderId = body.provider_id || req.query?.provider_id;

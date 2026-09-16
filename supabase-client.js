@@ -1365,11 +1365,62 @@
             if (!error && data && data.id) {
               return await LokatorDB.getProviderById(data.id);
             }
-          } catch (e) {}
-          return null;
+
+            // 2.1 Query by email if available in Remote Supabase
+            if (user.email) {
+              const { data: emailData, error: emailErr } = await supabaseInstance
+                .from('providers')
+                .select('id')
+                .ilike('email', user.email.trim())
+                .maybeSingle();
+
+              if (!emailErr && emailData && emailData.id) {
+                return await LokatorDB.getProviderById(emailData.id);
+              }
+            }
+
+            // 2.2 Serverless Bridge: Ensure provider profile exists in PostgreSQL
+            if (typeof fetch === 'function') {
+              const apiBase = (typeof window !== 'undefined' && window.location && window.location.origin)
+                ? window.location.origin
+                : ((typeof process !== 'undefined' && process.env && process.env.APP_URL) || 'https://padifix.vercel.app');
+              const endpointUrl = typeof window !== 'undefined' ? '/api/providers' : `${apiBase}/api/providers`;
+              
+              const session = this.getSessionSync();
+              const token = session && session.access_token ? session.access_token : '';
+              const meta = user.user_metadata || {};
+              const fname = meta.first_name || (user.email ? user.email.split('@')[0] : 'Artisan');
+              const lname = meta.last_name || '';
+
+              const ensureRes = await fetch(endpointUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({
+                  action: 'register_provider',
+                  user_id: user.id,
+                  email: user.email,
+                  first_name: fname,
+                  last_name: lname,
+                  phone: meta.phone || ''
+                })
+              });
+
+              if (ensureRes.ok) {
+                const ensureJson = await ensureRes.json();
+                if (ensureJson && ensureJson.data && ensureJson.data.id) {
+                  return await LokatorDB.getProviderById(ensureJson.data.id);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('getCurrentProvider remote query notice:', e);
+          }
         }
 
-        // 3. Match in local store by user_id or email ONLY when remote is inactive
+        // 3. Match in local store by user_id or email
         const providers = getLocalStore(DB_STORE_KEY, []);
         let match = providers.find(p => p.user_id === user.id);
         if (!match && user.email) {
@@ -2182,7 +2233,71 @@
         created_at: new Date().toISOString()
       };
 
-      // 1. Remote Supabase Insertion
+      // 0. Primary Source of Truth: PostgreSQL Provider Creation via /api/providers
+      try {
+        if (typeof fetch === 'function') {
+          const apiBase = (typeof window !== 'undefined' && window.location && window.location.origin)
+            ? window.location.origin
+            : ((typeof process !== 'undefined' && process.env && process.env.APP_URL) || 'https://padifix.vercel.app');
+          const endpointUrl = typeof window !== 'undefined' ? '/api/providers' : `${apiBase}/api/providers`;
+          
+          let authToken = null;
+          if (LokatorDB.auth && typeof LokatorDB.auth.getSessionSync === 'function') {
+            const sess = LokatorDB.auth.getSessionSync();
+            if (sess && sess.access_token) authToken = sess.access_token;
+          }
+
+          const apiPayload = {
+            action: 'register_provider',
+            user_id: currentUserId,
+            first_name: firstName,
+            last_name: lastName,
+            business_name: formData.business_name || fullName,
+            trade_title: tradeTitle,
+            primary_category_slug: categorySlug,
+            skills: skillsArray,
+            bio: formData.bio || `Certified ${tradeTitle} serving ${area}. Contact directly for instant quotes and prompt service.`,
+            phone: normalizedPhone,
+            whatsapp_number: canonicalWa,
+            email: formData.email || null,
+            state: state,
+            city: city,
+            lga: formData.lga || city,
+            area: area,
+            address: formData.address || area,
+            latitude: lat,
+            longitude: lng,
+            experience_years: parseInt(formData.experience, 10) || 3,
+            starting_price: formData.starting_price || '₦3,500 / job',
+            plan: formData.plan || 'basic'
+          };
+
+          const apiRes = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            },
+            body: JSON.stringify(apiPayload)
+          });
+
+          if (apiRes.ok) {
+            const json = await apiRes.json();
+            if (json && json.data && json.data.id) {
+              const sanitized = this._sanitizeProviderDetail(json.data);
+              const providers = getLocalStore(DB_STORE_KEY, []);
+              const filtered = providers.filter(p => p.id !== sanitized.id && (!currentUserId || p.user_id !== currentUserId));
+              filtered.unshift(sanitized);
+              setLocalStore(DB_STORE_KEY, filtered);
+              return sanitized;
+            }
+          }
+        }
+      } catch (apiErr) {
+        console.warn('API provider registration notice:', apiErr);
+      }
+
+      // 1. Remote Supabase Direct Insertion Fallback
       if (isRemoteActive()) {
         try {
           const dbRow = {
