@@ -1448,10 +1448,10 @@
           const res = await fetch(endpointUrl);
           if (res.ok) {
             const json = await res.json();
-            if (json && Array.isArray(json.data) && json.data.length > 0) {
+            if (json && Array.isArray(json.data)) {
               return {
                 data: this._sanitizeProvidersList(json.data, userLat, userLng),
-                totalCount: json.total || json.data.length,
+                totalCount: json.total !== undefined ? json.total : json.data.length,
                 page: json.page || 1,
                 pageSize: json.page_size || 20
               };

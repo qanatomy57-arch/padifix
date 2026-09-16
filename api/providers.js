@@ -836,9 +836,8 @@ const providersHandler = async (req, res) => {
       'nin_verified',
       'is_available',
       'subscription_plan',
-      'subscription_status',
       'created_at',
-      'last_active_at'
+      'updated_at'
     ].join(',');
 
     const queryUrl = `${SUPABASE_URL}/rest/v1/providers?select=${selectColumns}&${filterParams.join('&')}&order=${orderClause}&limit=${pageSize}&offset=${offset}`;
